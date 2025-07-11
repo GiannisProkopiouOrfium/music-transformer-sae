@@ -155,3 +155,6 @@ Gemfile.lock
 # Experiment
 /exp
 /data
+*.png
+*.txt
+*.pt

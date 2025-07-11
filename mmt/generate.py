@@ -32,9 +32,7 @@ def parse_args(args=None, namespace=None):
     parser.add_argument(
         "-i", "--in_dir", type=pathlib.Path, help="input data directory"
     )
-    parser.add_argument(
-        "-o", "--out_dir", type=pathlib.Path, help="output directory"
-    )
+    parser.add_argument("-o", "--out_dir", type=pathlib.Path, help="output directory")
     parser.add_argument(
         "-ns",
         "--n_samples",
@@ -86,12 +84,8 @@ def parse_args(args=None, namespace=None):
     )
     # Others
     parser.add_argument("-g", "--gpu", type=int, help="gpu number")
-    parser.add_argument(
-        "-j", "--jobs", default=1, type=int, help="number of jobs"
-    )
-    parser.add_argument(
-        "-q", "--quiet", action="store_true", help="show warnings only"
-    )
+    parser.add_argument("-j", "--jobs", default=1, type=int, help="number of jobs")
+    parser.add_argument("-q", "--quiet", action="store_true", help="show warnings only")
     return parser.parse_args(args=args, namespace=namespace)
 
 
@@ -113,9 +107,7 @@ def save_result(filename, data, sample_dir, encoding):
     representation.save_csv_codes(sample_dir / "csv" / f"{filename}.csv", data)
 
     # Save as a TXT file
-    representation.save_txt(
-        sample_dir / "txt" / f"{filename}.txt", data, encoding
-    )
+    representation.save_txt(sample_dir / "txt" / f"{filename}.txt", data, encoding)
 
     # Convert to a MusPy Music object
     music = representation.decode(data, encoding)
@@ -149,9 +141,7 @@ def save_result(filename, data, sample_dir, encoding):
     music.trim(music.resolution * 64)
 
     # Save the trimmed version as a piano roll
-    save_pianoroll(
-        sample_dir / "png-trimmed" / f"{filename}.png", music, (10, 5)
-    )
+    save_pianoroll(sample_dir / "png-trimmed" / f"{filename}.png", music, (10, 5))
 
     # Save as a WAV file
     music.write(
@@ -176,9 +166,7 @@ def main():
     # Set default arguments
     if args.dataset is not None:
         if args.names is None:
-            args.names = pathlib.Path(
-                f"data/{args.dataset}/processed/test-names.txt"
-            )
+            args.names = pathlib.Path(f"data/{args.dataset}/processed/test-names.txt")
         if args.in_dir is None:
             args.in_dir = pathlib.Path(f"data/{args.dataset}/processed/notes/")
         if args.out_dir is None:
@@ -205,9 +193,7 @@ def main():
     utils.save_args(args.out_dir / "generate-args.json", args)
 
     # Load training configurations
-    logging.info(
-        f"Loading training arguments from: {args.out_dir / 'train-args.json'}"
-    )
+    logging.info(f"Loading training arguments from: {args.out_dir / 'train-args.json'}")
     train_args = utils.load_json(args.out_dir / "train-args.json")
     logging.info(f"Using loaded arguments:\n{pprint.pformat(train_args)}")
 
@@ -227,9 +213,18 @@ def main():
     (sample_dir / "mp3-trimmed").mkdir(exist_ok=True)
 
     # Get the specified device
-    device = torch.device(
-        f"cuda:{args.gpu}" if args.gpu is not None else "cpu"
-    )
+    # device = torch.device(
+    #     f"cuda:{args.gpu}" if args.gpu is not None else "cpu"
+    # )
+    # To this:
+    if args.gpu is not None:
+        if torch.backends.mps.is_available():
+            device = torch.device("mps")
+        else:
+            device = torch.device("cpu")
+            print("Warning: MPS not available, using CPU")
+    else:
+        device = torch.device("cpu")
     logging.info(f"Using device: {device}")
 
     # Load the encoding
@@ -318,9 +313,7 @@ def main():
             generated_np = torch.cat((tgt_start, generated), 1).cpu().numpy()
 
             # Save the results
-            save_result(
-                f"{i}_unconditioned", generated_np[0], sample_dir, encoding
-            )
+            save_result(f"{i}_unconditioned", generated_np[0], sample_dir, encoding)
 
             # ------------------------------
             # Instrument-informed generation

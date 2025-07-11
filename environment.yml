@@ -13,11 +13,14 @@ dependencies:
   - matplotlib=3.5.1
   - tqdm=4.64.0
   - scikit-learn=1.0.2
-  - cudatoolkit=10.2
-  - pytorch::pytorch=1.11.0
+  # - cudatoolkit=10.2
+  # - pytorch::pytorch=1.11.0
+  - pytorch
+  - torchvision
+  - torchaudio
   - pylint
   - black
   - flake8
   - pip:
-    - git+https://github.com/salu133445/muspy@main#egg=muspy
-    - x-transformers==0.25.9
+      - git+https://github.com/salu133445/muspy@main#egg=muspy
+      - x-transformers==0.25.9
