@@ -3,7 +3,7 @@ import numpy as np
 import matplotlib.pyplot as plt
 from collections import defaultdict
 import pathlib
-from analyze_sae import analyze_sae_features
+from sae.analyze_sae import analyze_sae_features
 
 
 def interpret_music_features(results, activations_path, top_k=10):
