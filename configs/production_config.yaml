@@ -1,0 +1,32 @@
+# Production Configuration for Large-Scale Analysis
+model:
+  checkpoint_path: "/data/models/music_transformer.pt"
+  layer_idx: 2
+
+extraction:
+  data_path: "/data/processed"
+  output_file: "activations_layer2_full.h5"
+  batch_size: 128 # Large batch for production
+  max_samples: null # Extract all available data
+
+training:
+  hidden_dim: 2048
+  l1_alpha: 0.001
+  learning_rate: 0.001
+  num_epochs: 200 # Extended training
+  batch_size: 256
+  val_split: 0.05 # Smaller validation set for more training data
+  save_every: 20
+  weight_decay: 0.0001
+
+analysis:
+  sample_size: 50000 # Large sample for comprehensive analysis
+  top_features: 50
+  visualization_dpi: 300
+
+# Production optimizations
+optimization:
+  mixed_precision: true
+  gradient_checkpointing: true
+  dataloader_workers: 8
+  pin_memory: true
