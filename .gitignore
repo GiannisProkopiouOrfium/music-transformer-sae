@@ -158,3 +158,4 @@ Gemfile.lock
 *.png
 *.txt
 *.pt
+*.h5

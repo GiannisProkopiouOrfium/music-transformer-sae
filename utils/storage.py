@@ -3,7 +3,7 @@
 import h5py
 import logging
 import os
-from typing import Dict, Any, Optional, List, Tuple
+from typing import Dict, Any, Optional, Tuple
 from pathlib import Path
 import time
 

@@ -1,152 +1,147 @@
-"""Main pipeline script for AWS EC2 SAE analysis."""
+"""Main pipeline script for cross-platform SAE analysis."""
 
 import argparse
 import logging
-import yaml
 import sys
 from pathlib import Path
-from typing import Dict, Any
 
 # Add mmt to path
 sys.path.append(str(Path(__file__).parent.parent))
 
-from utils.gpu import GPUManager, log_system_info
-from utils.memory import MemoryOptimizer
-from utils.storage import create_storage_directory
-from pipeline.extract import run_extraction_pipeline
-from pipeline.train import run_training_pipeline
-from pipeline.analyze import run_analysis_pipeline
+from pipeline.sae_pipeline import UnifiedSAEPipeline
 
 
-def setup_logging(log_level: str = "INFO", log_file: str = None) -> None:
-    """Setup comprehensive logging."""
-    log_format = "%(asctime)s - %(name)s - %(levelname)s - %(message)s"
-
-    handlers = [logging.StreamHandler()]
-    if log_file:
-        handlers.append(logging.FileHandler(log_file))
-
+def setup_logging(level="INFO"):
+    """Setup logging configuration."""
     logging.basicConfig(
-        level=getattr(logging, log_level.upper()), format=log_format, handlers=handlers
+        level=getattr(logging, level.upper()),
+        format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
+        handlers=[logging.StreamHandler()],
     )
 
 
-def load_config(config_path: str) -> Dict[str, Any]:
-    """Load configuration from YAML file."""
-    with open(config_path, "r") as f:
-        config = yaml.safe_load(f)
-    return config
+def _print_stage_completion(stage_name: str, results: dict, output_dir: str):
+    """Print stage completion information."""
+    print(f"\n{'='*60}")
+    print(f"🎯 {stage_name} COMPLETED SUCCESSFULLY!")
+    print(f"{'='*60}")
+
+    if "activations_file" in results:
+        print(f"📁 Activations: {results['activations_file']}")
+        print(f"📊 Shape: {results.get('shape', 'Unknown')}")
+        print(f"📊 Data type: {results.get('data_type', 'Unknown')}")
+
+    if "model_file" in results:
+        print(f"📁 Model: {results['model_file']}")
+        print(f"🏗️  Architecture: {results.get('architecture', 'Unknown')}")
+
+    if "analysis_file" in results:
+        print(f"📁 Analysis: {results['analysis_file']}")
+        print(f"📊 Features: {results.get('total_features', 'Unknown')}")
+        print(f"📊 Sparsity: {results.get('sparsity_percent', 'Unknown'):.1f}%")
+
+    print(f"📂 Output directory: {output_dir}")
 
 
-def validate_config(config: Dict[str, Any]) -> None:
-    """Validate configuration parameters."""
-    required_sections = ["model", "extraction", "training", "analysis"]
-    for section in required_sections:
-        if section not in config:
-            raise ValueError(f"Missing required config section: {section}")
+def _print_pipeline_completion(results: dict, output_dir: str, experiment_name: str):
+    """Print full pipeline completion information."""
+    print(f"\n{'='*60}")
+    print(f"🎉 FULL PIPELINE COMPLETED!")
+    print(f"{'='*60}")
+    print(f"🔬 Experiment: {experiment_name}")
+    print(f"📂 Results: {output_dir}")
 
-    # Validate model config
-    model_config = config["model"]
-    required_model_keys = ["checkpoint_path", "layer_idx"]
-    for key in required_model_keys:
-        if key not in model_config:
-            raise ValueError(f"Missing required model config key: {key}")
+    if isinstance(results, dict):
+        if "total_features" in results:
+            print(f"📊 Discovered Features: {results.get('total_features', 'Unknown')}")
+        if "sparsity_percent" in results:
+            print(f"📊 Sparsity: {results.get('sparsity_percent', 'Unknown'):.1f}%")
+        if "explained_variance" in results:
+            print(
+                f"📊 Explained Variance: {results.get('explained_variance', 'Unknown'):.1%}"
+            )
 
-    # Validate extraction config
-    extraction_config = config["extraction"]
-    if "output_file" not in extraction_config:
-        raise ValueError("Missing required extraction config key: output_file")
+    print(f"\n🚀 Next steps:")
+    print(f"   • View visualizations: {output_dir}/{experiment_name}/sae_analysis.png")
+    print(
+        f"   • Check detailed results: {output_dir}/{experiment_name}/analysis_results.h5"
+    )
 
 
 def main():
-    """Main pipeline execution."""
-    parser = argparse.ArgumentParser(description="SAE Analysis Pipeline for AWS EC2")
+    """Main pipeline execution - unified entry point for all platforms."""
+    parser = argparse.ArgumentParser(
+        description="Unified SAE Pipeline for Music Transformer Interpretability"
+    )
     parser.add_argument(
         "--config", required=True, help="Path to configuration YAML file"
     )
     parser.add_argument(
-        "--stage",
-        choices=["extract", "train", "analyze", "all"],
-        default="all",
-        help="Pipeline stage to run",
+        "--output-dir", required=True, help="Output directory for results"
     )
     parser.add_argument(
         "--experiment-name", required=True, help="Name for the experiment"
     )
     parser.add_argument(
-        "--output-dir", default="./experiments", help="Output directory"
+        "--stage",
+        choices=["extract", "train", "analyze", "all"],
+        default="all",
+        help="Pipeline stage to run (default: all)",
     )
     parser.add_argument(
-        "--log-level", default="INFO", choices=["DEBUG", "INFO", "WARNING", "ERROR"]
-    )
-    parser.add_argument(
-        "--resume", action="store_true", help="Resume from existing experiment"
+        "--log-level",
+        default="INFO",
+        choices=["DEBUG", "INFO", "WARNING", "ERROR"],
+        help="Logging level",
     )
 
     args = parser.parse_args()
 
-    # Create experiment directory
-    experiment_dirs = create_storage_directory(args.output_dir, args.experiment_name)
-
     # Setup logging
-    log_file = Path(experiment_dirs["logs"]) / "pipeline.log"
-    setup_logging(args.log_level, str(log_file))
+    setup_logging(args.log_level)
     logger = logging.getLogger(__name__)
 
-    logger.info(
-        f"Starting SAE analysis pipeline for experiment: {args.experiment_name}"
-    )
+    logger.info("🎵 Starting Music Transformer SAE Analysis Pipeline")
+    logger.info(f"Experiment: {args.experiment_name}")
     logger.info(f"Stage: {args.stage}")
 
-    # Log system information
-    log_system_info()
-
     try:
-        # Load and validate configuration
-        config = load_config(args.config)
-        validate_config(config)
-        logger.info(f"Loaded configuration from {args.config}")
+        # Create pipeline (auto-detects platform and optimizes)
+        pipeline = UnifiedSAEPipeline(
+            config_path=args.config,
+            output_dir=args.output_dir,
+            experiment_name=args.experiment_name,
+        )
 
-        # Initialize system managers
-        gpu_manager = GPUManager()
-        memory_optimizer = MemoryOptimizer()
+        # Run specified stage(s)
+        if args.stage == "extract":
+            logger.info("🔄 Running activation extraction...")
+            results = pipeline.extract_activations()
+            logger.info(f"✅ Extraction completed")
+            _print_stage_completion("EXTRACTION", results, args.output_dir)
 
-        # Log system capabilities
-        gpu_info = gpu_manager.monitor_usage()
-        memory_info = memory_optimizer.get_memory_info()
+        elif args.stage == "train":
+            logger.info("🔄 Running SAE training...")
+            results = pipeline.train_sae()
+            logger.info(f"✅ Training completed")
+            _print_stage_completion("TRAINING", results, args.output_dir)
 
-        logger.info(f"GPU Available: {gpu_info.get('gpu_available', False)}")
-        if gpu_info.get("gpu_available"):
-            logger.info(f"GPU Memory: {gpu_info['memory_total']:.1f} GB")
-        logger.info(f"System Memory: {memory_info['total_gb']:.1f} GB")
+        elif args.stage == "analyze":
+            logger.info("🔄 Running SAE analysis...")
+            results = pipeline.analyze_sae()
+            logger.info(f"✅ Analysis completed")
+            _print_stage_completion("ANALYSIS", results, args.output_dir)
 
-        # Update config with experiment directories
-        config["experiment"] = {
-            "name": args.experiment_name,
-            "directories": experiment_dirs,
-            "resume": args.resume,
-        }
+        else:  # "all"
+            logger.info("🔄 Running full pipeline...")
+            results = pipeline.run_full_pipeline()
+            logger.info(f"✅ Full pipeline completed")
+            _print_pipeline_completion(results, args.output_dir, args.experiment_name)
 
-        # Run pipeline stages
-        if args.stage in ["extract", "all"]:
-            logger.info("Starting activation extraction...")
-            extraction_results = run_extraction_pipeline(config)
-            logger.info(f"Extraction completed: {extraction_results}")
-
-        if args.stage in ["train", "all"]:
-            logger.info("Starting SAE training...")
-            training_results = run_training_pipeline(config)
-            logger.info(f"Training completed: {training_results}")
-
-        if args.stage in ["analyze", "all"]:
-            logger.info("Starting SAE analysis...")
-            analysis_results = run_analysis_pipeline(config)
-            logger.info(f"Analysis completed: {analysis_results}")
-
-        logger.info("Pipeline completed successfully!")
+        logger.info("🎉 Pipeline execution successful!")
 
     except Exception as e:
-        logger.error(f"Pipeline failed with error: {str(e)}", exc_info=True)
+        logger.error(f"❌ Pipeline failed: {str(e)}", exc_info=True)
         sys.exit(1)
 
 

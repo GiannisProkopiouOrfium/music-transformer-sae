@@ -26,8 +26,8 @@ from x_transformers.x_transformers import (
     exists,
 )
 
-import representation
-import utils
+from . import representation
+from . import utils
 
 
 @utils.resolve_paths

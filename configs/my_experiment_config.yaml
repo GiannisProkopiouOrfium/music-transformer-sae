@@ -1,0 +1,36 @@
+# Quick Experiment Configuration - Layer 3 Analysis
+model:
+  checkpoint_path: "/Users/giannisprokopiou/Desktop/mmt/exp/sod/ape/checkpoints/best_model.pt" # Using existing model
+  hidden_size: 512 # Match your model architecture
+  num_layers: 12 # Match your model architecture
+  num_heads: 8 # Match your model architecture
+  max_seq_len: 1024 # Match your model's sequence length
+  vocab_size: 388 # Match your model's vocabulary size
+
+data:
+  data_dir: "./data/sod/processed/notes" # Use the notes subdirectory where npy files are
+  version: "sod" # Using SOD dataset
+  representation: "mmm" # MMM encoding
+
+extraction:
+  target_layer: 3 # 👈 Layer 3 as requested
+  batch_size: 4 # Small batches for macOS
+  max_samples: 1000 # Many different inputs for correlation analysis
+
+sae:
+  expansion_factor: 4.0 # SAE hidden size = 4x input size (2048 features)
+  sparsity_coeff: 0.001 # Moderate sparsity for interpretability
+  learning_rate: 0.001 # Standard learning rate
+  num_epochs: 2 # 👈 Just 2 epochs as requested
+  batch_size: 32 # Batch size for SAE training
+
+analysis:
+  sample_size: 1000 # Analyze all extracted samples
+  top_features: 15 # Focus on top 15 most interpretable features
+
+platform:
+  use_mps: true # macOS MPS acceleration
+  use_cuda: false # Not on macOS
+  num_workers: 0 # macOS: avoid multiprocessing issues
+  memory_limit_factor: 0.7
+  synthetic_fallback: false # 👈 Fallback to synthetic if model not found

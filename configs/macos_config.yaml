@@ -1,0 +1,36 @@
+# macOS Local Testing Configuration
+model:
+  checkpoint_path: "./exp/sod/mmm/checkpoints/mmm_sod.pt"
+  hidden_size: 512
+  num_layers: 12
+  num_heads: 8
+  max_seq_len: 1024
+  vocab_size: 388
+
+data:
+  data_dir: "./data/sod/processed"
+  version: "sod"
+  representation: "mmm"
+
+extraction:
+  target_layer: 2
+  batch_size: 4 # Small for macOS testing
+  max_samples: 2000 # Limited for quick testing
+
+sae:
+  expansion_factor: 2.0 # Conservative expansion (2x instead of 4x)
+  sparsity_coeff: 0.001
+  learning_rate: 0.001
+  num_epochs: 30 # Fewer epochs for testing
+  batch_size: 16 # Small batch size for macOS
+
+analysis:
+  sample_size: 1000 # Small sample for quick testing
+  top_features: 10
+
+# macOS specific settings
+platform:
+  use_mps: true
+  num_workers: 0
+  memory_limit_factor: 0.7
+  synthetic_fallback: true

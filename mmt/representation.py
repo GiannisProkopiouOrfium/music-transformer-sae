@@ -1,4 +1,5 @@
 """Representation utilities."""
+
 import pathlib
 import pprint
 
@@ -6,7 +7,7 @@ import muspy
 import numpy as np
 import pretty_midi
 
-import utils
+from . import utils
 
 # Configuration
 RESOLUTION = 12
@@ -84,9 +85,7 @@ DURATION_CODE_MAP = {
     for i in range(MAX_DURATION + 1)
 }
 DURATION_CODE_MAP[None] = 0
-CODE_DURATION_MAP = {
-    i + 1: duration for i, duration in enumerate(KNOWN_DURATIONS)
-}
+CODE_DURATION_MAP = {i + 1: duration for i, duration in enumerate(KNOWN_DURATIONS)}
 
 # Instrument
 PROGRAM_INSTRUMENT_MAP = {
@@ -315,9 +314,7 @@ INSTRUMENT_PROGRAM_MAP = {
     "melodic-tom": 117,
     "synth-drums": 118,
 }
-KNOWN_PROGRAMS = list(
-    k for k, v in PROGRAM_INSTRUMENT_MAP.items() if v is not None
-)
+KNOWN_PROGRAMS = list(k for k, v in PROGRAM_INSTRUMENT_MAP.items() if v is not None)
 KNOWN_INSTRUMENTS = list(dict.fromkeys(INSTRUMENT_PROGRAM_MAP.keys()))
 INSTRUMENT_CODE_MAP = {
     instrument: i + 1 for i, instrument in enumerate(KNOWN_INSTRUMENTS)
@@ -377,8 +374,7 @@ def load_encoding(filename):
         "program_instrument_map",
     ):
         encoding[key] = {
-            int(k) if k != "null" else None: v
-            for k, v in encoding[key].items()
+            int(k) if k != "null" else None: v for k, v in encoding[key].items()
         }
     return encoding
 
@@ -401,9 +397,7 @@ def extract_notes(music, resolution):
             continue
         for note in track:
             beat, position = divmod(note.time, resolution)
-            notes.append(
-                (beat, position, note.pitch, note.duration, track.program)
-            )
+            notes.append((beat, position, note.pitch, note.duration, track.program))
 
     # Deduplicate and sort the notes
     notes = sorted(set(notes))
@@ -627,9 +621,7 @@ def dump(data, encoding):
         elif event_type == "note":
             beat = code_beat_map[int(row[beat_dim])]
             position = code_position_map[int(row[position_dim])]
-            pitch = pretty_midi.note_number_to_name(
-                code_pitch_map[int(row[pitch_dim])]
-            )
+            pitch = pretty_midi.note_number_to_name(code_pitch_map[int(row[pitch_dim])])
             duration = code_duration_map[int(row[duration_dim])]
             instrument = code_instrument_map[int(row[instrument_dim])]
             lines.append(

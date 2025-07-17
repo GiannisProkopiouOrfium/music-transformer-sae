@@ -4,7 +4,7 @@ import torch
 import psutil
 import subprocess
 import logging
-from typing import Dict, Any, Optional, Tuple
+from typing import Dict, Any, Tuple
 
 
 class GPUManager:
@@ -20,9 +20,12 @@ class GPUManager:
         if torch.cuda.is_available():
             device = torch.device("cuda")
             self.logger.info(f"CUDA available: {torch.cuda.get_device_name()}")
+        elif hasattr(torch.backends, "mps") and torch.backends.mps.is_available():
+            device = torch.device("mps")
+            self.logger.info("Apple MPS available, using MPS")
         else:
             device = torch.device("cpu")
-            self.logger.info("CUDA not available, using CPU")
+            self.logger.info("No GPU available, using CPU")
         return device
 
     def _get_gpu_info(self) -> Dict[str, Any]:

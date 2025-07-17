@@ -15,8 +15,11 @@ import json
 sys.path.append(str(Path(__file__).parent.parent))
 
 from pipeline.train import SparseAutoencoder
-from interpret_music_sae import analyze_sae_features, create_feature_visualizations
-from musical_context_analysis import analyze_musical_contexts
+from interpretation.interpret_music_sae import (
+    analyze_sae_features,
+    create_feature_visualizations,
+)
+from interpretation.musical_context_analysis import analyze_musical_contexts
 from utils.storage import HDF5Manager
 
 

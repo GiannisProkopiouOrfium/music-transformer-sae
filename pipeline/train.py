@@ -8,17 +8,16 @@ from torch.utils.data import DataLoader
 import h5py
 import numpy as np
 from pathlib import Path
-from typing import Dict, Any, Optional
+from typing import Dict, Any
 import sys
 import time
 
 # Add mmt to path
 sys.path.append(str(Path(__file__).parent.parent))
 
-from sae_data import ActivationDataset, create_sae_dataloader
+from sae.sae_data import create_sae_dataloader
 from utils.gpu import GPUManager
 from utils.memory import MemoryOptimizer
-from utils.storage import HDF5Manager
 
 
 class SparseAutoencoder(nn.Module):

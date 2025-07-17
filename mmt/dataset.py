@@ -11,8 +11,8 @@ import torch
 import torch.utils.data
 import tqdm
 
-import representation
-import utils
+from . import representation
+from . import utils
 
 
 @utils.resolve_paths

@@ -1,28 +1,32 @@
 # AWS EC2 Configuration for SAE Analysis
 model:
-  checkpoint_path: "/home/ubuntu/mmt/exp/sod/mmm/model.pt" # Path to trained transformer model
-  layer_idx: 2 # Which layer to extract activations from (0-indexed)
+  checkpoint_path: "/home/ubuntu/mmt/exp/sod/mmm/checkpoints/mmm_sod.pt"
+  hidden_size: 512
+  num_layers: 12
+  num_heads: 8
+  max_seq_len: 1024
+  vocab_size: 388
+
+data:
+  data_dir: "/home/ubuntu/mmt/data/sod/processed"
+  version: "sod"
+  representation: "mmm"
 
 extraction:
-  data_path: "/home/ubuntu/mmt/data/sod/processed" # Path to processed MIDI data
-  output_file: "activations_layer2.h5" # Output filename for activations
-  batch_size: 32 # Batch size for extraction (will be optimized based on available memory)
-  max_samples: 100000 # Maximum number of activation samples to extract (null for all)
+  target_layer: 2
+  batch_size: 32
+  max_samples: 100000
 
-training:
-  hidden_dim: 2048 # SAE hidden dimension (4x expansion from 512)
-  l1_alpha: 0.001 # L1 sparsity regularization strength
-  learning_rate: 0.001 # Learning rate for SAE training
-  num_epochs: 100 # Number of training epochs
-  batch_size: 64 # Training batch size (will be optimized)
-  val_split: 0.1 # Validation split ratio
-  save_every: 10 # Save checkpoint every N epochs
-  weight_decay: 0.0001 # Weight decay for optimizer
+sae:
+  expansion_factor: 4.0
+  sparsity_coeff: 0.001
+  learning_rate: 0.001
+  num_epochs: 100
+  batch_size: 64
 
 analysis:
-  sample_size: 10000 # Number of samples to use for analysis
-  top_features: 20 # Number of top features to analyze in detail
-  visualization_dpi: 300 # DPI for saved plots
+  sample_size: 10000
+  top_features: 20
 
 # AWS EC2 Instance Configurations
 ec2_instances:
@@ -45,7 +49,7 @@ ec2_instances:
   large: # p3.2xlarge - 8 vCPUs, 61GB RAM, V100 GPU
     extraction:
       batch_size: 64
-      max_samples: null # No limit
+      max_samples: null
     training:
       batch_size: 128
       gradient_accumulation: 1

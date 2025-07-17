@@ -2,8 +2,7 @@
 
 import psutil
 import logging
-from typing import Dict, Any, Tuple, Optional
-import numpy as np
+from typing import Dict, Any, Optional
 
 
 class MemoryOptimizer:

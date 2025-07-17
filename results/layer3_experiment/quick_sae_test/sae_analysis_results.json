@@ -1,0 +1,1545 @@
+{
+  "summary": {
+    "n_samples": 1000,
+    "n_features": 2048,
+    "n_groups": 10,
+    "n_interpretations": 10,
+    "n_validated": 10
+  },
+  "feature_groups": {
+    "4": {
+      "features": [
+        4,
+        47,
+        158,
+        186,
+        230,
+        260,
+        272,
+        296,
+        387,
+        418,
+        442,
+        447,
+        502,
+        505,
+        513,
+        523,
+        526,
+        605,
+        611,
+        630,
+        727,
+        808,
+        849,
+        853,
+        869,
+        959,
+        999,
+        1026,
+        1028,
+        1053,
+        1108,
+        1143,
+        1263,
+        1281,
+        1292,
+        1361,
+        1386,
+        1394,
+        1413,
+        1417,
+        1423,
+        1439,
+        1498,
+        1507,
+        1528,
+        1534,
+        1576,
+        1603,
+        1607,
+        1631,
+        1669,
+        1709,
+        1732,
+        1808,
+        1845,
+        1884,
+        1890,
+        1957,
+        1972,
+        1983,
+        2013,
+        2019,
+        2040,
+        2042
+      ],
+      "representative": 1439,
+      "stats": {
+        "size": 64,
+        "activation_freq": 1.0,
+        "mean_activation": 0.03645433112978935,
+        "top_samples": [
+          383,
+          995,
+          148,
+          317,
+          734,
+          292,
+          158,
+          315,
+          116,
+          96,
+          987,
+          812,
+          934,
+          814,
+          90,
+          457,
+          883,
+          103,
+          44,
+          130
+        ]
+      }
+    },
+    "9": {
+      "features": [
+        5,
+        14,
+        18,
+        21,
+        23,
+        26,
+        29,
+        55,
+        57,
+        59,
+        61,
+        63,
+        68,
+        69,
+        70,
+        80,
+        83,
+        89,
+        108,
+        112,
+        113,
+        124,
+        131,
+        144,
+        153,
+        157,
+        160,
+        164,
+        169,
+        172,
+        178,
+        192,
+        219,
+        223,
+        227,
+        231,
+        238,
+        244,
+        251,
+        262,
+        269,
+        273,
+        290,
+        300,
+        307,
+        316,
+        338,
+        355,
+        358,
+        359,
+        365,
+        366,
+        370,
+        371,
+        375,
+        396,
+        404,
+        414,
+        423,
+        429,
+        433,
+        437,
+        438,
+        446,
+        448,
+        451,
+        459,
+        461,
+        467,
+        468,
+        475,
+        488,
+        492,
+        499,
+        514,
+        516,
+        531,
+        534,
+        536,
+        554,
+        576,
+        578,
+        589,
+        606,
+        607,
+        609,
+        613,
+        616,
+        625,
+        626,
+        628,
+        633,
+        635,
+        651,
+        653,
+        661,
+        665,
+        681,
+        686,
+        698,
+        705,
+        710,
+        711,
+        717,
+        718,
+        719,
+        720,
+        721,
+        755,
+        763,
+        765,
+        766,
+        774,
+        783,
+        793,
+        794,
+        795,
+        803,
+        830,
+        835,
+        837,
+        845,
+        850,
+        854,
+        857,
+        860,
+        864,
+        872,
+        874,
+        879,
+        882,
+        891,
+        895,
+        898,
+        901,
+        923,
+        929,
+        941,
+        948,
+        953,
+        970,
+        977,
+        979,
+        990,
+        992,
+        994,
+        1013,
+        1017,
+        1024,
+        1032,
+        1039,
+        1041,
+        1047,
+        1071,
+        1072,
+        1078,
+        1080,
+        1096,
+        1099,
+        1103,
+        1112,
+        1113,
+        1124,
+        1126,
+        1127,
+        1130,
+        1136,
+        1142,
+        1148,
+        1153,
+        1160,
+        1169,
+        1175,
+        1184,
+        1192,
+        1205,
+        1211,
+        1220,
+        1224,
+        1225,
+        1228,
+        1230,
+        1238,
+        1247,
+        1248,
+        1254,
+        1271,
+        1279,
+        1283,
+        1291,
+        1302,
+        1303,
+        1306,
+        1307,
+        1317,
+        1328,
+        1329,
+        1332,
+        1334,
+        1346,
+        1371,
+        1382,
+        1391,
+        1396,
+        1399,
+        1403,
+        1404,
+        1411,
+        1415,
+        1445,
+        1452,
+        1465,
+        1468,
+        1469,
+        1471,
+        1476,
+        1480,
+        1481,
+        1487,
+        1501,
+        1514,
+        1520,
+        1522,
+        1525,
+        1538,
+        1549,
+        1554,
+        1566,
+        1568,
+        1570,
+        1579,
+        1583,
+        1587,
+        1593,
+        1594,
+        1595,
+        1604,
+        1605,
+        1608,
+        1609,
+        1610,
+        1620,
+        1621,
+        1626,
+        1644,
+        1645,
+        1679,
+        1682,
+        1700,
+        1716,
+        1744,
+        1750,
+        1761,
+        1766,
+        1774,
+        1776,
+        1779,
+        1783,
+        1786,
+        1789,
+        1809,
+        1818,
+        1819,
+        1834,
+        1836,
+        1839,
+        1848,
+        1858,
+        1864,
+        1876,
+        1898,
+        1902,
+        1909,
+        1910,
+        1920,
+        1929,
+        1936,
+        1949,
+        1950,
+        1953,
+        1973,
+        1990,
+        2003,
+        2007,
+        2009,
+        2024
+      ],
+      "representative": 589,
+      "stats": {
+        "size": 286,
+        "activation_freq": 1.0,
+        "mean_activation": 0.008581350557506084,
+        "top_samples": [
+          175,
+          363,
+          934,
+          357,
+          995,
+          116,
+          88,
+          719,
+          96,
+          814,
+          696,
+          39,
+          132,
+          457,
+          883,
+          103,
+          44,
+          843,
+          812,
+          130
+        ]
+      }
+    },
+    "1": {
+      "features": [
+        7,
+        137,
+        195,
+        471,
+        508,
+        621,
+        622,
+        629,
+        683,
+        737,
+        810,
+        844,
+        866,
+        889,
+        902,
+        915,
+        1035,
+        1100,
+        1187,
+        1219,
+        1243,
+        1256,
+        1289,
+        1326,
+        1409,
+        1430,
+        1513,
+        1546,
+        1637,
+        1728,
+        1881,
+        1887,
+        1933,
+        1988,
+        2046
+      ],
+      "representative": 1728,
+      "stats": {
+        "size": 35,
+        "activation_freq": 1.0,
+        "mean_activation": 0.07501771301031113,
+        "top_samples": [
+          158,
+          734,
+          567,
+          148,
+          116,
+          85,
+          814,
+          987,
+          96,
+          995,
+          286,
+          315,
+          812,
+          457,
+          934,
+          44,
+          883,
+          90,
+          130,
+          103
+        ]
+      }
+    },
+    "5": {
+      "features": [
+        16,
+        97,
+        183,
+        203,
+        237,
+        240,
+        241,
+        285,
+        293,
+        341,
+        348,
+        383,
+        388,
+        424,
+        435,
+        456,
+        482,
+        485,
+        519,
+        528,
+        553,
+        596,
+        723,
+        848,
+        905,
+        910,
+        926,
+        942,
+        961,
+        1011,
+        1139,
+        1144,
+        1162,
+        1186,
+        1229,
+        1235,
+        1325,
+        1333,
+        1402,
+        1408,
+        1414,
+        1419,
+        1424,
+        1453,
+        1477,
+        1494,
+        1535,
+        1558,
+        1560,
+        1596,
+        1640,
+        1654,
+        1697,
+        1703,
+        1738,
+        1741,
+        1767,
+        1816,
+        1853,
+        1859,
+        1903,
+        1922,
+        1930,
+        1952,
+        1962
+      ],
+      "representative": 961,
+      "stats": {
+        "size": 65,
+        "activation_freq": 1.0,
+        "mean_activation": 0.0349007174372673,
+        "top_samples": [
+          893,
+          691,
+          225,
+          121,
+          516,
+          92,
+          798,
+          380,
+          5,
+          454,
+          921,
+          427,
+          409,
+          301,
+          922,
+          184,
+          362,
+          407,
+          384,
+          132
+        ]
+      }
+    },
+    "2": {
+      "features": [
+        17,
+        34,
+        45,
+        74,
+        111,
+        132,
+        352,
+        458,
+        507,
+        509,
+        511,
+        645,
+        817,
+        859,
+        1051,
+        1066,
+        1231,
+        1273,
+        1350,
+        1364,
+        1427,
+        1432,
+        1447,
+        1532,
+        1591,
+        1616,
+        1694,
+        1727,
+        1791,
+        1811,
+        1843,
+        1886,
+        1948,
+        1996
+      ],
+      "representative": 458,
+      "stats": {
+        "size": 34,
+        "activation_freq": 1.0,
+        "mean_activation": 0.06239570304751396,
+        "top_samples": [
+          582,
+          501,
+          965,
+          748,
+          872,
+          772,
+          674,
+          13,
+          976,
+          319,
+          447,
+          105,
+          613,
+          808,
+          996,
+          90,
+          801,
+          92,
+          37,
+          88
+        ]
+      }
+    },
+    "0": {
+      "features": [
+        20,
+        24,
+        31,
+        73,
+        76,
+        100,
+        129,
+        145,
+        187,
+        205,
+        206,
+        210,
+        243,
+        308,
+        310,
+        313,
+        367,
+        374,
+        395,
+        409,
+        430,
+        504,
+        506,
+        555,
+        564,
+        649,
+        663,
+        682,
+        700,
+        712,
+        740,
+        753,
+        777,
+        790,
+        823,
+        828,
+        847,
+        868,
+        920,
+        928,
+        958,
+        960,
+        1002,
+        1029,
+        1089,
+        1116,
+        1129,
+        1146,
+        1198,
+        1278,
+        1336,
+        1341,
+        1356,
+        1372,
+        1434,
+        1572,
+        1592,
+        1663,
+        1673,
+        1687,
+        1730,
+        1794,
+        1806,
+        1824,
+        1829,
+        1850,
+        1852,
+        1854,
+        1883,
+        1913,
+        1966,
+        2004,
+        2010,
+        2015
+      ],
+      "representative": 958,
+      "stats": {
+        "size": 74,
+        "activation_freq": 1.0,
+        "mean_activation": 0.02244534343481064,
+        "top_samples": [
+          13,
+          482,
+          965,
+          869,
+          367,
+          246,
+          92,
+          613,
+          758,
+          90,
+          221,
+          872,
+          976,
+          808,
+          582,
+          319,
+          105,
+          801,
+          37,
+          88
+        ]
+      }
+    },
+    "3": {
+      "features": [
+        54,
+        232,
+        258,
+        286,
+        327,
+        421,
+        463,
+        570,
+        612,
+        821,
+        887,
+        888,
+        938,
+        971,
+        1056,
+        1062,
+        1075,
+        1093,
+        1133,
+        1161,
+        1236,
+        1301,
+        1613,
+        1713,
+        1748,
+        1838,
+        1866,
+        1892,
+        2035
+      ],
+      "representative": 612,
+      "stats": {
+        "size": 29,
+        "activation_freq": 1.0,
+        "mean_activation": 0.029933704063296318,
+        "top_samples": [
+          596,
+          558,
+          312,
+          576,
+          911,
+          496,
+          667,
+          147,
+          406,
+          659,
+          26,
+          867,
+          39,
+          984,
+          200,
+          1,
+          936,
+          988,
+          813,
+          906
+        ]
+      }
+    },
+    "7": {
+      "features": [
+        85,
+        115,
+        220,
+        229,
+        518,
+        546,
+        590,
+        602,
+        678,
+        746,
+        778,
+        825,
+        852,
+        911,
+        914,
+        967,
+        976,
+        993,
+        1010,
+        1044,
+        1167,
+        1233,
+        1239,
+        1315,
+        1319,
+        1395,
+        1440,
+        1489,
+        1573,
+        1656,
+        1684,
+        1691,
+        1702,
+        1724,
+        1736,
+        1781,
+        1842,
+        1899,
+        1927,
+        1943
+      ],
+      "representative": 1489,
+      "stats": {
+        "size": 40,
+        "activation_freq": 1.0,
+        "mean_activation": 0.07797522097826004,
+        "top_samples": [
+          389,
+          225,
+          454,
+          36,
+          284,
+          798,
+          427,
+          362,
+          208,
+          516,
+          921,
+          674,
+          409,
+          184,
+          407,
+          92,
+          5,
+          922,
+          384,
+          132
+        ]
+      }
+    },
+    "8": {
+      "features": [
+        99,
+        159,
+        182,
+        200,
+        204,
+        208,
+        384,
+        631,
+        702,
+        749,
+        800,
+        950,
+        972,
+        986,
+        1068,
+        1069,
+        1118,
+        1122,
+        1227,
+        1251,
+        1275,
+        1354,
+        1426,
+        1542,
+        1552,
+        1692,
+        1712,
+        1835,
+        1857,
+        1976,
+        1986,
+        2014,
+        2022,
+        2023,
+        2026,
+        2029
+      ],
+      "representative": 1227,
+      "stats": {
+        "size": 36,
+        "activation_freq": 1.0,
+        "mean_activation": 0.051352836191654205,
+        "top_samples": [
+          823,
+          239,
+          640,
+          175,
+          350,
+          862,
+          689,
+          815,
+          629,
+          142,
+          403,
+          357,
+          88,
+          812,
+          719,
+          696,
+          39,
+          843,
+          363,
+          234
+        ]
+      }
+    },
+    "6": {
+      "features": [
+        102,
+        106,
+        199,
+        350,
+        372,
+        377,
+        500,
+        601,
+        1174,
+        1217,
+        1240,
+        1369,
+        1446,
+        1455,
+        1617,
+        1710,
+        1968
+      ],
+      "representative": 199,
+      "stats": {
+        "size": 17,
+        "activation_freq": 1.0,
+        "mean_activation": 0.11319289356470108,
+        "top_samples": [
+          625,
+          724,
+          112,
+          734,
+          457,
+          317,
+          903,
+          814,
+          525,
+          85,
+          987,
+          934,
+          44,
+          883,
+          286,
+          234,
+          812,
+          130,
+          103,
+          90
+        ]
+      }
+    }
+  },
+  "interpretations": {
+    "4": {
+      "description": "Musical pattern primarily associated with MIDI instrument 48 featuring stepwise melodic motion in moderate tempo contexts with wide pitch ranges with stepwise melodic patterns",
+      "predictive_features": [
+        "instrument_48",
+        "motion_stepwise",
+        "tempo_moderate",
+        "range_wide",
+        "stepwise_motion"
+      ],
+      "confidence": 10,
+      "data_type": "real",
+      "analysis_details": {
+        "dominant_instrument": [
+          48,
+          32
+        ],
+        "avg_tempo": 111.15793627372578,
+        "tempo_category": "moderate",
+        "common_key": [
+          [
+            5,
+            "major"
+          ],
+          5
+        ],
+        "avg_stepwise_ratio": 0.6124247620271215,
+        "motion_type": "stepwise",
+        "frequent_intervals": [
+          [
+            -2,
+            17
+          ],
+          [
+            0,
+            16
+          ],
+          [
+            2,
+            14
+          ]
+        ],
+        "avg_range": 50.7,
+        "range_category": "wide"
+      }
+    },
+    "9": {
+      "description": "Musical pattern primarily associated with MIDI instrument 48 featuring leaping melodic motion in fast tempo contexts with wide pitch ranges with stepwise melodic patterns",
+      "predictive_features": [
+        "instrument_48",
+        "motion_leaping",
+        "tempo_fast",
+        "range_wide",
+        "stepwise_motion"
+      ],
+      "confidence": 10,
+      "data_type": "real",
+      "analysis_details": {
+        "dominant_instrument": [
+          48,
+          46
+        ],
+        "avg_tempo": 121.85006440015127,
+        "tempo_category": "fast",
+        "common_key": [
+          [
+            5,
+            "major"
+          ],
+          6
+        ],
+        "avg_stepwise_ratio": 0.5613237755187573,
+        "motion_type": "leaping",
+        "frequent_intervals": [
+          [
+            -2,
+            18
+          ],
+          [
+            0,
+            16
+          ],
+          [
+            2,
+            12
+          ]
+        ],
+        "avg_range": 55.2,
+        "range_category": "wide"
+      }
+    },
+    "1": {
+      "description": "Musical pattern primarily associated with MIDI instrument 48 featuring stepwise melodic motion in moderate tempo contexts with wide pitch ranges emphasizing repeated notes",
+      "predictive_features": [
+        "instrument_48",
+        "motion_stepwise",
+        "tempo_moderate",
+        "range_wide",
+        "repeated_notes"
+      ],
+      "confidence": 10,
+      "data_type": "real",
+      "analysis_details": {
+        "dominant_instrument": [
+          48,
+          37
+        ],
+        "avg_tempo": 107.05266609125705,
+        "tempo_category": "moderate",
+        "common_key": [
+          [
+            5,
+            "major"
+          ],
+          5
+        ],
+        "avg_stepwise_ratio": 0.6136299704838887,
+        "motion_type": "stepwise",
+        "frequent_intervals": [
+          [
+            0,
+            18
+          ],
+          [
+            -2,
+            18
+          ],
+          [
+            2,
+            13
+          ]
+        ],
+        "avg_range": 52.35,
+        "range_category": "wide"
+      }
+    },
+    "5": {
+      "description": "Musical pattern primarily associated with MIDI instrument 48 featuring leaping melodic motion in fast tempo contexts with wide pitch ranges with stepwise melodic patterns",
+      "predictive_features": [
+        "instrument_48",
+        "motion_leaping",
+        "tempo_fast",
+        "range_wide",
+        "stepwise_motion"
+      ],
+      "confidence": 10,
+      "data_type": "real",
+      "analysis_details": {
+        "dominant_instrument": [
+          48,
+          50
+        ],
+        "avg_tempo": 132.5500919036112,
+        "tempo_category": "fast",
+        "common_key": [
+          [
+            5,
+            "major"
+          ],
+          4
+        ],
+        "avg_stepwise_ratio": 0.5173994246513745,
+        "motion_type": "leaping",
+        "frequent_intervals": [
+          [
+            -2,
+            16
+          ],
+          [
+            0,
+            12
+          ],
+          [
+            2,
+            10
+          ]
+        ],
+        "avg_range": 55.0,
+        "range_category": "wide"
+      }
+    },
+    "2": {
+      "description": "Musical pattern primarily associated with MIDI instrument 48 featuring leaping melodic motion in moderate tempo contexts with wide pitch ranges emphasizing repeated notes",
+      "predictive_features": [
+        "instrument_48",
+        "motion_leaping",
+        "tempo_moderate",
+        "range_wide",
+        "repeated_notes"
+      ],
+      "confidence": 10,
+      "data_type": "real",
+      "analysis_details": {
+        "dominant_instrument": [
+          48,
+          37
+        ],
+        "avg_tempo": 110.90002848337433,
+        "tempo_category": "moderate",
+        "common_key": [
+          [
+            0,
+            "major"
+          ],
+          7
+        ],
+        "avg_stepwise_ratio": 0.548894985659406,
+        "motion_type": "leaping",
+        "frequent_intervals": [
+          [
+            0,
+            16
+          ],
+          [
+            -2,
+            14
+          ],
+          [
+            2,
+            13
+          ]
+        ],
+        "avg_range": 56.4,
+        "range_category": "wide"
+      }
+    },
+    "0": {
+      "description": "Musical pattern primarily associated with MIDI instrument 48 featuring leaping melodic motion in moderate tempo contexts with wide pitch ranges emphasizing repeated notes",
+      "predictive_features": [
+        "instrument_48",
+        "motion_leaping",
+        "tempo_moderate",
+        "range_wide",
+        "repeated_notes"
+      ],
+      "confidence": 10,
+      "data_type": "real",
+      "analysis_details": {
+        "dominant_instrument": [
+          48,
+          39
+        ],
+        "avg_tempo": 105.67502596836566,
+        "tempo_category": "moderate",
+        "common_key": [
+          [
+            0,
+            "major"
+          ],
+          9
+        ],
+        "avg_stepwise_ratio": 0.5601014231757983,
+        "motion_type": "leaping",
+        "frequent_intervals": [
+          [
+            0,
+            16
+          ],
+          [
+            -2,
+            15
+          ],
+          [
+            2,
+            11
+          ]
+        ],
+        "avg_range": 58.7,
+        "range_category": "wide"
+      }
+    },
+    "3": {
+      "description": "Musical pattern primarily associated with MIDI instrument 48 featuring leaping melodic motion in fast tempo contexts with wide pitch ranges with stepwise melodic patterns",
+      "predictive_features": [
+        "instrument_48",
+        "motion_leaping",
+        "tempo_fast",
+        "range_wide",
+        "stepwise_motion"
+      ],
+      "confidence": 10,
+      "data_type": "real",
+      "analysis_details": {
+        "dominant_instrument": [
+          48,
+          30
+        ],
+        "avg_tempo": 133.00004567422187,
+        "tempo_category": "fast",
+        "common_key": [
+          [
+            5,
+            "major"
+          ],
+          7
+        ],
+        "avg_stepwise_ratio": 0.525786229932426,
+        "motion_type": "leaping",
+        "frequent_intervals": [
+          [
+            2,
+            14
+          ],
+          [
+            -2,
+            13
+          ],
+          [
+            0,
+            10
+          ]
+        ],
+        "avg_range": 52.05,
+        "range_category": "wide"
+      }
+    },
+    "7": {
+      "description": "Musical pattern primarily associated with MIDI instrument 48 featuring leaping melodic motion in fast tempo contexts with wide pitch ranges with stepwise melodic patterns",
+      "predictive_features": [
+        "instrument_48",
+        "motion_leaping",
+        "tempo_fast",
+        "range_wide",
+        "stepwise_motion"
+      ],
+      "confidence": 10,
+      "data_type": "real",
+      "analysis_details": {
+        "dominant_instrument": [
+          48,
+          53
+        ],
+        "avg_tempo": 136.85007121770204,
+        "tempo_category": "fast",
+        "common_key": [
+          [
+            10,
+            "major"
+          ],
+          4
+        ],
+        "avg_stepwise_ratio": 0.5477386586425049,
+        "motion_type": "leaping",
+        "frequent_intervals": [
+          [
+            -2,
+            17
+          ],
+          [
+            0,
+            12
+          ],
+          [
+            2,
+            11
+          ]
+        ],
+        "avg_range": 55.0,
+        "range_category": "wide"
+      }
+    },
+    "8": {
+      "description": "Musical pattern primarily associated with MIDI instrument 48 featuring leaping melodic motion in fast tempo contexts with wide pitch ranges with stepwise melodic patterns",
+      "predictive_features": [
+        "instrument_48",
+        "motion_leaping",
+        "tempo_fast",
+        "range_wide",
+        "stepwise_motion"
+      ],
+      "confidence": 10,
+      "data_type": "real",
+      "analysis_details": {
+        "dominant_instrument": [
+          48,
+          50
+        ],
+        "avg_tempo": 133.20004866927155,
+        "tempo_category": "fast",
+        "common_key": [
+          [
+            10,
+            "major"
+          ],
+          4
+        ],
+        "avg_stepwise_ratio": 0.5274456033820367,
+        "motion_type": "leaping",
+        "frequent_intervals": [
+          [
+            -2,
+            17
+          ],
+          [
+            0,
+            13
+          ],
+          [
+            2,
+            11
+          ]
+        ],
+        "avg_range": 58.55,
+        "range_category": "wide"
+      }
+    },
+    "6": {
+      "description": "Musical pattern primarily associated with MIDI instrument 48 featuring leaping melodic motion in moderate tempo contexts with wide pitch ranges with stepwise melodic patterns",
+      "predictive_features": [
+        "instrument_48",
+        "motion_leaping",
+        "tempo_moderate",
+        "range_wide",
+        "stepwise_motion"
+      ],
+      "confidence": 10,
+      "data_type": "real",
+      "analysis_details": {
+        "dominant_instrument": [
+          48,
+          24
+        ],
+        "avg_tempo": 95.3500381425366,
+        "tempo_category": "moderate",
+        "common_key": [
+          [
+            5,
+            "major"
+          ],
+          4
+        ],
+        "avg_stepwise_ratio": 0.5979643102802588,
+        "motion_type": "leaping",
+        "frequent_intervals": [
+          [
+            -2,
+            16
+          ],
+          [
+            0,
+            15
+          ],
+          [
+            2,
+            11
+          ]
+        ],
+        "avg_range": 48.95,
+        "range_category": "wide"
+      }
+    }
+  },
+  "validation_scores": {
+    "4": {
+      "correlation": 0.03668160101791616,
+      "p_value": 0.5267959100351848,
+      "r_squared": 0.001345539853237588,
+      "prediction_accuracy": 0.001345539853237588,
+      "test_samples": 300,
+      "mean_test_activation": 0.03432881087064743
+    },
+    "9": {
+      "correlation": 0.03876033090003721,
+      "p_value": 0.5036247681685034,
+      "r_squared": 0.001502363251480379,
+      "prediction_accuracy": 0.001502363251480379,
+      "test_samples": 300,
+      "mean_test_activation": 0.008391180075705051
+    },
+    "1": {
+      "correlation": 0.05682618292628101,
+      "p_value": 0.32662120424811064,
+      "r_squared": 0.003229215065971152,
+      "prediction_accuracy": 0.003229215065971152,
+      "test_samples": 300,
+      "mean_test_activation": 0.07127317041158676
+    },
+    "5": {
+      "correlation": -0.025944115435794262,
+      "p_value": 0.6544674171236738,
+      "r_squared": 0.000673097125745818,
+      "prediction_accuracy": 0.000673097125745818,
+      "test_samples": 300,
+      "mean_test_activation": 0.035496585071086884
+    },
+    "2": {
+      "correlation": 0.011492951692192388,
+      "p_value": 0.8428578536537003,
+      "r_squared": 0.00013208793859906788,
+      "prediction_accuracy": 0.00013208793859906788,
+      "test_samples": 300,
+      "mean_test_activation": 0.06037764251232147
+    },
+    "0": {
+      "correlation": 0.04504057848315448,
+      "p_value": 0.4370033416665479,
+      "r_squared": 0.002028653710097198,
+      "prediction_accuracy": 0.002028653710097198,
+      "test_samples": 300,
+      "mean_test_activation": 0.02131284959614277
+    },
+    "3": {
+      "correlation": 0.11652487300682482,
+      "p_value": 0.04372480599058796,
+      "r_squared": 0.01357804602925665,
+      "prediction_accuracy": 0.01357804602925665,
+      "test_samples": 300,
+      "mean_test_activation": 0.02817833237349987
+    },
+    "7": {
+      "correlation": -0.02843287134221617,
+      "p_value": 0.6237694804913713,
+      "r_squared": 0.0008084281727630176,
+      "prediction_accuracy": 0.0008084281727630176,
+      "test_samples": 300,
+      "mean_test_activation": 0.07919586449861526
+    },
+    "8": {
+      "correlation": 0.05080957042695937,
+      "p_value": 0.3805191073011498,
+      "r_squared": 0.0025816124469721442,
+      "prediction_accuracy": 0.0025816124469721442,
+      "test_samples": 300,
+      "mean_test_activation": 0.05208653211593628
+    },
+    "6": {
+      "correlation": 0.010770920434978903,
+      "p_value": 0.8526138501848664,
+      "r_squared": 0.00011601272701664613,
+      "prediction_accuracy": 0.00011601272701664613,
+      "test_samples": 300,
+      "mean_test_activation": 0.10866021364927292
+    }
+  }
+}
