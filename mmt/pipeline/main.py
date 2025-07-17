@@ -17,12 +17,24 @@ sys.path.append(str(pathlib.Path(__file__).parent.parent))
 from .config import PipelineConfig
 from .extract import extract_activations_pipeline
 from .train import train_sae_pipeline
-from .analyze import analyze_sae_pipeline
+
+# Import analyze conditionally to avoid import errors
+try:
+    from .analyze import analyze_sae_pipeline
+
+    ANALYZE_AVAILABLE = True
+except ImportError as e:
+    logging.warning(f"Analysis module not available: {e}")
+    ANALYZE_AVAILABLE = False
+    analyze_sae_pipeline = None
 
 
 def setup_logging(config: PipelineConfig):
     """Setup logging configuration."""
     log_level = getattr(logging, config.log_level.upper())
+
+    # Clear any existing handlers
+    logging.getLogger().handlers.clear()
 
     handlers = [logging.StreamHandler(sys.stdout)]
 
@@ -35,7 +47,11 @@ def setup_logging(config: PipelineConfig):
         level=log_level,
         format="%(asctime)s - %(levelname)-8s - %(message)s",
         handlers=handlers,
+        force=True,  # Force reconfiguration
     )
+
+    # Ensure the root logger level is set correctly
+    logging.getLogger().setLevel(log_level)
 
 
 def load_config_file(config_path: pathlib.Path) -> PipelineConfig:
@@ -169,21 +185,27 @@ def run_pipeline(config: PipelineConfig) -> Dict[str, pathlib.Path]:
 
     # Stage 3: Analyze results
     if config.run_analysis:
-        try:
-            logging.info("\\n" + "=" * 50)
-            logging.info("STAGE 3: SAE ANALYSIS")
-            logging.info("=" * 50)
-
-            analysis_dir = analyze_sae_pipeline(
-                config, results["model"], results["activations"]
+        if not ANALYZE_AVAILABLE:
+            logging.warning("Analysis module not available, skipping analysis stage")
+            logging.info(
+                "Install additional dependencies for analysis: matplotlib, seaborn"
             )
-            results["analysis"] = analysis_dir
+        else:
+            try:
+                logging.info("\\n" + "=" * 50)
+                logging.info("STAGE 3: SAE ANALYSIS")
+                logging.info("=" * 50)
 
-            logging.info(f"✓ Analysis complete: {analysis_dir}")
+                analysis_dir = analyze_sae_pipeline(
+                    config, results["model"], results["activations"]
+                )
+                results["analysis"] = analysis_dir
 
-        except Exception as e:
-            logging.error(f"✗ Analysis failed: {e}")
-            raise
+                logging.info(f"✓ Analysis complete: {analysis_dir}")
+
+            except Exception as e:
+                logging.error(f"✗ Analysis failed: {e}")
+                raise
 
     logging.info("\\n" + "=" * 50)
     logging.info("PIPELINE COMPLETE")

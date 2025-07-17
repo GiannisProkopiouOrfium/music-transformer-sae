@@ -30,13 +30,13 @@ class ActivationDataset(torch.utils.data.Dataset):
         # Load activations
         with h5py.File(h5_file_path, "r") as f:
             available_keys = list(f.keys())
-            print(f"Available keys in {h5_file_path}: {available_keys}")
+            # print(f"Available keys in {h5_file_path}: {available_keys}")
 
             if layer_key is None:
                 if len(available_keys) == 0:
                     raise ValueError(f"No datasets found in {h5_file_path}")
                 layer_key = available_keys[0]
-                print(f"Using first available key: {layer_key}")
+                # print(f"Using first available key: {layer_key}")
 
             if layer_key not in available_keys:
                 raise KeyError(
@@ -45,13 +45,13 @@ class ActivationDataset(torch.utils.data.Dataset):
 
             self.layer_key = layer_key
             self.activations = f[layer_key][:]
-            print(f"Loaded activations with shape: {self.activations.shape}")
+            # print(f"Loaded activations with shape: {self.activations.shape}")
 
         # Subsample if requested
         if subsample is not None and subsample < len(self.activations):
             indices = np.random.choice(len(self.activations), subsample, replace=False)
             self.activations = self.activations[indices]
-            print(f"Subsampled to {len(self.activations)} examples")
+            # print(f"Subsampled to {len(self.activations)} examples")
 
         # Normalize if requested
         if normalize:
@@ -59,7 +59,7 @@ class ActivationDataset(torch.utils.data.Dataset):
             self.std = np.std(self.activations, axis=0, keepdims=True)
             self.std = np.where(self.std == 0, 1, self.std)  # Avoid division by zero
             self.activations = (self.activations - self.mean) / self.std
-            print("Applied normalization")
+            # print("Applied normalization")
 
         self.activations = torch.from_numpy(self.activations).float()
 
@@ -87,7 +87,7 @@ def create_sae_dataloader(
     shuffle: bool = True,
     normalize: bool = True,
     subsample: Optional[int] = None,
-    num_workers: int = 4,
+    num_workers: int = 0,  # Default to 0 to avoid multiprocessing issues
 ):
     """Create a DataLoader for SAE training."""
     dataset = ActivationDataset(h5_file_path, layer_key, normalize, subsample)
