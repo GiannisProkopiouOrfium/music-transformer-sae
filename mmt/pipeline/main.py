@@ -9,7 +9,7 @@ import logging
 import pathlib
 import json
 import sys
-from typing import Optional, Dict, Any
+from typing import Dict
 
 # Add parent directory to path to import mmt modules
 sys.path.append(str(pathlib.Path(__file__).parent.parent))

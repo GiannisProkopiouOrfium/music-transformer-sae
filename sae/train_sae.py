@@ -6,7 +6,7 @@ import pathlib
 import logging
 from typing import Optional, Tuple
 import matplotlib.pyplot as plt
-from sae_data import create_sae_dataloader
+from .sae_data import create_sae_dataloader
 
 # Set up logging
 logging.basicConfig(level=logging.INFO, format="%(levelname)-8s %(message)s")

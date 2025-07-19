@@ -158,3 +158,9 @@ Gemfile.lock
 *.png
 *.txt
 *.pt
+interpretation/openai_results/feature_data/*
+interpretation/openai_results/*.json
+GUIDES/*
+interpretation/pattern_results/*
+interpretation/analysis_results/*
+interpretation/openai_results/*

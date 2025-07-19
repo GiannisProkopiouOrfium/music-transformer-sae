@@ -3,12 +3,10 @@ import logging
 import pathlib
 import pprint
 import sys
-import h5py
 
 import torch
 import torch.utils.data
 import tqdm
-import numpy as np
 
 import dataset
 import music_x_transformers
@@ -98,7 +96,7 @@ def extract_activations_from_generation(
     filter_threshold = (
         args.filter_threshold[0] if args and args.filter_threshold else 0.9
     )
-    filter_fn = args.filter[0] if args and args.filter else "top_k"
+    filter_fn = args.filter[0] if args and args.filter else "l1"
 
     with torch.no_grad():
         for i in tqdm.tqdm(range(n_samples), desc="Generating samples"):
@@ -135,6 +133,14 @@ def extract_activations_from_dataset(
             mask = batch.get("mask", None)
             if mask is not None:
                 mask = mask.to(device)
+
+            # Store metadata for this batch
+            names = batch["name"]  # List of source file names
+            seq_lens = batch["seq_len"].tolist()  # Convert tensor to list
+
+            # Store metadata for all layers we're extracting from
+            for layer_idx in extractor.layer_indices:
+                extractor.store_metadata(layer_idx, names, seq_lens)
 
             # Forward pass - this will trigger our hooks
             _ = model(seq, mask=mask)

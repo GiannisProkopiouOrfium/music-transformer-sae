@@ -401,6 +401,11 @@ def train_sae_pipeline(
                     "activations_path": str(activations_path),
                     "best_val_loss": best_val_loss,
                     "final_sparsity": val_metrics["sparsity_ratio"],
+                    "layer_key": (
+                        train_loader.dataset.layer_key
+                        if hasattr(train_loader.dataset, "layer_key")
+                        else "layer_3"
+                    ),
                 },
                 model_path,
             )
