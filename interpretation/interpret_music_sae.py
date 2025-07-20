@@ -1290,7 +1290,7 @@ def save_feature_activations_for_interpretation(
         batch_size=64,
         shuffle=False,
         normalize=True,
-        subsample=640,  # Process subset for interpretation
+        subsample=4000,  # Process subset for interpretation
     )
 
     print(f"✅ Loaded activations from layer: {layer_key}")

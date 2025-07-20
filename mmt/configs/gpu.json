@@ -21,10 +21,10 @@
   },
   "sae": {
     "hidden_dim": 4096,
-    "sparsity_coeff": 1e-4,
+    "sparsity_coeff": 1e-3,
     "learning_rate": 1e-3,
-    "batch_size": 2048,
-    "num_epochs": 8,
+    "batch_size": 128,
+    "num_epochs": 50,
     "device": "auto",
     "k_sparse": null,
     "weight_decay": 0.0,
