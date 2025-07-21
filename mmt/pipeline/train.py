@@ -185,7 +185,7 @@ def load_activations_data(activations_path: pathlib.Path, config: PipelineConfig
 
         logging.info(f"Using layer: {layer_key}")
 
-    # Create data loaders
+    # Create data loaders with memory-efficient loading
     train_loader, train_info = create_sae_dataloader(
         str(activations_path),
         layer_key=layer_key,
@@ -193,6 +193,7 @@ def load_activations_data(activations_path: pathlib.Path, config: PipelineConfig
         shuffle=True,
         subsample=None,  # Use all data for training
         num_workers=0,  # Avoid multiprocessing issues
+        memory_efficient=True,  # Enable memory-efficient loading for large datasets
     )
 
     val_loader, val_info = create_sae_dataloader(
@@ -202,6 +203,7 @@ def load_activations_data(activations_path: pathlib.Path, config: PipelineConfig
         shuffle=False,
         subsample=5000,  # Smaller validation set
         num_workers=0,  # Avoid multiprocessing issues
+        memory_efficient=True,  # Enable memory-efficient loading
     )
 
     # Extract input dimension from shape
@@ -213,16 +215,24 @@ def load_activations_data(activations_path: pathlib.Path, config: PipelineConfig
     return train_loader, val_loader, input_dim
 
 
-def train_sae_epoch(model, train_loader, optimizer, device):
-    """Train SAE for one epoch."""
+def train_sae_epoch(
+    model, train_loader, optimizer, device, gradient_accumulation_steps=1
+):
+    """Train SAE for one epoch with gradient accumulation and memory optimization."""
     model.train()
     total_losses = []
     recon_losses = []
     sparsity_losses = []
     sparsity_ratios = []
 
+    # Clear cache to free up memory
+    if torch.cuda.is_available():
+        torch.cuda.empty_cache()
+
+    accumulation_loss = 0.0
+
     for batch_idx, batch in enumerate(train_loader):
-        batch = batch.to(device)
+        batch = batch.to(device, non_blocking=True)
 
         # Forward pass
         reconstructed, hidden = model(batch)
@@ -230,35 +240,58 @@ def train_sae_epoch(model, train_loader, optimizer, device):
         # Compute losses
         losses = model.compute_loss(batch, reconstructed, hidden)
 
+        # Scale loss for gradient accumulation
+        scaled_loss = losses["total_loss"] / gradient_accumulation_steps
+
         # Backward pass
-        optimizer.zero_grad()
-        losses["total_loss"].backward()
+        scaled_loss.backward()
 
-        # Normalize decoder weights (maintain unit norm constraint)
+        accumulation_loss += losses["total_loss"].item()
+
+        # Update weights every gradient_accumulation_steps
+        if (batch_idx + 1) % gradient_accumulation_steps == 0:
+            # Normalize decoder weights (maintain unit norm constraint)
+            model._normalize_decoder()
+
+            optimizer.step()
+            optimizer.zero_grad()
+
+            # Track metrics using accumulated loss
+            total_losses.append(accumulation_loss)
+            recon_losses.append(losses["reconstruction_loss"].item())
+            sparsity_losses.append(losses["sparsity_loss"].item())
+            sparsity_ratios.append(losses["sparsity_ratio"].item())
+
+            accumulation_loss = 0.0
+
+        # Clear intermediate tensors to save memory
+        del batch, reconstructed, hidden, losses
+
+        if batch_idx % (100 * gradient_accumulation_steps) == 0:
+            if total_losses:  # Make sure we have losses to report
+                batch_msg = (
+                    f"Batch {batch_idx}: Loss={total_losses[-1]:.4f}, "
+                    f"Recon={recon_losses[-1]:.4f}, "
+                    f"Sparsity={sparsity_ratios[-1]:.3f}"
+                )
+                logging.info(batch_msg)
+                print(batch_msg)  # Ensure visibility
+
+            # Periodic memory cleanup
+            if torch.cuda.is_available():
+                torch.cuda.empty_cache()
+
+    # Handle any remaining gradients
+    if accumulation_loss > 0:
         model._normalize_decoder()
-
         optimizer.step()
-
-        # Track metrics
-        total_losses.append(losses["total_loss"].item())
-        recon_losses.append(losses["reconstruction_loss"].item())
-        sparsity_losses.append(losses["sparsity_loss"].item())
-        sparsity_ratios.append(losses["sparsity_ratio"].item())
-
-        if batch_idx % 100 == 0:
-            batch_msg = (
-                f"Batch {batch_idx}: Loss={losses['total_loss'].item():.4f}, "
-                f"Recon={losses['reconstruction_loss'].item():.4f}, "
-                f"Sparsity={losses['sparsity_ratio'].item():.3f}"
-            )
-            logging.info(batch_msg)
-            print(batch_msg)  # Ensure visibility
+        optimizer.zero_grad()
 
     return {
-        "total_loss": np.mean(total_losses),
-        "reconstruction_loss": np.mean(recon_losses),
-        "sparsity_loss": np.mean(sparsity_losses),
-        "sparsity_ratio": np.mean(sparsity_ratios),
+        "total_loss": np.mean(total_losses) if total_losses else 0.0,
+        "reconstruction_loss": np.mean(recon_losses) if recon_losses else 0.0,
+        "sparsity_loss": np.mean(sparsity_losses) if sparsity_losses else 0.0,
+        "sparsity_ratio": np.mean(sparsity_ratios) if sparsity_ratios else 0.0,
     }
 
 
@@ -837,7 +870,16 @@ def train_sae_pipeline(
         print(f"Epoch {epoch + 1}/{config.sae.num_epochs}")  # Ensure visibility
 
         # Train
-        train_metrics = train_sae_epoch(model, train_loader, optimizer, device)
+        # Calculate gradient accumulation steps for memory efficiency
+        # Use larger effective batch size with gradient accumulation
+        effective_batch_size = 256  # Target effective batch size
+        gradient_accumulation_steps = max(
+            1, effective_batch_size // config.sae.batch_size
+        )
+
+        train_metrics = train_sae_epoch(
+            model, train_loader, optimizer, device, gradient_accumulation_steps
+        )
 
         # Validate
         val_metrics = validate_sae(model, val_loader, device)
