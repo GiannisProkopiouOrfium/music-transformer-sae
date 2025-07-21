@@ -31,6 +31,13 @@ def parse_args(args=None, namespace=None):
     parser.add_argument(
         "-ns", "--n_samples", type=int, default=100, help="number of samples"
     )
+    parser.add_argument(
+        "--split",
+        type=str,
+        default="test",
+        choices=["train", "valid", "test"],
+        help="which data split to use (default: test)",
+    )
 
     # Model arguments
     parser.add_argument("-s", "--model_steps", type=int, help="model steps to load")
@@ -227,8 +234,10 @@ def main():
     logging.info(f"Loaded {len(test_names)} test names")
 
     test_dataset = dataset.MusicDataset(
-        pathlib.Path(f"data/sod/processed/test-names.txt"),  # test_names,
-        "data/sod/processed/notes/",
+        pathlib.Path(
+            f"data/{args.dataset}/processed/{args.split}-names.txt"
+        ),  # Use specified split
+        f"data/{args.dataset}/processed/notes/",
         encoding,
         max_seq_len=train_args["max_seq_len"],
         max_beat=train_args["max_beat"],
@@ -237,8 +246,8 @@ def main():
 
     logging.info(f"Created dataset with {len(test_dataset)} samples")
 
-    # Adjust batch size based on device
-    batch_size = 2 if device.type == "cpu" else 4
+    # Adjust batch size based on device - increased for better GPU utilization
+    batch_size = 2 if device.type == "cpu" else 8  # Increased from 4 to 8
     test_loader = torch.utils.data.DataLoader(
         test_dataset,
         batch_size=batch_size,
@@ -337,7 +346,7 @@ def main():
         # Save activations
         save_path = (
             activation_dir
-            / f"activations_layers_{'_'.join(map(str, layer_indices))}.h5"
+            / f"activations_{args.split}_layers_{'_'.join(map(str, layer_indices))}.h5"
         )
         extractor.save_activations(save_path)
 
