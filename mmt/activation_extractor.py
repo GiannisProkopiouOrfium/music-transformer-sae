@@ -150,6 +150,16 @@ class ActivationExtractor:
     def clear_activations(self):
         """Clear stored activations to free memory."""
         self.activations.clear()
+        self.metadata.clear()
+
+    def get_memory_usage_mb(self):
+        """Estimate memory usage of stored activations in MB."""
+        total_elements = 0
+        for layer_idx, layer_activations in self.activations.items():
+            for activation in layer_activations:
+                total_elements += activation.numel()
+        # Assume float32 (4 bytes per element)
+        return (total_elements * 4) / (1024 * 1024)
 
     def remove_hooks(self):
         """Remove all registered hooks."""
@@ -170,24 +180,49 @@ class ActivationExtractor:
         if layer_idx not in self.activations:
             raise ValueError(f"No activations found for layer {layer_idx}")
 
-        # Concatenate all batches and flatten sequence dimension
-        layer_activations = []
+        # First pass: calculate total size to pre-allocate array
+        total_tokens = 0
+        hidden_dim = None
+        
         for batch_activations in self.activations[layer_idx]:
-            # batch_activations: [batch_size, seq_len, hidden_dim]
             batch_size, seq_len, hidden_dim = batch_activations.shape
-            # Flatten to [batch_size * seq_len, hidden_dim]
-            flattened = batch_activations.view(-1, hidden_dim)
-            layer_activations.append(flattened.numpy())
+            total_tokens += batch_size * seq_len
+        
+        if total_tokens == 0:
+            raise ValueError(f"No tokens found for layer {layer_idx}")
+        
+        logging.info(f"Layer {layer_idx}: Allocating array for {total_tokens} tokens, {hidden_dim} dims")
+        
+        # Pre-allocate the final array
+        result = np.empty((total_tokens, hidden_dim), dtype=np.float32)
+        
+        # Second pass: fill the array chunk by chunk
+        current_idx = 0
+        for i, batch_activations in enumerate(self.activations[layer_idx]):
+            batch_size, seq_len, hidden_dim = batch_activations.shape
+            chunk_size = batch_size * seq_len
+            
+            # Convert to numpy and flatten in one step
+            flattened = batch_activations.view(-1, hidden_dim).numpy()
+            
+            # Copy into pre-allocated array
+            result[current_idx:current_idx + chunk_size] = flattened
+            current_idx += chunk_size
+            
+            # Log progress for large datasets
+            if i % 50 == 0:
+                logging.info(f"Layer {layer_idx}: Processed batch {i+1}/{len(self.activations[layer_idx])}")
+        
+        return result
 
-        # Concatenate all batches: [total_tokens, hidden_dim]
-        return np.concatenate(layer_activations, axis=0)
-
-    def save_activations(self, save_path: pathlib.Path):
+    def save_activations_chunked(self, save_path: pathlib.Path, chunk_size: int = 50):
         """
-        Save all extracted activations and metadata to HDF5 file.
+        Save all extracted activations and metadata to HDF5 file using chunked processing
+        to avoid memory issues with large datasets.
 
         Args:
             save_path: Path to save the activations
+            chunk_size: Number of batches to process at once
         """
         save_path.parent.mkdir(parents=True, exist_ok=True)
 
@@ -195,19 +230,7 @@ class ActivationExtractor:
         logging.info(f"Preparing to save activations to {save_path}")
         logging.info(f"Layer indices to save: {self.layer_indices}")
         logging.info(f"Activations keys: {list(self.activations.keys())}")
-
-        for layer_idx in self.layer_indices:
-            if layer_idx in self.activations:
-                num_batches = len(self.activations[layer_idx])
-                if num_batches > 0:
-                    first_shape = self.activations[layer_idx][0].shape
-                    logging.info(
-                        f"Layer {layer_idx}: {num_batches} batches, first batch shape: {first_shape}"
-                    )
-                else:
-                    logging.warning(f"Layer {layer_idx}: No activation batches stored")
-            else:
-                logging.warning(f"Layer {layer_idx}: Not found in activations dict")
+        logging.info(f"Estimated memory usage: {self.get_memory_usage_mb():.1f} MB")
 
         # Only create file if we have activations to save
         has_activations = any(
@@ -222,72 +245,106 @@ class ActivationExtractor:
             return
 
         with h5py.File(save_path, "w") as f:
-            # Save activations
+            # Save activations using chunked processing
             for layer_idx in self.layer_indices:
-                if (
-                    layer_idx in self.activations
-                    and len(self.activations[layer_idx]) > 0
-                ):
+                if layer_idx in self.activations and len(self.activations[layer_idx]) > 0:
+                    logging.info(f"Processing layer {layer_idx} with {len(self.activations[layer_idx])} batches")
                     try:
-                        flattened_acts = self.get_flattened_activations(layer_idx)
-                        f.create_dataset(
+                        # Calculate total dimensions first
+                        total_tokens = 0
+                        hidden_dim = None
+                        for batch_activations in self.activations[layer_idx]:
+                            batch_size, seq_len, hidden_dim = batch_activations.shape
+                            total_tokens += batch_size * seq_len
+                        
+                        # Create dataset with known size
+                        dataset = f.create_dataset(
                             f"layer_{layer_idx}",
-                            data=flattened_acts,
+                            shape=(total_tokens, hidden_dim),
+                            dtype=np.float32,
                             compression="gzip",
+                            chunks=True
                         )
-                        logging.info(
-                            f"Saved {flattened_acts.shape[0]} tokens from layer {layer_idx}"
-                        )
+                        
+                        # Fill dataset chunk by chunk
+                        current_idx = 0
+                        for i in range(0, len(self.activations[layer_idx]), chunk_size):
+                            end_idx = min(i + chunk_size, len(self.activations[layer_idx]))
+                            chunk_batches = self.activations[layer_idx][i:end_idx]
+                            
+                            # Process this chunk
+                            chunk_data = []
+                            for batch_activations in chunk_batches:
+                                batch_size, seq_len, hidden_dim = batch_activations.shape
+                                flattened = batch_activations.view(-1, hidden_dim).numpy()
+                                chunk_data.append(flattened)
+                            
+                            # Concatenate and write chunk
+                            if chunk_data:
+                                chunk_array = np.concatenate(chunk_data, axis=0)
+                                next_idx = current_idx + chunk_array.shape[0]
+                                dataset[current_idx:next_idx] = chunk_array
+                                current_idx = next_idx
+                                
+                                logging.info(f"Layer {layer_idx}: Wrote chunk {i//chunk_size + 1}/{(len(self.activations[layer_idx]) + chunk_size - 1)//chunk_size}")
+                        
+                        logging.info(f"Saved {total_tokens} tokens from layer {layer_idx}")
+                        
                     except Exception as e:
                         logging.error(f"Error saving layer {layer_idx}: {e}")
                 else:
                     logging.warning(f"Skipping layer {layer_idx} - no activations")
 
-            # Save metadata
-            if self.metadata:
-                metadata_group = f.create_group("metadata")
-                for layer_idx in self.layer_indices:
-                    if layer_idx in self.metadata and self.metadata[layer_idx]:
-                        layer_metadata_group = metadata_group.create_group(
-                            f"layer_{layer_idx}"
-                        )
-
-                        # Flatten metadata across all batches for this layer
-                        all_source_files = []
-                        all_seq_lens = []
-                        batch_starts = (
-                            []
-                        )  # Track where each batch starts in the flattened data
-
-                        current_position = 0
-                        for batch_metadata in self.metadata[layer_idx]:
-                            batch_starts.append(current_position)
-                            source_files = batch_metadata["source_files"]
-                            seq_lens = batch_metadata["sequence_lengths"]
-
-                            all_source_files.extend(source_files)
-                            all_seq_lens.extend(seq_lens)
-
-                            # Each sample contributes seq_len tokens to the flattened data
-                            current_position += sum(seq_lens)
-
-                        # Save source files as string dataset
-                        string_dtype = h5py.string_dtype(encoding="utf-8")
-                        layer_metadata_group.create_dataset(
-                            "source_files", data=all_source_files, dtype=string_dtype
-                        )
-                        layer_metadata_group.create_dataset(
-                            "sequence_lengths", data=all_seq_lens
-                        )
-                        layer_metadata_group.create_dataset(
-                            "batch_starts", data=batch_starts
-                        )
-
-                        logging.info(
-                            f"Saved metadata for layer {layer_idx}: {len(all_source_files)} files"
-                        )
+            # Save metadata (simplified version)
+            self._save_metadata(f)
 
         logging.info(f"Activations and metadata saved to {save_path}")
+
+    def _save_metadata(self, hdf5_file):
+        """Helper method to save metadata to HDF5 file."""
+        if not self.metadata:
+            return
+            
+        metadata_group = hdf5_file.create_group("metadata")
+        for layer_idx in self.layer_indices:
+            if layer_idx in self.metadata and self.metadata[layer_idx]:
+                layer_metadata_group = metadata_group.create_group(f"layer_{layer_idx}")
+
+                # Flatten metadata across all batches for this layer
+                all_source_files = []
+                all_seq_lens = []
+                batch_starts = []
+
+                current_position = 0
+                for batch_metadata in self.metadata[layer_idx]:
+                    batch_starts.append(current_position)
+                    source_files = batch_metadata["source_files"]
+                    seq_lens = batch_metadata["sequence_lengths"]
+
+                    all_source_files.extend(source_files)
+                    all_seq_lens.extend(seq_lens)
+                    current_position += sum(seq_lens)
+
+                # Save metadata
+                string_dtype = h5py.string_dtype(encoding="utf-8")
+                layer_metadata_group.create_dataset(
+                    "source_files", data=all_source_files, dtype=string_dtype
+                )
+                layer_metadata_group.create_dataset("sequence_lengths", data=all_seq_lens)
+                layer_metadata_group.create_dataset("batch_starts", data=batch_starts)
+
+                logging.info(f"Saved metadata for layer {layer_idx}: {len(all_source_files)} files")
+
+    def save_activations(self, save_path: pathlib.Path):
+        """
+        Save all extracted activations and metadata to HDF5 file.
+        Uses chunked processing to handle large datasets efficiently.
+
+        Args:
+            save_path: Path to save the activations
+        """
+        # Use the chunked version by default to avoid memory issues
+        self.save_activations_chunked(save_path)
 
     def __enter__(self):
         return self
