@@ -59,6 +59,12 @@ class SAEConfig:
     num_workers: int = (
         0  # Number of DataLoader workers (0=single-threaded, 2-4 recommended for GPU)
     )
+    
+    # GPU optimization parameters
+    pin_memory: bool = True  # Use pinned memory for faster GPU transfer
+    persistent_workers: bool = True  # Keep workers alive between epochs
+    prefetch_factor: int = 2  # Number of batches to prefetch per worker
+    memory_efficient: bool = True  # Use memory-efficient loading vs pre-loading
 
     # Data subsampling for faster training
     subsample_training: Optional[int] = None  # Subsample training data for speed
