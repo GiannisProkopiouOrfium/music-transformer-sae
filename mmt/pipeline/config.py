@@ -59,7 +59,7 @@ class SAEConfig:
     num_workers: int = (
         0  # Number of DataLoader workers (0=single-threaded, 2-4 recommended for GPU)
     )
-    
+
     # GPU optimization parameters
     pin_memory: bool = True  # Use pinned memory for faster GPU transfer
     persistent_workers: bool = True  # Keep workers alive between epochs

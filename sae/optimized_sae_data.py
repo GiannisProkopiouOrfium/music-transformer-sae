@@ -15,7 +15,7 @@ from typing import Optional
 class OptimizedActivationDataset(torch.utils.data.Dataset):
     """
     Optimized dataset for SAE training with focus on GPU utilization.
-    
+
     Key optimizations:
     - Pre-loads data into memory when possible
     - Uses vectorized operations
@@ -85,35 +85,35 @@ class OptimizedActivationDataset(torch.utils.data.Dataset):
     def _preload_all_data(self):
         """Pre-load all data into memory for fastest access."""
         print(f"Pre-loading {self.num_samples} samples into memory...")
-        
+
         with h5py.File(self.h5_file_path, "r") as f:
             dataset = f[self.layer_key]
-            
+
             # Load data in chunks to avoid memory spikes
             chunk_size = 10000
             data_chunks = []
-            
+
             for i in range(0, len(self.indices), chunk_size):
                 chunk_indices = self.indices[i : i + chunk_size]
                 chunk_data = dataset[chunk_indices]
                 data_chunks.append(chunk_data)
-            
+
             # Concatenate all chunks
             self.activations = np.concatenate(data_chunks, axis=0)
-            
+
         # Convert to float32 for GPU efficiency
         self.activations = self.activations.astype(np.float32)
-        
+
         # Apply normalization if requested
         if self.normalize:
             self.mean = np.mean(self.activations, axis=0, keepdims=True)
             self.std = np.std(self.activations, axis=0, keepdims=True)
             self.std = np.maximum(self.std, 1e-8)  # Avoid division by zero
             self.activations = (self.activations - self.mean) / self.std
-        
+
         # Convert to PyTorch tensor
         self.activations = torch.from_numpy(self.activations)
-        
+
         print(f"✓ Data pre-loaded: {self.activations.shape}")
 
     def _compute_normalization_stats(self):
@@ -129,13 +129,13 @@ class OptimizedActivationDataset(torch.utils.data.Dataset):
             for i in range(0, len(self.indices), chunk_size):
                 chunk_indices = self.indices[i : i + chunk_size]
                 chunk_data = dataset[chunk_indices].astype(np.float32)
-                
+
                 running_sum += np.sum(chunk_data, axis=0)
-                running_sum_sq += np.sum(chunk_data ** 2, axis=0)
+                running_sum_sq += np.sum(chunk_data**2, axis=0)
                 count += len(chunk_data)
 
         self.mean = running_sum / count
-        self.variance = (running_sum_sq / count) - (self.mean ** 2)
+        self.variance = (running_sum_sq / count) - (self.mean**2)
         self.std = np.sqrt(np.maximum(self.variance, 1e-8))
 
     def __len__(self):
@@ -150,10 +150,10 @@ class OptimizedActivationDataset(torch.utils.data.Dataset):
             actual_idx = self.indices[idx]
             with h5py.File(self.h5_file_path, "r") as f:
                 data = f[self.layer_key][actual_idx].astype(np.float32)
-            
+
             if self.normalize:
                 data = (data - self.mean) / self.std
-            
+
             return torch.from_numpy(data)
 
 
@@ -172,7 +172,7 @@ def create_optimized_sae_dataloader(
 ):
     """
     Create an optimized DataLoader for SAE training.
-    
+
     Args:
         h5_file_path: Path to HDF5 activations file
         layer_key: Layer key to load
@@ -185,11 +185,11 @@ def create_optimized_sae_dataloader(
         persistent_workers: Keep workers alive between epochs
         prefetch_factor: Number of batches to prefetch per worker
         preload_data: Pre-load all data into memory if possible
-    
+
     Returns:
         DataLoader and dataset info
     """
-    
+
     dataset = OptimizedActivationDataset(
         h5_file_path=h5_file_path,
         layer_key=layer_key,
@@ -208,10 +208,12 @@ def create_optimized_sae_dataloader(
 
     # Add multiprocessing optimizations if using multiple workers
     if num_workers > 0:
-        dataloader_kwargs.update({
-            "persistent_workers": persistent_workers,
-            "prefetch_factor": prefetch_factor,
-        })
+        dataloader_kwargs.update(
+            {
+                "persistent_workers": persistent_workers,
+                "prefetch_factor": prefetch_factor,
+            }
+        )
 
     dataloader = torch.utils.data.DataLoader(dataset, **dataloader_kwargs)
 
@@ -230,14 +232,15 @@ def create_optimized_sae_dataloader(
 if __name__ == "__main__":
     # Test the optimized data loader
     print("Testing optimized SAE DataLoader...")
-    
+
     import pathlib
+
     activations_file = "exp/sod/ape/activations/activations_train_layers_3.h5"
-    
+
     if not pathlib.Path(activations_file).exists():
         print(f"File not found: {activations_file}")
         exit(1)
-    
+
     # Create optimized data loader
     dataloader, info = create_optimized_sae_dataloader(
         activations_file,
@@ -245,19 +248,22 @@ if __name__ == "__main__":
         batch_size=512,
         num_workers=4,
     )
-    
+
     print(f"Dataset info: {info}")
-    
+
     # Test data loading speed
     import time
+
     start_time = time.time()
     batch_count = 0
-    
+
     for batch in dataloader:
         batch_count += 1
         if batch_count >= 10:  # Test first 10 batches
             break
-    
+
     elapsed = time.time() - start_time
-    print(f"Loaded {batch_count} batches in {elapsed:.2f}s ({batch_count/elapsed:.1f} batches/s)")
+    print(
+        f"Loaded {batch_count} batches in {elapsed:.2f}s ({batch_count/elapsed:.1f} batches/s)"
+    )
     print(f"Last batch shape: {batch.shape}")

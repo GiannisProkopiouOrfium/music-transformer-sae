@@ -21,8 +21,10 @@ import sys
 sys.path.append(str(pathlib.Path(__file__).parent.parent.parent))
 
 from sae.sae_data import create_sae_dataloader
+
 try:
     from sae.optimized_sae_data import create_optimized_sae_dataloader
+
     OPTIMIZED_LOADER_AVAILABLE = True
 except ImportError:
     OPTIMIZED_LOADER_AVAILABLE = False
@@ -203,7 +205,7 @@ def load_activations_data(activations_path: pathlib.Path, config: PipelineConfig
     # Use optimized data loader if available and not in memory-efficient mode
     if OPTIMIZED_LOADER_AVAILABLE and not memory_efficient:
         logging.info("Using optimized data loader for better GPU utilization")
-        
+
         # Create training data loader
         train_loader, train_info = create_optimized_sae_dataloader(
             str(activations_path),
@@ -234,8 +236,10 @@ def load_activations_data(activations_path: pathlib.Path, config: PipelineConfig
     else:
         # Fall back to original data loader
         if not memory_efficient:
-            logging.warning("Optimized data loader not available, using standard loader")
-        
+            logging.warning(
+                "Optimized data loader not available, using standard loader"
+            )
+
         # Create data loaders with intelligent subsampling
         train_loader, train_info = create_sae_dataloader(
             str(activations_path),
@@ -258,20 +262,32 @@ def load_activations_data(activations_path: pathlib.Path, config: PipelineConfig
         )
 
     # Extract input dimension from shape
-    input_dim = train_info["shape"][1] if "shape" in train_info else train_info.get("feature_dim", 512)
+    input_dim = (
+        train_info["shape"][1]
+        if "shape" in train_info
+        else train_info.get("feature_dim", 512)
+    )
 
     # Log data usage information
-    total_samples = train_info["shape"][0] if "shape" in train_info else train_info.get("samples", 0)
+    total_samples = (
+        train_info["shape"][0]
+        if "shape" in train_info
+        else train_info.get("samples", 0)
+    )
     logging.info(f"Created data loaders with input dimension: {input_dim}")
     logging.info(
         f"Training data: {total_samples:,} samples{' (subsampled from larger dataset)' if train_subsample else ''}"
     )
-    val_samples = val_info["shape"][0] if "shape" in val_info else val_info.get("samples", 0)
+    val_samples = (
+        val_info["shape"][0] if "shape" in val_info else val_info.get("samples", 0)
+    )
     logging.info(f"Validation data: {val_samples:,} samples")
 
     # Estimate training time - faster with optimizations
     batches_per_epoch = len(train_loader)
-    base_time_per_batch = 1.5 if (OPTIMIZED_LOADER_AVAILABLE and not memory_efficient) else 3.0
+    base_time_per_batch = (
+        1.5 if (OPTIMIZED_LOADER_AVAILABLE and not memory_efficient) else 3.0
+    )
     estimated_minutes = (
         batches_per_epoch * config.sae.num_epochs * base_time_per_batch
     ) // 60
