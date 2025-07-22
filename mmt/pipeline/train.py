@@ -230,21 +230,30 @@ def train_sae_epoch(
         torch.cuda.empty_cache()
 
     accumulation_loss = 0.0
+    
+    # Optimize for speed: use autocast for mixed precision and compile model
+    use_amp = torch.cuda.is_available()
+    scaler = torch.cuda.amp.GradScaler() if use_amp else None
 
     for batch_idx, batch in enumerate(train_loader):
         batch = batch.to(device, non_blocking=True)
 
-        # Forward pass
-        reconstructed, hidden = model(batch)
+        # Mixed precision forward pass for speed
+        if use_amp:
+            with torch.cuda.amp.autocast():
+                reconstructed, hidden = model(batch)
+                losses = model.compute_loss(batch, reconstructed, hidden)
+                scaled_loss = losses["total_loss"] / gradient_accumulation_steps
+        else:
+            reconstructed, hidden = model(batch)
+            losses = model.compute_loss(batch, reconstructed, hidden)
+            scaled_loss = losses["total_loss"] / gradient_accumulation_steps
 
-        # Compute losses
-        losses = model.compute_loss(batch, reconstructed, hidden)
-
-        # Scale loss for gradient accumulation
-        scaled_loss = losses["total_loss"] / gradient_accumulation_steps
-
-        # Backward pass
-        scaled_loss.backward()
+        # Backward pass with gradient scaling
+        if use_amp:
+            scaler.scale(scaled_loss).backward()
+        else:
+            scaled_loss.backward()
 
         accumulation_loss += losses["total_loss"].item()
 
@@ -253,7 +262,12 @@ def train_sae_epoch(
             # Normalize decoder weights (maintain unit norm constraint)
             model._normalize_decoder()
 
-            optimizer.step()
+            if use_amp:
+                scaler.step(optimizer)
+                scaler.update()
+            else:
+                optimizer.step()
+            
             optimizer.zero_grad()
 
             # Track metrics using accumulated loss
@@ -267,7 +281,8 @@ def train_sae_epoch(
         # Clear intermediate tensors to save memory
         del batch, reconstructed, hidden, losses
 
-        if batch_idx % (100 * gradient_accumulation_steps) == 0:
+        # More frequent but lightweight progress reporting
+        if batch_idx % max(5, (25 * gradient_accumulation_steps)) == 0:
             if total_losses:  # Make sure we have losses to report
                 batch_msg = (
                     f"Batch {batch_idx}: Loss={total_losses[-1]:.4f}, "
@@ -277,14 +292,18 @@ def train_sae_epoch(
                 logging.info(batch_msg)
                 print(batch_msg)  # Ensure visibility
 
-            # Periodic memory cleanup
-            if torch.cuda.is_available():
-                torch.cuda.empty_cache()
+        # Less frequent memory cleanup to avoid overhead
+        if batch_idx % (200 * gradient_accumulation_steps) == 0 and torch.cuda.is_available():
+            torch.cuda.empty_cache()
 
     # Handle any remaining gradients
     if accumulation_loss > 0:
         model._normalize_decoder()
-        optimizer.step()
+        if use_amp:
+            scaler.step(optimizer)
+            scaler.update()
+        else:
+            optimizer.step()
         optimizer.zero_grad()
 
     return {
@@ -871,8 +890,8 @@ def train_sae_pipeline(
 
         # Train
         # Calculate gradient accumulation steps for memory efficiency
-        # Use larger effective batch size with gradient accumulation
-        effective_batch_size = 256  # Target effective batch size
+        # Use smaller effective batch size for faster training
+        effective_batch_size = 64  # Reduced for faster updates
         gradient_accumulation_steps = max(
             1, effective_batch_size // config.sae.batch_size
         )

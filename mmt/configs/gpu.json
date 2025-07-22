@@ -20,11 +20,11 @@
     "filter_threshold": 0.9
   },
   "sae": {
-    "hidden_dim": 4096,
+    "hidden_dim": 2048,
     "sparsity_coeff": 1e-3,
-    "learning_rate": 1e-3,
-    "batch_size": 64,
-    "num_epochs": 50,
+    "learning_rate": 3e-3,
+    "batch_size": 128,
+    "num_epochs": 25,
     "device": "cuda",
     "k_sparse": null,
     "weight_decay": 0.0,
