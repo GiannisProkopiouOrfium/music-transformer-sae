@@ -54,10 +54,12 @@ class SAEConfig:
     k_sparse: Optional[int] = None  # For top-k sparsity (alternative to L1)
     weight_decay: float = 0.0
     scheduler: str = "none"  # "none", "cosine", "linear"
-    
+
     # Data loading optimization
-    num_workers: int = 0  # Number of DataLoader workers (0=single-threaded, 2-4 recommended for GPU)
-    
+    num_workers: int = (
+        0  # Number of DataLoader workers (0=single-threaded, 2-4 recommended for GPU)
+    )
+
     # Data subsampling for faster training
     subsample_training: Optional[int] = None  # Subsample training data for speed
     subsample_validation: Optional[int] = None  # Subsample validation data

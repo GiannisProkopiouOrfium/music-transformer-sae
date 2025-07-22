@@ -21,6 +21,12 @@ import sys
 sys.path.append(str(pathlib.Path(__file__).parent.parent.parent))
 
 from sae.sae_data import create_sae_dataloader
+try:
+    from sae.optimized_sae_data import create_optimized_sae_dataloader
+    OPTIMIZED_LOADER_AVAILABLE = True
+except ImportError:
+    OPTIMIZED_LOADER_AVAILABLE = False
+    create_optimized_sae_dataloader = None
 from .config import PipelineConfig
 
 
@@ -186,45 +192,95 @@ def load_activations_data(activations_path: pathlib.Path, config: PipelineConfig
         logging.info(f"Using layer: {layer_key}")
 
     # Get subsample parameters from config
-    train_subsample = getattr(config.sae, 'subsample_training', None)
-    val_subsample = getattr(config.sae, 'subsample_validation', 5000)
-    num_workers = getattr(config.sae, 'num_workers', 0)
-    
-    # Create data loaders with intelligent subsampling
-    train_loader, train_info = create_sae_dataloader(
-        str(activations_path),
-        layer_key=layer_key,
-        batch_size=config.sae.batch_size,
-        shuffle=True,
-        subsample=train_subsample,  # Use config-specified subsample for speed
-        num_workers=num_workers,  # Use config-specified number of workers
-        memory_efficient=True,  # Enable memory-efficient loading for large datasets
-    )
+    train_subsample = getattr(config.sae, "subsample_training", None)
+    val_subsample = getattr(config.sae, "subsample_validation", 5000)
+    num_workers = getattr(config.sae, "num_workers", 0)
+    pin_memory = getattr(config.sae, "pin_memory", True)
+    persistent_workers = getattr(config.sae, "persistent_workers", True)
+    prefetch_factor = getattr(config.sae, "prefetch_factor", 2)
+    memory_efficient = getattr(config.sae, "memory_efficient", True)
 
-    val_loader, val_info = create_sae_dataloader(
-        str(activations_path),
-        layer_key=layer_key,
-        batch_size=config.sae.batch_size,
-        shuffle=False,
-        subsample=val_subsample,  # Config-specified validation set size
-        num_workers=num_workers,  # Use config-specified number of workers
-        memory_efficient=True,  # Enable memory-efficient loading
-    )
+    # Use optimized data loader if available and not in memory-efficient mode
+    if OPTIMIZED_LOADER_AVAILABLE and not memory_efficient:
+        logging.info("Using optimized data loader for better GPU utilization")
+        
+        # Create training data loader
+        train_loader, train_info = create_optimized_sae_dataloader(
+            str(activations_path),
+            layer_key=layer_key,
+            batch_size=config.sae.batch_size,
+            shuffle=True,
+            subsample=train_subsample,
+            num_workers=num_workers,
+            pin_memory=pin_memory,
+            persistent_workers=persistent_workers and num_workers > 0,
+            prefetch_factor=prefetch_factor,
+            preload_data=True,  # Pre-load for maximum speed
+        )
+
+        # Create validation data loader
+        val_loader, val_info = create_optimized_sae_dataloader(
+            str(activations_path),
+            layer_key=layer_key,
+            batch_size=config.sae.batch_size,
+            shuffle=False,
+            subsample=val_subsample,
+            num_workers=num_workers,
+            pin_memory=pin_memory,
+            persistent_workers=persistent_workers and num_workers > 0,
+            prefetch_factor=prefetch_factor,
+            preload_data=True,  # Pre-load for maximum speed
+        )
+    else:
+        # Fall back to original data loader
+        if not memory_efficient:
+            logging.warning("Optimized data loader not available, using standard loader")
+        
+        # Create data loaders with intelligent subsampling
+        train_loader, train_info = create_sae_dataloader(
+            str(activations_path),
+            layer_key=layer_key,
+            batch_size=config.sae.batch_size,
+            shuffle=True,
+            subsample=train_subsample,  # Use config-specified subsample for speed
+            num_workers=num_workers,  # Use config-specified number of workers
+            memory_efficient=memory_efficient,  # Enable memory-efficient loading for large datasets
+        )
+
+        val_loader, val_info = create_sae_dataloader(
+            str(activations_path),
+            layer_key=layer_key,
+            batch_size=config.sae.batch_size,
+            shuffle=False,
+            subsample=val_subsample,  # Config-specified validation set size
+            num_workers=num_workers,  # Use config-specified number of workers
+            memory_efficient=memory_efficient,  # Enable memory-efficient loading
+        )
 
     # Extract input dimension from shape
-    input_dim = train_info["shape"][1]  # Shape is [num_samples, input_dim]
-    
+    input_dim = train_info["shape"][1] if "shape" in train_info else train_info.get("feature_dim", 512)
+
     # Log data usage information
-    total_samples = train_info["shape"][0]
+    total_samples = train_info["shape"][0] if "shape" in train_info else train_info.get("samples", 0)
     logging.info(f"Created data loaders with input dimension: {input_dim}")
-    logging.info(f"Training data: {total_samples:,} samples (subsampled from larger dataset)")
-    logging.info(f"Validation data: {val_info['shape'][0]:,} samples")
-    
-    # Estimate training time
+    logging.info(
+        f"Training data: {total_samples:,} samples{' (subsampled from larger dataset)' if train_subsample else ''}"
+    )
+    val_samples = val_info["shape"][0] if "shape" in val_info else val_info.get("samples", 0)
+    logging.info(f"Validation data: {val_samples:,} samples")
+
+    # Estimate training time - faster with optimizations
     batches_per_epoch = len(train_loader)
-    estimated_minutes = (batches_per_epoch * config.sae.num_epochs * 3) // 60  # ~3 sec per batch
-    logging.info(f"Estimated training time: ~{estimated_minutes} minutes ({batches_per_epoch} batches/epoch)")
-    print(f"📊 Data loaded: {total_samples:,} training samples, {val_info['shape'][0]:,} validation samples")
+    base_time_per_batch = 1.5 if (OPTIMIZED_LOADER_AVAILABLE and not memory_efficient) else 3.0
+    estimated_minutes = (
+        batches_per_epoch * config.sae.num_epochs * base_time_per_batch
+    ) // 60
+    logging.info(
+        f"Estimated training time: ~{estimated_minutes} minutes ({batches_per_epoch} batches/epoch)"
+    )
+    print(
+        f"📊 Data loaded: {total_samples:,} training samples, {val_samples:,} validation samples"
+    )
     print(f"⏱️ Estimated training time: ~{estimated_minutes} minutes")
 
     return train_loader, val_loader, input_dim
@@ -245,17 +301,17 @@ def train_sae_epoch(
         torch.cuda.empty_cache()
 
     accumulation_loss = 0.0
-    
+
     # Optimize for speed: use autocast for mixed precision and compile model
     use_amp = torch.cuda.is_available()
-    scaler = torch.amp.GradScaler('cuda') if use_amp else None
+    scaler = torch.amp.GradScaler("cuda") if use_amp else None
 
     for batch_idx, batch in enumerate(train_loader):
         batch = batch.to(device, non_blocking=True)
 
         # Mixed precision forward pass for speed
         if use_amp:
-            with torch.amp.autocast('cuda'):
+            with torch.amp.autocast("cuda"):
                 reconstructed, hidden = model(batch)
                 losses = model.compute_loss(batch, reconstructed, hidden)
                 scaled_loss = losses["total_loss"] / gradient_accumulation_steps
@@ -282,7 +338,7 @@ def train_sae_epoch(
                 scaler.update()
             else:
                 optimizer.step()
-            
+
             optimizer.zero_grad()
 
             # Track metrics using accumulated loss
@@ -308,7 +364,10 @@ def train_sae_epoch(
                 print(batch_msg)  # Ensure visibility
 
         # Less frequent memory cleanup to avoid overhead
-        if batch_idx % (200 * gradient_accumulation_steps) == 0 and torch.cuda.is_available():
+        if (
+            batch_idx % (200 * gradient_accumulation_steps) == 0
+            and torch.cuda.is_available()
+        ):
             torch.cuda.empty_cache()
 
     # Handle any remaining gradients

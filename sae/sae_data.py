@@ -213,13 +213,15 @@ def create_sae_dataloader(
         "pin_memory": True,
         "drop_last": True,  # Drop incomplete batches for consistent training
     }
-    
+
     # Only add multiprocessing-specific options if num_workers > 0
     if num_workers > 0:
-        dataloader_kwargs.update({
-            "persistent_workers": True,  # Keep workers alive
-            "prefetch_factor": 2,  # Prefetch batches for speed
-        })
+        dataloader_kwargs.update(
+            {
+                "persistent_workers": True,  # Keep workers alive
+                "prefetch_factor": 2,  # Prefetch batches for speed
+            }
+        )
 
     dataloader = torch.utils.data.DataLoader(dataset, **dataloader_kwargs)
 
