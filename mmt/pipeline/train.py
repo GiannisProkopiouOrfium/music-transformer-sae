@@ -202,9 +202,9 @@ def load_activations_data(activations_path: pathlib.Path, config: PipelineConfig
     prefetch_factor = getattr(config.sae, "prefetch_factor", 2)
     memory_efficient = getattr(config.sae, "memory_efficient", True)
 
-    # Use optimized data loader if available and not in memory-efficient mode
-    if OPTIMIZED_LOADER_AVAILABLE and not memory_efficient:
-        logging.info("Using optimized data loader for better GPU utilization")
+    # Use optimized data loader if available (regardless of memory_efficient setting)
+    if OPTIMIZED_LOADER_AVAILABLE:
+        logging.info("Using optimized data loader for maximum GPU utilization")
 
         # Create training data loader
         train_loader, train_info = create_optimized_sae_dataloader(
@@ -318,9 +318,20 @@ def train_sae_epoch(
 
     accumulation_loss = 0.0
 
-    # Optimize for speed: use autocast for mixed precision and compile model
-    use_amp = torch.cuda.is_available()
+    # Optimize for speed: use autocast for mixed precision and enable compilation
+    use_amp = torch.cuda.is_available() and hasattr(torch.cuda, 'amp')
     scaler = torch.amp.GradScaler("cuda") if use_amp else None
+    
+    # Compile model for better GPU utilization (PyTorch 2.0+)
+    if hasattr(torch, 'compile') and torch.cuda.is_available():
+        try:
+            model = torch.compile(model, mode='max-autotune')
+            logging.info("✅ Model compiled with torch.compile for better GPU utilization")
+        except Exception as e:
+            logging.warning(f"Failed to compile model: {e}")
+    
+    if use_amp:
+        logging.info("✅ Using Automatic Mixed Precision (AMP) for faster training")
 
     for batch_idx, batch in enumerate(train_loader):
         batch = batch.to(device, non_blocking=True)
@@ -368,7 +379,7 @@ def train_sae_epoch(
         # Clear intermediate tensors to save memory
         del batch, reconstructed, hidden, losses
 
-        # More frequent but lightweight progress reporting
+        # More frequent but lightweight progress reporting with GPU monitoring
         if batch_idx % max(5, (25 * gradient_accumulation_steps)) == 0:
             if total_losses:  # Make sure we have losses to report
                 batch_msg = (
@@ -376,15 +387,23 @@ def train_sae_epoch(
                     f"Recon={recon_losses[-1]:.4f}, "
                     f"Sparsity={sparsity_ratios[-1]:.3f}"
                 )
+                
+                # Add GPU utilization info if available
+                if torch.cuda.is_available():
+                    gpu_memory = torch.cuda.memory_allocated() / 1024**3  # GB
+                    gpu_memory_max = torch.cuda.max_memory_allocated() / 1024**3  # GB
+                    batch_msg += f", GPU: {gpu_memory:.1f}/{gpu_memory_max:.1f}GB"
+                
                 logging.info(batch_msg)
                 print(batch_msg)  # Ensure visibility
 
-        # Less frequent memory cleanup to avoid overhead
+        # More aggressive memory cleanup for better GPU utilization
         if (
-            batch_idx % (200 * gradient_accumulation_steps) == 0
+            batch_idx % (50 * gradient_accumulation_steps) == 0  # More frequent
             and torch.cuda.is_available()
         ):
             torch.cuda.empty_cache()
+            torch.cuda.synchronize()  # Ensure GPU operations complete
 
     # Handle any remaining gradients
     if accumulation_loss > 0:
@@ -979,12 +998,10 @@ def train_sae_pipeline(
         print(f"Epoch {epoch + 1}/{config.sae.num_epochs}")  # Ensure visibility
 
         # Train
-        # Calculate gradient accumulation steps for memory efficiency
-        # Use smaller effective batch size for faster training
-        effective_batch_size = 64  # Reduced for faster updates
-        gradient_accumulation_steps = max(
-            1, effective_batch_size // config.sae.batch_size
-        )
+        # Calculate gradient accumulation for GPU efficiency
+        # Use larger effective batch size to maximize GPU utilization
+        target_batch_size = min(4096, config.sae.batch_size * 4)  # Target 4x current batch
+        gradient_accumulation_steps = max(1, target_batch_size // config.sae.batch_size)
 
         train_metrics = train_sae_epoch(
             model, train_loader, optimizer, device, gradient_accumulation_steps
