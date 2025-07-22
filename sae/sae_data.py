@@ -213,6 +213,9 @@ def create_sae_dataloader(
         pin_memory=True,
         # Use persistent workers to avoid recreating processes
         persistent_workers=num_workers > 0,
+        # Optimize for single GPU training
+        drop_last=True,  # Drop incomplete batches for consistent training
+        prefetch_factor=2,  # Prefetch batches for speed
     )
 
     return dataloader, dataset.get_data_info()

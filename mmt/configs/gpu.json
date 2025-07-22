@@ -28,7 +28,9 @@
     "device": "cuda",
     "k_sparse": null,
     "weight_decay": 0.0,
-    "scheduler": "cosine"
+    "scheduler": "cosine",
+    "subsample_training": 500000,
+    "subsample_validation": 10000
   },
   "analysis": {
     "top_k_segments": 15,

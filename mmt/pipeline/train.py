@@ -185,13 +185,17 @@ def load_activations_data(activations_path: pathlib.Path, config: PipelineConfig
 
         logging.info(f"Using layer: {layer_key}")
 
-    # Create data loaders with memory-efficient loading
+    # Get subsample parameters from config
+    train_subsample = getattr(config.sae, 'subsample_training', None)
+    val_subsample = getattr(config.sae, 'subsample_validation', 5000)
+    
+    # Create data loaders with intelligent subsampling
     train_loader, train_info = create_sae_dataloader(
         str(activations_path),
         layer_key=layer_key,
         batch_size=config.sae.batch_size,
         shuffle=True,
-        subsample=None,  # Use all data for training
+        subsample=train_subsample,  # Use config-specified subsample for speed
         num_workers=0,  # Avoid multiprocessing issues
         memory_efficient=True,  # Enable memory-efficient loading for large datasets
     )
@@ -201,16 +205,26 @@ def load_activations_data(activations_path: pathlib.Path, config: PipelineConfig
         layer_key=layer_key,
         batch_size=config.sae.batch_size,
         shuffle=False,
-        subsample=5000,  # Smaller validation set
+        subsample=val_subsample,  # Config-specified validation set size
         num_workers=0,  # Avoid multiprocessing issues
         memory_efficient=True,  # Enable memory-efficient loading
     )
 
     # Extract input dimension from shape
     input_dim = train_info["shape"][1]  # Shape is [num_samples, input_dim]
+    
+    # Log data usage information
+    total_samples = train_info["shape"][0]
     logging.info(f"Created data loaders with input dimension: {input_dim}")
-    logging.info(f"Training data shape: {train_info['shape']}")
-    logging.info(f"Validation data shape: {val_info['shape']}")
+    logging.info(f"Training data: {total_samples:,} samples (subsampled from larger dataset)")
+    logging.info(f"Validation data: {val_info['shape'][0]:,} samples")
+    
+    # Estimate training time
+    batches_per_epoch = len(train_loader)
+    estimated_minutes = (batches_per_epoch * config.sae.num_epochs * 3) // 60  # ~3 sec per batch
+    logging.info(f"Estimated training time: ~{estimated_minutes} minutes ({batches_per_epoch} batches/epoch)")
+    print(f"📊 Data loaded: {total_samples:,} training samples, {val_info['shape'][0]:,} validation samples")
+    print(f"⏱️ Estimated training time: ~{estimated_minutes} minutes")
 
     return train_loader, val_loader, input_dim
 
