@@ -188,6 +188,7 @@ def load_activations_data(activations_path: pathlib.Path, config: PipelineConfig
     # Get subsample parameters from config
     train_subsample = getattr(config.sae, 'subsample_training', None)
     val_subsample = getattr(config.sae, 'subsample_validation', 5000)
+    num_workers = getattr(config.sae, 'num_workers', 0)
     
     # Create data loaders with intelligent subsampling
     train_loader, train_info = create_sae_dataloader(
@@ -196,7 +197,7 @@ def load_activations_data(activations_path: pathlib.Path, config: PipelineConfig
         batch_size=config.sae.batch_size,
         shuffle=True,
         subsample=train_subsample,  # Use config-specified subsample for speed
-        num_workers=0,  # Avoid multiprocessing issues
+        num_workers=num_workers,  # Use config-specified number of workers
         memory_efficient=True,  # Enable memory-efficient loading for large datasets
     )
 
@@ -206,7 +207,7 @@ def load_activations_data(activations_path: pathlib.Path, config: PipelineConfig
         batch_size=config.sae.batch_size,
         shuffle=False,
         subsample=val_subsample,  # Config-specified validation set size
-        num_workers=0,  # Avoid multiprocessing issues
+        num_workers=num_workers,  # Use config-specified number of workers
         memory_efficient=True,  # Enable memory-efficient loading
     )
 

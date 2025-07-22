@@ -29,6 +29,7 @@
     "k_sparse": null,
     "weight_decay": 0.0,
     "scheduler": "cosine",
+    "num_workers": 4,
     "subsample_training": 500000,
     "subsample_validation": 10000
   },

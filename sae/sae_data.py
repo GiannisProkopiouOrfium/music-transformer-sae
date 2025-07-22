@@ -205,18 +205,23 @@ def create_sae_dataloader(
         cache_size=cache_size,
     )
 
-    dataloader = torch.utils.data.DataLoader(
-        dataset,
-        batch_size=batch_size,
-        shuffle=shuffle,
-        num_workers=num_workers,
-        pin_memory=True,
-        # Use persistent workers to avoid recreating processes
-        persistent_workers=num_workers > 0,
-        # Optimize for single GPU training
-        drop_last=True,  # Drop incomplete batches for consistent training
-        prefetch_factor=2,  # Prefetch batches for speed
-    )
+    # Configure DataLoader based on whether multiprocessing is used
+    dataloader_kwargs = {
+        "batch_size": batch_size,
+        "shuffle": shuffle,
+        "num_workers": num_workers,
+        "pin_memory": True,
+        "drop_last": True,  # Drop incomplete batches for consistent training
+    }
+    
+    # Only add multiprocessing-specific options if num_workers > 0
+    if num_workers > 0:
+        dataloader_kwargs.update({
+            "persistent_workers": True,  # Keep workers alive
+            "prefetch_factor": 2,  # Prefetch batches for speed
+        })
+
+    dataloader = torch.utils.data.DataLoader(dataset, **dataloader_kwargs)
 
     return dataloader, dataset.get_data_info()
 
