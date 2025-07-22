@@ -147,7 +147,9 @@ def run_pipeline(config: PipelineConfig) -> Dict[str, pathlib.Path]:
         # Look for existing activations
         layer_str = "_".join(map(str, config.extraction.layers))
         activations_path = (
-            config.output_dir / "activations" / f"activations_layers_{layer_str}.h5"
+            config.output_dir
+            / "activations"
+            / f"activations_train_layers_{layer_str}.h5"
         )
         if not activations_path.exists():
             raise FileNotFoundError(

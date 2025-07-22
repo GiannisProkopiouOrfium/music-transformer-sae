@@ -233,14 +233,14 @@ def train_sae_epoch(
     
     # Optimize for speed: use autocast for mixed precision and compile model
     use_amp = torch.cuda.is_available()
-    scaler = torch.cuda.amp.GradScaler() if use_amp else None
+    scaler = torch.amp.GradScaler('cuda') if use_amp else None
 
     for batch_idx, batch in enumerate(train_loader):
         batch = batch.to(device, non_blocking=True)
 
         # Mixed precision forward pass for speed
         if use_amp:
-            with torch.cuda.amp.autocast():
+            with torch.amp.autocast('cuda'):
                 reconstructed, hidden = model(batch)
                 losses = model.compute_loss(batch, reconstructed, hidden)
                 scaled_loss = losses["total_loss"] / gradient_accumulation_steps
