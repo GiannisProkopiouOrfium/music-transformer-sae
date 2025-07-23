@@ -163,14 +163,14 @@ def quick_sae_analysis(model_path, activations_path):
         print("   ❌ POOR SAE. Needs significant improvement.")
     
     return {
-        'dead_features': dead_features,
-        'rare_features': rare_features,
-        'active_features': active_features,
-        'overall_sparsity': overall_sparsity,
-        'high_correlations': high_corr_count,
-        'quality_score': quality_score,
-        'decoder_norm_std': decoder_norms.std(),
-        'best_val_loss': checkpoint['best_val_loss']
+        'dead_features': int(dead_features),
+        'rare_features': int(rare_features),
+        'active_features': int(active_features),
+        'overall_sparsity': float(overall_sparsity),
+        'high_correlations': int(high_corr_count),
+        'quality_score': int(quality_score),
+        'decoder_norm_std': float(decoder_norms.std()),
+        'best_val_loss': float(checkpoint['best_val_loss'])
     }
 
 if __name__ == "__main__":
