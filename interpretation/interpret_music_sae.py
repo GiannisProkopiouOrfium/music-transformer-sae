@@ -1279,7 +1279,7 @@ def save_feature_activations_for_interpretation(
     print(f"🚀 Using device: {device}")
 
     # Load trained SAE model
-    checkpoint = torch.load(model_path, map_location=device)
+    checkpoint = torch.load(model_path, map_location=device, weights_only=False)
 
     # Recreate model architecture
     from sae.train_sae import SparseAutoencoder
@@ -1312,9 +1312,6 @@ def save_feature_activations_for_interpretation(
         normalize=True,
         subsample=subsample,  # Use configurable subsample size
         num_workers=4,  # System recommended max workers
-        pin_memory=(
-            True if device == "cuda" else False
-        ),  # Pin memory for faster GPU transfers
     )
 
     print(f"✅ Loaded activations from layer: {layer_key}")
