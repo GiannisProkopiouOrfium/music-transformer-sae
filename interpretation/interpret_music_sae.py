@@ -1306,7 +1306,7 @@ def save_feature_activations_for_interpretation(
         activations_path,
         layer_key=layer_key,
         batch_size=(
-            4096 if device == "cuda" else 1024
+            1024 if device == "cuda" else 1024
         ),  # Larger GPU batch for faster processing
         shuffle=False,
         normalize=True,
