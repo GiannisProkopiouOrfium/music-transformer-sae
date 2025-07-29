@@ -1305,7 +1305,7 @@ def save_feature_activations_for_interpretation(
         batch_size=2048 if device == "cuda" else 1024,  # GPU optimized batch size
         shuffle=False,
         normalize=True,
-        subsample=None,  # Process subset for interpretation
+        subsample=1000000,  # Process subset for interpretation
         num_workers=8 if device == "cuda" else 4,  # More workers for GPU
     )
 
@@ -1324,11 +1324,13 @@ def save_feature_activations_for_interpretation(
 
     # Enable memory efficient processing for GPU
     torch.backends.cudnn.benchmark = True if device == "cuda" else False
-    
+
     # Clear GPU cache if using CUDA
     if device == "cuda":
         torch.cuda.empty_cache()
-        print(f"🧠 GPU Memory: {torch.cuda.get_device_properties(0).total_memory / 1e9:.1f}GB total")
+        print(
+            f"🧠 GPU Memory: {torch.cuda.get_device_properties(0).total_memory / 1e9:.1f}GB total"
+        )
 
     # Use automatic mixed precision for faster GPU processing
     use_amp = device == "cuda" and torch.cuda.is_available()
@@ -1338,15 +1340,17 @@ def save_feature_activations_for_interpretation(
         input_idx = 0
         for batch_idx, batch in enumerate(dataloader):
             # Move data to device for GPU acceleration
-            batch = batch.to(device, non_blocking=True)  # Non-blocking for better performance
-            
+            batch = batch.to(
+                device, non_blocking=True
+            )  # Non-blocking for better performance
+
             # Forward pass through SAE with mixed precision if available
             if use_amp:
                 with torch.cuda.amp.autocast():
                     _, hidden = model(batch)
             else:
                 _, hidden = model(batch)
-            
+
             # Move results back to CPU for processing to save GPU memory
             hidden = hidden.cpu()
             batch = batch.cpu()
@@ -1758,9 +1762,9 @@ if __name__ == "__main__":
         device = "cuda" if torch.cuda.is_available() else "cpu"
     else:
         device = args.device
-        
+
     print(f"🚀 Using device: {device}")
-    
+
     # Validate CUDA availability if requested
     if device == "cuda" and not torch.cuda.is_available():
         print("⚠️  CUDA requested but not available, falling back to CPU")
