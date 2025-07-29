@@ -7,6 +7,7 @@ import json
 import h5py
 import sys
 import os
+import argparse
 
 # Add parent directory to path for imports
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
@@ -624,6 +625,7 @@ def run_pattern_based_interpretation_pipeline(
     data_dir: str,
     output_dir: str = "interpretation/pattern_analysis",
     max_features: int = 20,
+    device: str = None,
 ):
     """
     Pattern-based SAE feature interpretation pipeline.
@@ -633,6 +635,11 @@ def run_pattern_based_interpretation_pipeline(
     print("🎼 PATTERN-BASED SAE INTERPRETATION PIPELINE 🎼")
     print("=" * 60)
 
+    # Determine device for GPU acceleration
+    if device is None:
+        device = "cuda" if torch.cuda.is_available() else "cpu"
+    print(f"🚀 Using device for interpretation: {device}")
+
     # Step 1: Extract feature-input mappings
     print("Step 1: Extracting feature activations...")
     _, feature_summaries = save_feature_activations_for_interpretation(
@@ -641,6 +648,7 @@ def run_pattern_based_interpretation_pipeline(
         output_dir=f"{output_dir}/feature_data",
         max_samples_per_feature=10,
         min_activation_threshold=0.1,
+        device=device,  # Pass device for GPU acceleration
     )
 
     # Step 2: Load original musical data
@@ -1248,6 +1256,7 @@ def save_feature_activations_for_interpretation(
     output_dir: str = "interpretation/feature_data",
     max_samples_per_feature: int = 20,
     min_activation_threshold: float = 0.1,
+    device: str = None,
 ):
     """
     Save input-activation mappings for each SAE feature for LLM interpretation.
@@ -1261,8 +1270,13 @@ def save_feature_activations_for_interpretation(
     print("🎵 EXTRACTING FEATURE-INPUT MAPPINGS FOR INTERPRETATION 🎵")
     print("=" * 70)
 
+    # Determine device - prioritize GPU for faster processing
+    if device is None:
+        device = "cuda" if torch.cuda.is_available() else "cpu"
+    print(f"🚀 Using device: {device}")
+
     # Load trained SAE model
-    checkpoint = torch.load(model_path, map_location="cpu")
+    checkpoint = torch.load(model_path, map_location=device)
 
     # Recreate model architecture
     from sae.train_sae import SparseAutoencoder
@@ -1273,6 +1287,7 @@ def save_feature_activations_for_interpretation(
         sparsity_coeff=checkpoint["config"]["sparsity_coeff"],
     )
     model.load_state_dict(checkpoint["model_state_dict"])
+    model.to(device)  # Move model to GPU
     model.eval()
 
     print(
@@ -1287,10 +1302,11 @@ def save_feature_activations_for_interpretation(
     dataloader, data_info = create_sae_dataloader(
         activations_path,
         layer_key=layer_key,
-        batch_size=64,
+        batch_size=2048 if device == "cuda" else 1024,  # GPU optimized batch size
         shuffle=False,
         normalize=True,
-        subsample=4000,  # Process subset for interpretation
+        subsample=None,  # Process subset for interpretation
+        num_workers=8 if device == "cuda" else 4,  # More workers for GPU
     )
 
     print(f"✅ Loaded activations from layer: {layer_key}")
@@ -1306,11 +1322,34 @@ def save_feature_activations_for_interpretation(
 
     print("🔍 Processing activations to find feature triggers...")
 
+    # Enable memory efficient processing for GPU
+    torch.backends.cudnn.benchmark = True if device == "cuda" else False
+    
+    # Clear GPU cache if using CUDA
+    if device == "cuda":
+        torch.cuda.empty_cache()
+        print(f"🧠 GPU Memory: {torch.cuda.get_device_properties(0).total_memory / 1e9:.1f}GB total")
+
+    # Use automatic mixed precision for faster GPU processing
+    use_amp = device == "cuda" and torch.cuda.is_available()
+    scaler = torch.cuda.amp.GradScaler() if use_amp else None
+
     with torch.no_grad():
         input_idx = 0
         for batch_idx, batch in enumerate(dataloader):
-            # Forward pass through SAE
-            reconstructed, hidden = model(batch)
+            # Move data to device for GPU acceleration
+            batch = batch.to(device, non_blocking=True)  # Non-blocking for better performance
+            
+            # Forward pass through SAE with mixed precision if available
+            if use_amp:
+                with torch.cuda.amp.autocast():
+                    _, hidden = model(batch)
+            else:
+                _, hidden = model(batch)
+            
+            # Move results back to CPU for processing to save GPU memory
+            hidden = hidden.cpu()
+            batch = batch.cpu()
 
             # Process each sample in the batch
             for sample_idx in range(batch.size(0)):
@@ -1660,7 +1699,6 @@ def interpret_music_features(results, activations_path, top_k=10):
 
 
 if __name__ == "__main__":
-    import argparse
 
     parser = argparse.ArgumentParser(
         description="Music SAE Feature Interpretation with OpenAI"
@@ -1706,8 +1744,27 @@ if __name__ == "__main__":
         choices=["gpt-4o-mini", "gpt-3.5-turbo"],
         help="OpenAI model to use",
     )
+    parser.add_argument(
+        "--device",
+        default=None,
+        choices=["cpu", "cuda", "auto"],
+        help="Device to use: cpu, cuda, or auto (default: auto-detect)",
+    )
 
     args = parser.parse_args()
+
+    # Determine device based on argument or auto-detect
+    if args.device == "auto" or args.device is None:
+        device = "cuda" if torch.cuda.is_available() else "cpu"
+    else:
+        device = args.device
+        
+    print(f"🚀 Using device: {device}")
+    
+    # Validate CUDA availability if requested
+    if device == "cuda" and not torch.cuda.is_available():
+        print("⚠️  CUDA requested but not available, falling back to CPU")
+        device = "cpu"
 
     if args.mode == "pattern":
         print("🎼 Running pattern-based interpretation pipeline...")
@@ -1717,6 +1774,7 @@ if __name__ == "__main__":
             data_dir=args.data_dir,
             output_dir=args.output_dir,
             max_features=args.max_features,
+            device=device,  # Pass device for GPU acceleration
         )
 
         print("\n🎉 Pattern-based interpretation complete!")
