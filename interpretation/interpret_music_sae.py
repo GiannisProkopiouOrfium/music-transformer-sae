@@ -1306,7 +1306,7 @@ def save_feature_activations_for_interpretation(
         activations_path,
         layer_key=layer_key,
         batch_size=(
-            1024 if device == "cuda" else 256
+            4096 if device == "cuda" else 1024
         ),  # Larger GPU batch for faster processing
         shuffle=False,
         normalize=True,
@@ -1379,37 +1379,37 @@ def save_feature_activations_for_interpretation(
                 hidden > min_activation_threshold
             )  # Shape: [batch_size, hidden_dim]
 
-            # Process each sample in the batch more efficiently
-            for sample_idx in range(batch.size(0)):
-                sample_mask = batch_activated_mask[sample_idx]  # Shape: [hidden_dim]
-                activated_features = torch.where(sample_mask)[0]
+            # Much more efficient batch processing - avoid nested loops
+            if torch.any(
+                batch_activated_mask
+            ):  # Only process if there are any activations
+                # Get all activated positions at once
+                batch_indices, feature_indices = torch.where(batch_activated_mask)
 
-                if len(activated_features) > 0:  # Only process if there are activations
-                    sample_hidden = hidden[sample_idx]  # Shape: [hidden_dim]
-                    activation_values = sample_hidden[activated_features]
+                # Process all activations in this batch efficiently
+                for i in range(len(batch_indices)):
+                    sample_idx_in_batch = batch_indices[i].item()
+                    feature_id = feature_indices[i].item()
+                    activation_value = hidden[sample_idx_in_batch, feature_id].item()
 
-                    # Process features in batch to reduce individual operations
-                    for i, feature_id in enumerate(activated_features):
-                        feature_id = feature_id.item()
-                        activation_value = activation_values[i].item()
+                    current_input_idx = input_idx + sample_idx_in_batch
 
-                        # Minimal metadata for faster processing
-                        metadata = {
-                            "input_index": input_idx,
-                            "activation_value": activation_value,
-                        }
+                    # Minimal metadata for faster processing
+                    metadata = {
+                        "input_index": current_input_idx,
+                        "activation_value": activation_value,
+                    }
 
-                        # Only add expensive operations if really needed
-                        if musical_metadata and input_idx in musical_metadata:
-                            metadata.update(musical_metadata[input_idx])
+                    # Only add expensive operations if really needed
+                    if musical_metadata and current_input_idx in musical_metadata:
+                        metadata.update(musical_metadata[current_input_idx])
 
-                        feature_activations[feature_id].append(metadata)
+                    feature_activations[feature_id].append(metadata)
 
-                input_idx += 1
+            # Update input index for the entire batch
+            input_idx += batch.size(0)
 
-            if (
-                batch_idx % 5 == 0 or batch_idx < 3
-            ):  # More frequent updates for first few batches
+            if batch_idx % 1 == 0:  # Report every single batch to show progress
                 progress_pct = (batch_idx + 1) / total_batches * 100
                 features_found = len(feature_activations)
                 print(
@@ -1417,9 +1417,7 @@ def save_feature_activations_for_interpretation(
                 )
 
                 # Show GPU utilization if available
-                if (
-                    device == "cuda" and batch_idx % 10 == 0
-                ):  # More frequent GPU updates
+                if device == "cuda":  # Show GPU stats every batch
                     gpu_memory_used = torch.cuda.memory_allocated() / 1e9
                     gpu_memory_cached = torch.cuda.memory_reserved() / 1e9
                     print(
