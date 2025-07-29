@@ -626,6 +626,7 @@ def run_pattern_based_interpretation_pipeline(
     output_dir: str = "interpretation/pattern_analysis",
     max_features: int = 20,
     device: str = None,
+    subsample: int = 50000,
 ):
     """
     Pattern-based SAE feature interpretation pipeline.
@@ -649,6 +650,7 @@ def run_pattern_based_interpretation_pipeline(
         max_samples_per_feature=10,
         min_activation_threshold=0.1,
         device=device,  # Pass device for GPU acceleration
+        subsample=subsample,  # Pass subsample parameter
     )
 
     # Step 2: Load original musical data
@@ -1257,6 +1259,7 @@ def save_feature_activations_for_interpretation(
     max_samples_per_feature: int = 20,
     min_activation_threshold: float = 0.1,
     device: str = None,
+    subsample: int = 50000,
 ):
     """
     Save input-activation mappings for each SAE feature for LLM interpretation.
@@ -1302,11 +1305,16 @@ def save_feature_activations_for_interpretation(
     dataloader, data_info = create_sae_dataloader(
         activations_path,
         layer_key=layer_key,
-        batch_size=2048 if device == "cuda" else 1024,  # GPU optimized batch size
+        batch_size=(
+            4096 if device == "cuda" else 1024
+        ),  # Larger GPU batch for faster processing
         shuffle=False,
         normalize=True,
-        subsample=1000000,  # Process subset for interpretation
-        num_workers=8 if device == "cuda" else 4,  # More workers for GPU
+        subsample=subsample,  # Use configurable subsample size
+        num_workers=4,  # System recommended max workers
+        pin_memory=(
+            True if device == "cuda" else False
+        ),  # Pin memory for faster GPU transfers
     )
 
     print(f"✅ Loaded activations from layer: {layer_key}")
@@ -1334,10 +1342,14 @@ def save_feature_activations_for_interpretation(
 
     # Use automatic mixed precision for faster GPU processing
     use_amp = device == "cuda" and torch.cuda.is_available()
-    scaler = torch.cuda.amp.GradScaler() if use_amp else None
 
     with torch.no_grad():
         input_idx = 0
+        total_batches = len(dataloader)
+        print(
+            f"Processing {total_batches} batches with batch_size={dataloader.batch_size}"
+        )
+
         for batch_idx, batch in enumerate(dataloader):
             # Move data to device for GPU acceleration
             batch = batch.to(
@@ -1355,28 +1367,36 @@ def save_feature_activations_for_interpretation(
             hidden = hidden.cpu()
             batch = batch.cpu()
 
+            # Vectorized processing - find all activated features across the batch
+            batch_activated_mask = (
+                hidden > min_activation_threshold
+            )  # Shape: [batch_size, hidden_dim]
+
             # Process each sample in the batch
             for sample_idx in range(batch.size(0)):
                 sample_hidden = hidden[sample_idx]  # Shape: [hidden_dim]
                 sample_input = batch[sample_idx]  # Shape: [input_dim]
+                sample_mask = batch_activated_mask[sample_idx]  # Shape: [hidden_dim]
 
-                # Find activated features (above threshold)
-                activated_features = torch.where(
-                    sample_hidden > min_activation_threshold
-                )[0]
+                # Get activated features for this sample (vectorized)
+                activated_features = torch.where(sample_mask)[0]
 
-                for feature_id in activated_features:
-                    feature_id = feature_id.item()
-                    activation_value = sample_hidden[feature_id].item()
+                if len(activated_features) > 0:  # Only process if there are activations
+                    # Vectorized activation values extraction
+                    activation_values = sample_hidden[activated_features]
 
-                    # Get metadata for this input
-                    metadata = {
-                        "input_index": input_idx,
-                        "batch_index": batch_idx,
-                        "sample_index": sample_idx,
-                        "activation_value": activation_value,
-                        "original_input": sample_input.cpu().numpy().tolist(),
-                    }
+                    for i, feature_id in enumerate(activated_features):
+                        feature_id = feature_id.item()
+                        activation_value = activation_values[i].item()
+
+                        # Get metadata for this input
+                        metadata = {
+                            "input_index": input_idx,
+                            "batch_index": batch_idx,
+                            "sample_index": sample_idx,
+                            "activation_value": activation_value,
+                            "original_input": sample_input.cpu().numpy().tolist(),
+                        }
 
                     # Add musical metadata if available - now it's a token-based mapping
                     if musical_metadata and input_idx in musical_metadata:
@@ -1386,8 +1406,20 @@ def save_feature_activations_for_interpretation(
 
                 input_idx += 1
 
-            if batch_idx % 10 == 0:
-                print(f"   Processed batch {batch_idx}/{len(dataloader)}")
+            if batch_idx % 5 == 0:  # More frequent updates
+                progress_pct = (batch_idx + 1) / total_batches * 100
+                features_found = len(feature_activations)
+                print(
+                    f"   Batch {batch_idx + 1}/{total_batches} ({progress_pct:.1f}%) - Found {features_found} active features"
+                )
+
+                # Show GPU utilization if available
+                if device == "cuda" and batch_idx % 20 == 0:
+                    gpu_memory_used = torch.cuda.memory_allocated() / 1e9
+                    gpu_memory_cached = torch.cuda.memory_reserved() / 1e9
+                    print(
+                        f"   GPU Memory: {gpu_memory_used:.1f}GB used, {gpu_memory_cached:.1f}GB cached"
+                    )
 
     print(f"✅ Found activations for {len(feature_activations)} features")
 
@@ -1754,6 +1786,12 @@ if __name__ == "__main__":
         choices=["cpu", "cuda", "auto"],
         help="Device to use: cpu, cuda, or auto (default: auto-detect)",
     )
+    parser.add_argument(
+        "--subsample",
+        type=int,
+        default=50000,
+        help="Number of samples to process for interpretation (default: 50000, use 1000000 for full analysis)",
+    )
 
     args = parser.parse_args()
 
@@ -1779,6 +1817,7 @@ if __name__ == "__main__":
             output_dir=args.output_dir,
             max_features=args.max_features,
             device=device,  # Pass device for GPU acceleration
+            subsample=args.subsample,  # Pass subsample parameter
         )
 
         print("\n🎉 Pattern-based interpretation complete!")

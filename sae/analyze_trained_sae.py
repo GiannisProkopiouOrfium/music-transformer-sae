@@ -374,33 +374,51 @@ class SAEAnalyzer:
             return bool(obj)
         return obj
 
-
     def _safe_histogram(self, ax, data, title, xlabel, ylabel, color, target_line=None):
         """Create histogram with adaptive binning to handle edge cases."""
-        data_flat = data.flatten() if hasattr(data, 'flatten') else np.array(data)
+        data_flat = data.flatten() if hasattr(data, "flatten") else np.array(data)
         data_range = data_flat.max() - data_flat.min()
-        unique_vals = len(np.unique(data_flat.round(8)))  # Round to handle floating point precision
-        
+        unique_vals = len(
+            np.unique(data_flat.round(8))
+        )  # Round to handle floating point precision
+
         if data_range < 1e-8 or unique_vals < 3:
             # Very uniform data - show text summary instead
-            ax.text(0.5, 0.5, f'🎯 {title}\n(Very Uniform - Sign of Good Training!)\n\nMean: {data_flat.mean():.6f}\nStd: {data_flat.std():.8f}\nRange: {data_range:.8f}\nUnique values: {unique_vals}', 
-                   ha='center', va='center', transform=ax.transAxes,
-                   bbox=dict(boxstyle="round", facecolor=color, alpha=0.3),
-                   fontsize=9)
+            ax.text(
+                0.5,
+                0.5,
+                f"🎯 {title}\n(Very Uniform - Sign of Good Training!)\n\nMean: {data_flat.mean():.6f}\nStd: {data_flat.std():.8f}\nRange: {data_range:.8f}\nUnique values: {unique_vals}",
+                ha="center",
+                va="center",
+                transform=ax.transAxes,
+                bbox=dict(boxstyle="round", facecolor=color, alpha=0.3),
+                fontsize=9,
+            )
         else:
             # Use very conservative number of bins
             n_bins = min(max(3, unique_vals), 20)
             try:
                 ax.hist(data_flat, bins=n_bins, alpha=0.7, color=color)
                 if target_line is not None:
-                    ax.axvline(target_line, color="red", linestyle="--", label=f"Target: {target_line}")
+                    ax.axvline(
+                        target_line,
+                        color="red",
+                        linestyle="--",
+                        label=f"Target: {target_line}",
+                    )
                     ax.legend()
             except ValueError:
                 # Fallback to text if histogram still fails
-                ax.text(0.5, 0.5, f'Data too uniform for histogram\nMean: {data_flat.mean():.6f}\nStd: {data_flat.std():.8f}', 
-                       ha='center', va='center', transform=ax.transAxes,
-                       bbox=dict(boxstyle="round", facecolor=color, alpha=0.3))
-        
+                ax.text(
+                    0.5,
+                    0.5,
+                    f"Data too uniform for histogram\nMean: {data_flat.mean():.6f}\nStd: {data_flat.std():.8f}",
+                    ha="center",
+                    va="center",
+                    transform=ax.transAxes,
+                    bbox=dict(boxstyle="round", facecolor=color, alpha=0.3),
+                )
+
         ax.set_title(title)
         ax.set_xlabel(xlabel)
         ax.set_ylabel(ylabel)
@@ -408,47 +426,77 @@ class SAEAnalyzer:
     def _create_weight_visualizations(self, output_path: pathlib.Path):
         """Create weight analysis visualizations."""
         print("   📈 Creating weight visualizations...")
-        
+
         encoder_weights = self.model.encoder.weight.data.numpy()
         decoder_weights = self.model.decoder.weight.data.numpy()
-        
+
         fig, axes = plt.subplots(2, 3, figsize=(18, 12))
-        
+
         # Encoder weights
-        self._safe_histogram(axes[0, 0], encoder_weights, "Encoder Weight Distribution", 
-                           "Weight Value", "Frequency", "blue")
-        
-        # Decoder weights  
-        self._safe_histogram(axes[0, 1], decoder_weights, "Decoder Weight Distribution",
-                           "Weight Value", "Frequency", "red")
-        
+        self._safe_histogram(
+            axes[0, 0],
+            encoder_weights,
+            "Encoder Weight Distribution",
+            "Weight Value",
+            "Frequency",
+            "blue",
+        )
+
+        # Decoder weights
+        self._safe_histogram(
+            axes[0, 1],
+            decoder_weights,
+            "Decoder Weight Distribution",
+            "Weight Value",
+            "Frequency",
+            "red",
+        )
+
         # Decoder column norms - using the fixed version from above
         decoder_norms = np.linalg.norm(decoder_weights, axis=0)
         # Adaptive binning to handle very uniform distributions
         data_range = decoder_norms.max() - decoder_norms.min()
-        unique_vals = len(np.unique(decoder_norms.round(8)))  # Round to handle floating point precision
-        
+        unique_vals = len(
+            np.unique(decoder_norms.round(8))
+        )  # Round to handle floating point precision
+
         if data_range < 1e-6 or unique_vals < 5:
             # Very uniform data - show text summary instead of histogram
-            axes[0, 2].text(0.5, 0.5, f'🎯 Decoder Norms VERY Uniform\n(Sign of Excellent Training!)\n\nMean: {decoder_norms.mean():.6f}\nStd: {decoder_norms.std():.8f}\nRange: {data_range:.8f}\nUnique values: {unique_vals}', 
-                           ha='center', va='center', transform=axes[0, 2].transAxes,
-                           bbox=dict(boxstyle="round", facecolor="lightgreen", alpha=0.8),
-                           fontsize=10)
+            axes[0, 2].text(
+                0.5,
+                0.5,
+                f"🎯 Decoder Norms VERY Uniform\n(Sign of Excellent Training!)\n\nMean: {decoder_norms.mean():.6f}\nStd: {decoder_norms.std():.8f}\nRange: {data_range:.8f}\nUnique values: {unique_vals}",
+                ha="center",
+                va="center",
+                transform=axes[0, 2].transAxes,
+                bbox=dict(boxstyle="round", facecolor="lightgreen", alpha=0.8),
+                fontsize=10,
+            )
             axes[0, 2].set_title("Decoder Column Norms (Perfectly Uniform!)")
         else:
             # Use very conservative number of bins for near-uniform data
             n_bins = min(max(3, unique_vals), 20)  # Much more conservative
             try:
                 axes[0, 2].hist(decoder_norms, bins=n_bins, alpha=0.7, color="green")
-                axes[0, 2].axvline(1.0, color="red", linestyle="--", label="Target norm")
+                axes[0, 2].axvline(
+                    1.0, color="red", linestyle="--", label="Target norm"
+                )
                 axes[0, 2].legend()
                 axes[0, 2].set_title("Decoder Column Norms")
             except ValueError:
                 # Fallback to text if histogram still fails
-                axes[0, 2].text(0.5, 0.5, f'Decoder norms extremely uniform\nMean: {decoder_norms.mean():.6f}\nStd: {decoder_norms.std():.8f}', 
-                               ha='center', va='center', transform=axes[0, 2].transAxes,
-                               bbox=dict(boxstyle="round", facecolor="lightgreen", alpha=0.8))
-                axes[0, 2].set_title("Decoder Column Norms (Histogram Failed - Too Uniform)")
+                axes[0, 2].text(
+                    0.5,
+                    0.5,
+                    f"Decoder norms extremely uniform\nMean: {decoder_norms.mean():.6f}\nStd: {decoder_norms.std():.8f}",
+                    ha="center",
+                    va="center",
+                    transform=axes[0, 2].transAxes,
+                    bbox=dict(boxstyle="round", facecolor="lightgreen", alpha=0.8),
+                )
+                axes[0, 2].set_title(
+                    "Decoder Column Norms (Histogram Failed - Too Uniform)"
+                )
         axes[0, 2].set_xlabel("L2 Norm")
         axes[0, 2].set_ylabel("Frequency")
         # Weight matrices as heatmaps (sample)
@@ -489,15 +537,27 @@ class SAEAnalyzer:
         fig, axes = plt.subplots(3, 3, figsize=(18, 15))
 
         # Feature activation frequency
-        self._safe_histogram(axes[0, 0], frequencies, "Feature Activation Frequency Distribution",
-                           "Activation Frequency", "Number of Features", "skyblue")
+        self._safe_histogram(
+            axes[0, 0],
+            frequencies,
+            "Feature Activation Frequency Distribution",
+            "Activation Frequency",
+            "Number of Features",
+            "skyblue",
+        )
         axes[0, 0].axvline(0.01, color="red", linestyle="--", label="1%")
         axes[0, 0].axvline(0.1, color="orange", linestyle="--", label="10%")
         axes[0, 0].legend()
 
         # Feature magnitude distribution
-        self._safe_histogram(axes[0, 1], magnitudes, "Feature Magnitude Distribution",
-                           "Mean Magnitude", "Number of Features", "lightgreen")
+        self._safe_histogram(
+            axes[0, 1],
+            magnitudes,
+            "Feature Magnitude Distribution",
+            "Mean Magnitude",
+            "Number of Features",
+            "lightgreen",
+        )
         axes[0, 1].set_xlabel("Mean Activation Magnitude")
         axes[0, 1].set_ylabel("Number of Features")
 
