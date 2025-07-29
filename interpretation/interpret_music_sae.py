@@ -1306,7 +1306,7 @@ def save_feature_activations_for_interpretation(
         activations_path,
         layer_key=layer_key,
         batch_size=(
-            4096 if device == "cuda" else 1024
+            1024 if device == "cuda" else 256
         ),  # Larger GPU batch for faster processing
         shuffle=False,
         normalize=True,
@@ -1348,6 +1348,12 @@ def save_feature_activations_for_interpretation(
         )
 
         for batch_idx, batch in enumerate(dataloader):
+            # Immediate progress feedback to show script is not stuck
+            if batch_idx == 0:
+                print(
+                    f"   ✅ Started processing first batch (size: {batch.size(0)})..."
+                )
+
             # Move data to device for GPU acceleration
             batch = batch.to(
                 device, non_blocking=True
@@ -1360,6 +1366,10 @@ def save_feature_activations_for_interpretation(
             else:
                 _, hidden = model(batch)
 
+            # Show progress immediately after first batch
+            if batch_idx == 0:
+                print(f"   ✅ Completed SAE forward pass for first batch")
+
             # Move results back to CPU for processing to save GPU memory
             hidden = hidden.cpu()
             batch = batch.cpu()
@@ -1369,41 +1379,37 @@ def save_feature_activations_for_interpretation(
                 hidden > min_activation_threshold
             )  # Shape: [batch_size, hidden_dim]
 
-            # Process each sample in the batch
+            # Process each sample in the batch more efficiently
             for sample_idx in range(batch.size(0)):
-                sample_hidden = hidden[sample_idx]  # Shape: [hidden_dim]
-                sample_input = batch[sample_idx]  # Shape: [input_dim]
                 sample_mask = batch_activated_mask[sample_idx]  # Shape: [hidden_dim]
-
-                # Get activated features for this sample (vectorized)
                 activated_features = torch.where(sample_mask)[0]
 
                 if len(activated_features) > 0:  # Only process if there are activations
-                    # Vectorized activation values extraction
+                    sample_hidden = hidden[sample_idx]  # Shape: [hidden_dim]
                     activation_values = sample_hidden[activated_features]
 
+                    # Process features in batch to reduce individual operations
                     for i, feature_id in enumerate(activated_features):
                         feature_id = feature_id.item()
                         activation_value = activation_values[i].item()
 
-                        # Get metadata for this input
+                        # Minimal metadata for faster processing
                         metadata = {
                             "input_index": input_idx,
-                            "batch_index": batch_idx,
-                            "sample_index": sample_idx,
                             "activation_value": activation_value,
-                            "original_input": sample_input.cpu().numpy().tolist(),
                         }
 
-                    # Add musical metadata if available - now it's a token-based mapping
-                    if musical_metadata and input_idx in musical_metadata:
-                        metadata.update(musical_metadata[input_idx])
+                        # Only add expensive operations if really needed
+                        if musical_metadata and input_idx in musical_metadata:
+                            metadata.update(musical_metadata[input_idx])
 
-                    feature_activations[feature_id].append(metadata)
+                        feature_activations[feature_id].append(metadata)
 
                 input_idx += 1
 
-            if batch_idx % 5 == 0:  # More frequent updates
+            if (
+                batch_idx % 5 == 0 or batch_idx < 3
+            ):  # More frequent updates for first few batches
                 progress_pct = (batch_idx + 1) / total_batches * 100
                 features_found = len(feature_activations)
                 print(
@@ -1411,7 +1417,9 @@ def save_feature_activations_for_interpretation(
                 )
 
                 # Show GPU utilization if available
-                if device == "cuda" and batch_idx % 20 == 0:
+                if (
+                    device == "cuda" and batch_idx % 10 == 0
+                ):  # More frequent GPU updates
                     gpu_memory_used = torch.cuda.memory_allocated() / 1e9
                     gpu_memory_cached = torch.cuda.memory_reserved() / 1e9
                     print(
