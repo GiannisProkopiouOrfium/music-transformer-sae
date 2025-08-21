@@ -35,8 +35,8 @@ def extract_musical_patterns(musical_data: dict) -> dict:
         "rhythmic_patterns": [],
         "harmonic_patterns": [],
         "textural_patterns": [],  # New category
-        "dynamic_patterns": [],   # New category
-        "structural_patterns": [], # New category
+        "dynamic_patterns": [],  # New category
+        "structural_patterns": [],  # New category
     }
 
     tracks = musical_data.get("tracks", [])
@@ -46,48 +46,70 @@ def extract_musical_patterns(musical_data: dict) -> dict:
     def detect_rhythmic_patterns(notes, instrument_name):
         if len(notes) < 4:
             return []
-        
+
         rhythmic_patterns = []
-        onset_intervals = [notes[i + 1]["time"] - notes[i]["time"] for i in range(len(notes) - 1)]
+        onset_intervals = [
+            notes[i + 1]["time"] - notes[i]["time"] for i in range(len(notes) - 1)
+        ]
         durations = [note["duration"] for note in notes]
-        
+
         # Syncopation detection (off-beat emphasis)
         beat_length = resolution  # Quarter note
         syncopated_count = 0
         for i, interval in enumerate(onset_intervals):
-            if interval % beat_length != 0 and durations[i] >= beat_length//2:
+            if interval % beat_length != 0 and durations[i] >= beat_length // 2:
                 syncopated_count += 1
-        
+
         if syncopated_count > len(onset_intervals) * 0.3:
-            rhythmic_patterns.append(f"syncopated patterns ({syncopated_count}/{len(onset_intervals)} off-beat) in {instrument_name}")
-        
+            rhythmic_patterns.append(
+                f"syncopated patterns ({syncopated_count}/{len(onset_intervals)} off-beat) in {instrument_name}"
+            )
+
         # Steady beat detection
-        most_common_interval = max(set(onset_intervals), key=onset_intervals.count) if onset_intervals else 0
-        steady_ratio = onset_intervals.count(most_common_interval) / len(onset_intervals) if onset_intervals else 0
+        most_common_interval = (
+            max(set(onset_intervals), key=onset_intervals.count)
+            if onset_intervals
+            else 0
+        )
+        steady_ratio = (
+            onset_intervals.count(most_common_interval) / len(onset_intervals)
+            if onset_intervals
+            else 0
+        )
         if steady_ratio > 0.7:
-            rhythmic_patterns.append(f"steady beat (interval {most_common_interval} ticks, {steady_ratio:.1%} consistency) in {instrument_name}")
-        
+            rhythmic_patterns.append(
+                f"steady beat (interval {most_common_interval} ticks, {steady_ratio:.1%} consistency) in {instrument_name}"
+            )
+
         # Dotted rhythm detection (3:2 ratio patterns)
         dotted_count = 0
         for i in range(len(durations) - 1):
-            ratio = durations[i] / durations[i+1] if durations[i+1] > 0 else 0
+            ratio = durations[i] / durations[i + 1] if durations[i + 1] > 0 else 0
             if 1.4 < ratio < 1.6:  # Approximately 3:2 ratio
                 dotted_count += 1
-        
+
         if dotted_count > len(durations) * 0.2:
-            rhythmic_patterns.append(f"dotted rhythms ({dotted_count} dotted patterns) in {instrument_name}")
-        
+            rhythmic_patterns.append(
+                f"dotted rhythms ({dotted_count} dotted patterns) in {instrument_name}"
+            )
+
         # Triplet detection (irregular subdivisions)
-        triplet_intervals = [interval for interval in onset_intervals if interval % (beat_length//3) == 0]
+        triplet_intervals = [
+            interval
+            for interval in onset_intervals
+            if interval % (beat_length // 3) == 0
+        ]
         if len(triplet_intervals) > len(onset_intervals) * 0.3:
-            rhythmic_patterns.append(f"triplet rhythms ({len(triplet_intervals)} triplet subdivisions) in {instrument_name}")
-        
+            rhythmic_patterns.append(
+                f"triplet rhythms ({len(triplet_intervals)} triplet subdivisions) in {instrument_name}"
+            )
+
         return rhythmic_patterns
 
     # ENHANCED HARMONIC PATTERN DETECTION
     def detect_harmonic_patterns(all_tracks):
         harmonic_patterns = []
-        
+
         # Collect simultaneous notes for chord analysis
         time_slices = {}
         for track in all_tracks:
@@ -96,7 +118,7 @@ def extract_musical_patterns(musical_data: dict) -> dict:
                 if time_window not in time_slices:
                     time_slices[time_window] = []
                 time_slices[time_window].append(note["pitch"] % 12)
-        
+
         # Chord progression analysis
         chord_sequence = []
         for time_window in sorted(time_slices.keys()):
@@ -104,75 +126,89 @@ def extract_musical_patterns(musical_data: dict) -> dict:
             if len(pitches) >= 3:  # Chord
                 pitches.sort()
                 chord_sequence.append(tuple(pitches))
-        
+
         if len(chord_sequence) >= 3:
             # Look for common progressions (simplified)
             progression_changes = len(set(chord_sequence))
             if progression_changes >= 3:
-                harmonic_patterns.append(f"chord progressions ({progression_changes} distinct chords in sequence)")
-        
+                harmonic_patterns.append(
+                    f"chord progressions ({progression_changes} distinct chords in sequence)"
+                )
+
         # Dissonance detection (tritones, major 7ths, minor 2nds)
         dissonant_intervals = []
         for pitches in time_slices.values():
             if len(pitches) >= 2:
                 for i, p1 in enumerate(pitches):
-                    for p2 in pitches[i+1:]:
+                    for p2 in pitches[i + 1 :]:
                         interval = abs(p1 - p2) % 12
                         if interval in [1, 6, 10, 11]:  # Dissonant intervals
                             dissonant_intervals.append(interval)
-        
+
         if len(dissonant_intervals) > 5:
-            harmonic_patterns.append(f"dissonant intervals ({len(dissonant_intervals)} dissonances detected)")
-        
+            harmonic_patterns.append(
+                f"dissonant intervals ({len(dissonant_intervals)} dissonances detected)"
+            )
+
         # Cadence detection (simplified - look for V-I motion)
         for i in range(len(chord_sequence) - 1):
             curr_chord = chord_sequence[i]
-            next_chord = chord_sequence[i+1]
+            next_chord = chord_sequence[i + 1]
             # Simple dominant-tonic detection
             if len(curr_chord) >= 3 and len(next_chord) >= 3:
                 # Look for fifth relationship in bass notes
                 bass_motion = (next_chord[0] - curr_chord[0]) % 12
                 if bass_motion == 5 or bass_motion == 7:  # Perfect 4th or 5th
-                    harmonic_patterns.append(f"cadential motion (dominant-tonic bass movement)")
+                    harmonic_patterns.append(
+                        f"cadential motion (dominant-tonic bass movement)"
+                    )
                     break
-        
+
         return harmonic_patterns
 
     # TEXTURAL PATTERN DETECTION
     def detect_textural_patterns(all_tracks):
         textural_patterns = []
-        
+
         # Polyphonic density analysis
         max_simultaneous = 0
         total_time_slices = 0
         dense_sections = 0
-        
+
         time_coverage = {}
         for track in all_tracks:
             for note in track.get("notes", []):
                 start_time = note["time"]
                 end_time = start_time + note["duration"]
-                for t in range(start_time, end_time, resolution//4):
+                for t in range(start_time, end_time, resolution // 4):
                     if t not in time_coverage:
                         time_coverage[t] = 0
                     time_coverage[t] += 1
-        
+
         if time_coverage:
             max_simultaneous = max(time_coverage.values())
-            dense_sections = sum(1 for count in time_coverage.values() if count >= len(all_tracks) * 0.8)
+            dense_sections = sum(
+                1 for count in time_coverage.values() if count >= len(all_tracks) * 0.8
+            )
             total_time_slices = len(time_coverage)
-            
+
             if max_simultaneous >= 4:
-                textural_patterns.append(f"dense polyphony (up to {max_simultaneous} simultaneous voices)")
-            
+                textural_patterns.append(
+                    f"dense polyphony (up to {max_simultaneous} simultaneous voices)"
+                )
+
             if dense_sections > total_time_slices * 0.3:
-                textural_patterns.append(f"thick texture ({dense_sections}/{total_time_slices} dense sections)")
-        
+                textural_patterns.append(
+                    f"thick texture ({dense_sections}/{total_time_slices} dense sections)"
+                )
+
         # Solo passage detection
         solo_sections = sum(1 for count in time_coverage.values() if count == 1)
         if solo_sections > total_time_slices * 0.2:
-            textural_patterns.append(f"solo passages ({solo_sections}/{total_time_slices} single-voice sections)")
-        
+            textural_patterns.append(
+                f"solo passages ({solo_sections}/{total_time_slices} single-voice sections)"
+            )
+
         # Unison detection (same pitches across tracks)
         unison_count = 0
         for time_window in time_coverage:
@@ -181,106 +217,124 @@ def extract_musical_patterns(musical_data: dict) -> dict:
                 for note in track.get("notes", []):
                     if note["time"] <= time_window < note["time"] + note["duration"]:
                         pitches_at_time.append(note["pitch"])
-            
+
             if len(set(pitches_at_time)) == 1 and len(pitches_at_time) > 1:
                 unison_count += 1
-        
+
         if unison_count > total_time_slices * 0.1:
             textural_patterns.append(f"unison sections ({unison_count} unison moments)")
-        
+
         return textural_patterns
 
     # DYNAMIC PATTERN DETECTION
     def detect_dynamic_patterns(notes, instrument_name):
         if len(notes) < 5:
             return []
-        
+
         dynamic_patterns = []
         velocities = [note["velocity"] for note in notes]
-        
+
         # Crescendo detection (gradual increase)
         crescendo_sequences = 0
         for i in range(len(velocities) - 3):
-            if all(velocities[j] < velocities[j+1] for j in range(i, i+3)):
+            if all(velocities[j] < velocities[j + 1] for j in range(i, i + 3)):
                 crescendo_sequences += 1
-        
+
         if crescendo_sequences > 0:
-            dynamic_patterns.append(f"crescendo patterns ({crescendo_sequences} ascending sequences) in {instrument_name}")
-        
+            dynamic_patterns.append(
+                f"crescendo patterns ({crescendo_sequences} ascending sequences) in {instrument_name}"
+            )
+
         # Accent detection (sudden loud notes)
         avg_velocity = sum(velocities) / len(velocities)
         accents = [v for v in velocities if v > avg_velocity + 20]
         if len(accents) > len(velocities) * 0.2:
-            dynamic_patterns.append(f"forte accents ({len(accents)} accent notes) in {instrument_name}")
-        
+            dynamic_patterns.append(
+                f"forte accents ({len(accents)} accent notes) in {instrument_name}"
+            )
+
         # Pianissimo detection
         soft_notes = [v for v in velocities if v < 40]
         if len(soft_notes) > len(velocities) * 0.3:
-            dynamic_patterns.append(f"pianissimo passages ({len(soft_notes)} very soft notes) in {instrument_name}")
-        
+            dynamic_patterns.append(
+                f"pianissimo passages ({len(soft_notes)} very soft notes) in {instrument_name}"
+            )
+
         # Dynamic contrast
         velocity_range = max(velocities) - min(velocities)
         if velocity_range > 60:
-            dynamic_patterns.append(f"wide dynamic range (span: {velocity_range}) in {instrument_name}")
-        
+            dynamic_patterns.append(
+                f"wide dynamic range (span: {velocity_range}) in {instrument_name}"
+            )
+
         return dynamic_patterns
 
     # STRUCTURAL PATTERN DETECTION
     def detect_structural_patterns(notes, instrument_name):
         if len(notes) < 8:
             return []
-        
+
         structural_patterns = []
-        
+
         # Phrase boundary detection (gaps in time)
         times = [note["time"] for note in notes]
         gaps = []
         for i in range(len(times) - 1):
-            gap = times[i+1] - (times[i] + notes[i]["duration"])
+            gap = times[i + 1] - (times[i] + notes[i]["duration"])
             if gap > resolution:  # Gap longer than quarter note
                 gaps.append(gap)
-        
+
         if len(gaps) > 2:
             avg_gap = sum(gaps) / len(gaps)
-            structural_patterns.append(f"phrase boundaries ({len(gaps)} gaps, avg {avg_gap:.0f} ticks) in {instrument_name}")
-        
+            structural_patterns.append(
+                f"phrase boundaries ({len(gaps)} gaps, avg {avg_gap:.0f} ticks) in {instrument_name}"
+            )
+
         # Repetitive motif detection (pitch sequences)
         pitches = [note["pitch"] for note in notes]
         motif_length = 4
         motifs = {}
         for i in range(len(pitches) - motif_length + 1):
-            motif = tuple(pitches[i:i+motif_length])
+            motif = tuple(pitches[i : i + motif_length])
             motifs[motif] = motifs.get(motif, 0) + 1
-        
-        repeated_motifs = [(motif, count) for motif, count in motifs.items() if count >= 2]
+
+        repeated_motifs = [
+            (motif, count) for motif, count in motifs.items() if count >= 2
+        ]
         if repeated_motifs:
             max_repetitions = max(count for _, count in repeated_motifs)
-            structural_patterns.append(f"repetitive motifs ({len(repeated_motifs)} patterns, max {max_repetitions} repeats) in {instrument_name}")
-        
+            structural_patterns.append(
+                f"repetitive motifs ({len(repeated_motifs)} patterns, max {max_repetitions} repeats) in {instrument_name}"
+            )
+
         # Variation detection (similar but not identical motifs)
         variations = 0
         for motif1, count1 in motifs.items():
             for motif2, count2 in motifs.items():
                 if motif1 != motif2:
                     # Check if motifs are similar (transposed or rhythmically varied)
-                    differences = sum(1 for p1, p2 in zip(motif1, motif2) if abs(p1 - p2) > 2)
+                    differences = sum(
+                        1 for p1, p2 in zip(motif1, motif2) if abs(p1 - p2) > 2
+                    )
                     if differences <= 1:  # Very similar
                         variations += 1
-        
+
         if variations > 3:
-            structural_patterns.append(f"motivic variations ({variations} similar patterns) in {instrument_name}")
-        
+            structural_patterns.append(
+                f"motivic variations ({variations} similar patterns) in {instrument_name}"
+            )
+
         return structural_patterns
 
     tracks = musical_data.get("tracks", [])
 
     # USE NEW ENHANCED PATTERN DETECTION FUNCTIONS
-    
+
     # Extract harmonic patterns from all tracks
     harmonic_patterns = detect_harmonic_patterns(tracks)
     patterns["harmonic_patterns"].extend(harmonic_patterns)
-    
-    # Extract textural patterns from all tracks  
+
+    # Extract textural patterns from all tracks
     textural_patterns = detect_textural_patterns(tracks)
     patterns["textural_patterns"].extend(textural_patterns)
 
@@ -295,11 +349,11 @@ def extract_musical_patterns(musical_data: dict) -> dict:
         # Enhanced rhythmic pattern detection
         rhythmic_patterns = detect_rhythmic_patterns(notes, instrument_name)
         patterns["rhythmic_patterns"].extend(rhythmic_patterns)
-        
+
         # Enhanced dynamic pattern detection
         dynamic_patterns = detect_dynamic_patterns(notes, instrument_name)
         patterns["dynamic_patterns"].extend(dynamic_patterns)
-        
+
         # Enhanced structural pattern detection
         structural_patterns = detect_structural_patterns(notes, instrument_name)
         patterns["structural_patterns"].extend(structural_patterns)
@@ -308,78 +362,110 @@ def extract_musical_patterns(musical_data: dict) -> dict:
         pitches = [note["pitch"] for note in notes]
         for i in range(len(notes) - 1):
             pitch_diff = notes[i + 1]["pitch"] - notes[i]["pitch"]
-            
+
             # Specific interval detection
             if abs(pitch_diff) == 12:  # Octave
                 direction = "ascending" if pitch_diff > 0 else "descending"
-                patterns["pitch_changes"].append(f"octave leaps {direction} in {instrument_name}")
+                patterns["pitch_changes"].append(
+                    f"octave leaps {direction} in {instrument_name}"
+                )
             elif abs(pitch_diff) == 7:  # Perfect fifth
                 direction = "ascending" if pitch_diff > 0 else "descending"
-                patterns["pitch_changes"].append(f"perfect fifth leaps {direction} in {instrument_name}")
+                patterns["pitch_changes"].append(
+                    f"perfect fifth leaps {direction} in {instrument_name}"
+                )
             elif abs(pitch_diff) >= 7:  # Large leap
                 direction = "ascending" if pitch_diff > 0 else "descending"
-                patterns["pitch_changes"].append(f"wide leaps ({abs(pitch_diff)} semitones {direction}) in {instrument_name}")
+                patterns["pitch_changes"].append(
+                    f"wide leaps ({abs(pitch_diff)} semitones {direction}) in {instrument_name}"
+                )
             elif abs(pitch_diff) <= 2 and pitch_diff != 0:  # Stepwise motion
                 direction = "ascending" if pitch_diff > 0 else "descending"
-                patterns["pitch_changes"].append(f"stepwise {direction} motion in {instrument_name}")
-        
+                patterns["pitch_changes"].append(
+                    f"stepwise {direction} motion in {instrument_name}"
+                )
+
         # Scale pattern detection
         if len(pitches) >= 5:
             # Check for scale-like passages
             ascending_steps = 0
             descending_steps = 0
             for i in range(len(pitches) - 1):
-                diff = pitches[i+1] - pitches[i]
+                diff = pitches[i + 1] - pitches[i]
                 if diff in [1, 2]:  # Semitone or whole tone
                     ascending_steps += 1
                 elif diff in [-1, -2]:
                     descending_steps += 1
-            
+
             if ascending_steps > len(pitches) * 0.6:
-                patterns["pitch_changes"].append(f"scalar ascent ({ascending_steps} steps) in {instrument_name}")
+                patterns["pitch_changes"].append(
+                    f"scalar ascent ({ascending_steps} steps) in {instrument_name}"
+                )
             elif descending_steps > len(pitches) * 0.6:
-                patterns["pitch_changes"].append(f"scalar descent ({descending_steps} steps) in {instrument_name}")
+                patterns["pitch_changes"].append(
+                    f"scalar descent ({descending_steps} steps) in {instrument_name}"
+                )
 
         # IMPROVED DURATION ANALYSIS
         durations = [note["duration"] for note in notes]
         if durations:
             quarter_note = resolution  # Assuming resolution is quarter note
-            
+
             # Specific rhythmic values
             whole_notes = [d for d in durations if d >= quarter_note * 3]
-            eighth_notes = [d for d in durations if quarter_note//3 <= d <= quarter_note//1.5]
-            sixteenth_notes = [d for d in durations if d <= quarter_note//3]
-            
+            eighth_notes = [
+                d for d in durations if quarter_note // 3 <= d <= quarter_note // 1.5
+            ]
+            sixteenth_notes = [d for d in durations if d <= quarter_note // 3]
+
             if whole_notes:
-                patterns["duration_patterns"].append(f"sustained notes ({len(whole_notes)} long notes) in {instrument_name}")
+                patterns["duration_patterns"].append(
+                    f"sustained notes ({len(whole_notes)} long notes) in {instrument_name}"
+                )
             if len(eighth_notes) > len(durations) * 0.4:
-                patterns["duration_patterns"].append(f"moderate rhythmic activity (mainly eighth notes) in {instrument_name}")
+                patterns["duration_patterns"].append(
+                    f"moderate rhythmic activity (mainly eighth notes) in {instrument_name}"
+                )
             if len(sixteenth_notes) > len(durations) * 0.3:
-                patterns["duration_patterns"].append(f"rapid passages ({len(sixteenth_notes)} fast notes) in {instrument_name}")
+                patterns["duration_patterns"].append(
+                    f"rapid passages ({len(sixteenth_notes)} fast notes) in {instrument_name}"
+                )
 
         # INSTRUMENT-SPECIFIC PATTERNS
         program = track.get("program", 0)
         if program in [40, 41, 42, 43]:  # Strings
             if any(note.get("velocity", 60) < 30 for note in notes):
-                patterns["textural_patterns"].append(f"soft string passages (pp) in {instrument_name}")
+                patterns["textural_patterns"].append(
+                    f"soft string passages (pp) in {instrument_name}"
+                )
         elif program in [56, 57, 58, 59, 60]:  # Brass
             loud_notes = [note for note in notes if note.get("velocity", 60) > 100]
             if len(loud_notes) > len(notes) * 0.5:
-                patterns["dynamic_patterns"].append(f"bold brass fanfare ({len(loud_notes)} forte notes) in {instrument_name}")
+                patterns["dynamic_patterns"].append(
+                    f"bold brass fanfare ({len(loud_notes)} forte notes) in {instrument_name}"
+                )
         elif program in [72, 73, 74]:  # Woodwinds
             if len(pitches) > 10:
                 pitch_range = max(pitches) - min(pitches)
                 if pitch_range > 24:  # More than 2 octaves
-                    patterns["textural_patterns"].append(f"virtuosic woodwind writing (range: {pitch_range} semitones) in {instrument_name}")
+                    patterns["textural_patterns"].append(
+                        f"virtuosic woodwind writing (range: {pitch_range} semitones) in {instrument_name}"
+                    )
 
     # Extract instrument sequences (improved)
     if len(tracks) > 1:
         # Look for interesting orchestration patterns
-        wind_instruments = [i for i, track in enumerate(tracks) if 64 <= track.get("program", 0) <= 79]
-        string_instruments = [i for i, track in enumerate(tracks) if 40 <= track.get("program", 0) <= 47]
-        
+        wind_instruments = [
+            i for i, track in enumerate(tracks) if 64 <= track.get("program", 0) <= 79
+        ]
+        string_instruments = [
+            i for i, track in enumerate(tracks) if 40 <= track.get("program", 0) <= 47
+        ]
+
         if wind_instruments and string_instruments:
-            patterns["textural_patterns"].append("mixed orchestration (winds and strings)")
+            patterns["textural_patterns"].append(
+                "mixed orchestration (winds and strings)"
+            )
         elif len(string_instruments) >= 3:
             patterns["textural_patterns"].append("string ensemble texture")
         elif len(wind_instruments) >= 2:
@@ -936,13 +1022,13 @@ def run_pattern_based_interpretation_pipeline(
     )
 
     print(f"Total features found: {len(sorted_features)}")
-    
+
     # Filter to get more diverse features using multiple criteria
     diverse_features = []
     seen_source_files = set()
     seen_activation_ranges = set()  # Track different activation strength ranges
     grouped_by_source = {}  # Group features by their primary source file
-    
+
     # Add activation strength binning for diversity
     def get_activation_bin(max_activation):
         if max_activation < 1.0:
@@ -1626,7 +1712,7 @@ def save_feature_activations_for_interpretation(
     use_amp = device == "cuda" and torch.cuda.is_available()
 
     with torch.no_grad():
-        input_idx = 0
+        input_idx = 0  # Global sample counter across all batches
         total_batches = len(dataloader)
         print(
             f"Processing {total_batches} batches with batch_size={dataloader.batch_size}"
@@ -1677,6 +1763,7 @@ def save_feature_activations_for_interpretation(
                     feature_id = feature_indices[i].item()
                     activation_value = hidden[sample_idx_in_batch, feature_id].item()
 
+                    # Calculate global position in dataset
                     current_input_idx = input_idx + sample_idx_in_batch
 
                     # Minimal metadata for faster processing
@@ -1685,9 +1772,10 @@ def save_feature_activations_for_interpretation(
                         "activation_value": activation_value,
                     }
 
-                    # Only add expensive operations if really needed
-                    if musical_metadata and current_input_idx in musical_metadata:
-                        metadata.update(musical_metadata[current_input_idx])
+                    # Efficient metadata lookup using batch_starts
+                    if musical_metadata:
+                        sample_metadata = get_metadata_for_sample(current_input_idx, musical_metadata)
+                        metadata.update(sample_metadata)
 
                     feature_activations[feature_id].append(metadata)
 
@@ -1814,28 +1902,89 @@ def load_musical_metadata(activations_path: str, layer_key: str = "layer_3"):
                     f"✅ Loaded metadata: {len(source_files)} files, {sum(sequence_lengths)} tokens"
                 )
 
-                # Create a mapping from token index to source file
-                token_to_source = {}
-                token_index = 0
-
-                for i, (source_file, seq_len) in enumerate(
-                    zip(source_files, sequence_lengths)
-                ):
-                    for token_pos in range(int(seq_len)):
-                        token_to_source[token_index] = {
-                            "source_file": source_file,
-                            "sample_index": int(i),
-                            "token_position": int(token_pos),
-                            "sequence_length": int(seq_len),
-                        }
-                        token_index += 1
-
-                return token_to_source
+                # Return efficient metadata structure instead of full token mapping
+                return {
+                    "source_files": source_files,
+                    "sequence_lengths": sequence_lengths,
+                    "batch_starts": batch_starts,
+                }
 
     except Exception as e:
         print(f"Note: Could not load musical metadata: {e}")
 
     return None
+
+
+def find_source_file_for_sample(input_idx: int, batch_starts: list) -> tuple:
+    """
+    Efficiently find source file and token position for a given input index.
+    
+    This implements the efficient metadata lookup approach instead of pre-computing
+    all token->source mappings. Uses batch_starts array to dynamically calculate
+    which source file contains a given global sample index.
+    
+    Args:
+        input_idx: Global position in the dataset (e.g., 3847)
+        batch_starts: Cumulative token counts [0, 1247, 2891, 4336, ...]
+    
+    Returns:
+        (source_file_idx, token_position) tuple
+        
+    Example:
+        If input_idx=3847 and batch_starts=[0, 1247, 2891, 4336, ...]:
+        - 3847 < 4336, so it belongs to file index 2 (third file)
+        - token_position = 3847 - 2891 = 956 (position within that file)
+    """
+    # Binary search through batch_starts to find the correct file
+    for i, start in enumerate(batch_starts[1:], 1):
+        if input_idx < start:
+            source_file_idx = i - 1
+            token_position = input_idx - batch_starts[source_file_idx]
+            return source_file_idx, token_position
+    
+    # If we reach here, it's the last file
+    source_file_idx = len(batch_starts) - 1
+    token_position = input_idx - batch_starts[source_file_idx]
+    return source_file_idx, token_position
+
+
+def get_metadata_for_sample(input_idx: int, metadata_structure: dict) -> dict:
+    """
+    Get metadata for a specific sample index using efficient lookup.
+    
+    Args:
+        input_idx: Global position in dataset
+        metadata_structure: Dict with source_files, sequence_lengths, batch_starts
+    
+    Returns:
+        Dict with source_file, token_position, sequence_length info
+    """
+    if not metadata_structure:
+        return {}
+    
+    try:
+        source_files = metadata_structure["source_files"]
+        sequence_lengths = metadata_structure["sequence_lengths"]
+        batch_starts = metadata_structure["batch_starts"]
+        
+        # Find which source file this sample belongs to
+        source_file_idx, token_position = find_source_file_for_sample(input_idx, batch_starts)
+        
+        # Validate indices
+        if source_file_idx >= len(source_files):
+            return {"error": f"Source file index {source_file_idx} out of range"}
+        
+        return {
+            "source_file": source_files[source_file_idx],
+            "sample_index": source_file_idx,
+            "token_position": token_position,
+            "sequence_length": int(sequence_lengths[source_file_idx]),
+            "activation_token_position": token_position,
+            "activation_sequence_length": int(sequence_lengths[source_file_idx]),
+        }
+    except Exception as e:
+        print(f"Note: Could not get metadata for sample {input_idx}: {e}")
+        return {}
 
 
 def interpret_music_features(results, activations_path, top_k=10):
