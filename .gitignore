@@ -164,3 +164,4 @@ GUIDES/*
 interpretation/pattern_results/*
 interpretation/analysis_results/*
 interpretation/openai_results/*
+layer_interpretations/*.json

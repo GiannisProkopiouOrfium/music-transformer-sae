@@ -1774,7 +1774,9 @@ def save_feature_activations_for_interpretation(
 
                     # Efficient metadata lookup using batch_starts
                     if musical_metadata:
-                        sample_metadata = get_metadata_for_sample(current_input_idx, musical_metadata)
+                        sample_metadata = get_metadata_for_sample(
+                            current_input_idx, musical_metadata
+                        )
                         metadata.update(sample_metadata)
 
                     feature_activations[feature_id].append(metadata)
@@ -1918,18 +1920,18 @@ def load_musical_metadata(activations_path: str, layer_key: str = "layer_3"):
 def find_source_file_for_sample(input_idx: int, batch_starts: list) -> tuple:
     """
     Efficiently find source file and token position for a given input index.
-    
+
     This implements the efficient metadata lookup approach instead of pre-computing
     all token->source mappings. Uses batch_starts array to dynamically calculate
     which source file contains a given global sample index.
-    
+
     Args:
         input_idx: Global position in the dataset (e.g., 3847)
         batch_starts: Cumulative token counts [0, 1247, 2891, 4336, ...]
-    
+
     Returns:
         (source_file_idx, token_position) tuple
-        
+
     Example:
         If input_idx=3847 and batch_starts=[0, 1247, 2891, 4336, ...]:
         - 3847 < 4336, so it belongs to file index 2 (third file)
@@ -1941,7 +1943,7 @@ def find_source_file_for_sample(input_idx: int, batch_starts: list) -> tuple:
             source_file_idx = i - 1
             token_position = input_idx - batch_starts[source_file_idx]
             return source_file_idx, token_position
-    
+
     # If we reach here, it's the last file
     source_file_idx = len(batch_starts) - 1
     token_position = input_idx - batch_starts[source_file_idx]
@@ -1951,29 +1953,31 @@ def find_source_file_for_sample(input_idx: int, batch_starts: list) -> tuple:
 def get_metadata_for_sample(input_idx: int, metadata_structure: dict) -> dict:
     """
     Get metadata for a specific sample index using efficient lookup.
-    
+
     Args:
         input_idx: Global position in dataset
         metadata_structure: Dict with source_files, sequence_lengths, batch_starts
-    
+
     Returns:
         Dict with source_file, token_position, sequence_length info
     """
     if not metadata_structure:
         return {}
-    
+
     try:
         source_files = metadata_structure["source_files"]
         sequence_lengths = metadata_structure["sequence_lengths"]
         batch_starts = metadata_structure["batch_starts"]
-        
+
         # Find which source file this sample belongs to
-        source_file_idx, token_position = find_source_file_for_sample(input_idx, batch_starts)
-        
+        source_file_idx, token_position = find_source_file_for_sample(
+            input_idx, batch_starts
+        )
+
         # Validate indices
         if source_file_idx >= len(source_files):
             return {"error": f"Source file index {source_file_idx} out of range"}
-        
+
         return {
             "source_file": source_files[source_file_idx],
             "sample_index": source_file_idx,

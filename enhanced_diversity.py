@@ -493,7 +493,7 @@ def create_contrastive_openai_prompt(
         if tracks:
             # Extract detailed musical patterns from this context
             extracted_patterns = extract_musical_patterns(context)
-            
+
             # Add basic track information
             for j, track in enumerate(tracks[:2]):  # First 2 tracks
                 notes = track.get("notes", [])
@@ -512,7 +512,7 @@ def create_contrastive_openai_prompt(
             # Add extracted pattern analysis
             prompt += """
             🎼 EXTRACTED MUSICAL PATTERNS:"""
-            
+
             for pattern_type, patterns in extracted_patterns.items():
                 if patterns:
                     pattern_type_name = pattern_type.replace("_", " ").title()
