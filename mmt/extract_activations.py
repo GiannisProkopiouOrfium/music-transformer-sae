@@ -3,12 +3,10 @@ import logging
 import pathlib
 import pprint
 import sys
-import h5py
 
 import torch
 import torch.utils.data
 import tqdm
-import numpy as np
 
 import dataset
 import music_x_transformers
@@ -32,6 +30,13 @@ def parse_args(args=None, namespace=None):
     parser.add_argument("-o", "--out_dir", type=pathlib.Path, help="output directory")
     parser.add_argument(
         "-ns", "--n_samples", type=int, default=100, help="number of samples"
+    )
+    parser.add_argument(
+        "--split",
+        type=str,
+        default="test",
+        choices=["train", "valid", "test"],
+        help="which data split to use (default: test)",
     )
 
     # Model arguments
@@ -98,7 +103,7 @@ def extract_activations_from_generation(
     filter_threshold = (
         args.filter_threshold[0] if args and args.filter_threshold else 0.9
     )
-    filter_fn = args.filter[0] if args and args.filter else "top_k"
+    filter_fn = args.filter[0] if args and args.filter else "l1"
 
     with torch.no_grad():
         for i in tqdm.tqdm(range(n_samples), desc="Generating samples"):
@@ -135,6 +140,14 @@ def extract_activations_from_dataset(
             mask = batch.get("mask", None)
             if mask is not None:
                 mask = mask.to(device)
+
+            # Store metadata for this batch
+            names = batch["name"]  # List of source file names
+            seq_lens = batch["seq_len"].tolist()  # Convert tensor to list
+
+            # Store metadata for all layers we're extracting from
+            for layer_idx in extractor.layer_indices:
+                extractor.store_metadata(layer_idx, names, seq_lens)
 
             # Forward pass - this will trigger our hooks
             _ = model(seq, mask=mask)
@@ -221,8 +234,10 @@ def main():
     logging.info(f"Loaded {len(test_names)} test names")
 
     test_dataset = dataset.MusicDataset(
-        pathlib.Path(f"data/sod/processed/test-names.txt"),  # test_names,
-        "data/sod/processed/notes/",
+        pathlib.Path(
+            f"data/{args.dataset}/processed/{args.split}-names.txt"
+        ),  # Use specified split
+        f"data/{args.dataset}/processed/notes/",
         encoding,
         max_seq_len=train_args["max_seq_len"],
         max_beat=train_args["max_beat"],
@@ -231,8 +246,8 @@ def main():
 
     logging.info(f"Created dataset with {len(test_dataset)} samples")
 
-    # Adjust batch size based on device
-    batch_size = 2 if device.type == "cpu" else 4
+    # Adjust batch size based on device - increased for better GPU utilization
+    batch_size = 2 if device.type == "cpu" else 8  # Increased from 4 to 8
     test_loader = torch.utils.data.DataLoader(
         test_dataset,
         batch_size=batch_size,
@@ -331,7 +346,7 @@ def main():
         # Save activations
         save_path = (
             activation_dir
-            / f"activations_layers_{'_'.join(map(str, layer_indices))}.h5"
+            / f"activations_{args.split}_layers_{'_'.join(map(str, layer_indices))}.h5"
         )
         extractor.save_activations(save_path)
 

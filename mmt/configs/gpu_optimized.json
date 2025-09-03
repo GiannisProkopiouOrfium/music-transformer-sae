@@ -1,0 +1,58 @@
+{
+  "model": {
+    "dataset": "sod",
+    "representation": "ape",
+    "model_steps": null,
+    "gpu": 0,
+    "max_seq_len": 1024,
+    "max_beat": 256
+  },
+  "extraction": {
+    "layers": [3],
+    "n_samples": 3000,
+    "batch_size": 8,
+    "max_seq_len": 1024,
+    "use_generation": false,
+    "generation_samples": 100,
+    "seq_len": 512,
+    "temperature": 1.0,
+    "filter_fn": "top_k",
+    "filter_threshold": 0.9
+  },
+  "sae": {
+    "hidden_dim": 2048,
+    "sparsity_coeff": 0.05,
+    "learning_rate": 3e-4,
+    "batch_size": 2048,
+    "num_epochs": 60,
+    "device": "cuda",
+    "k_sparse": null,
+    "weight_decay": 5e-5,
+    "scheduler": "cosine",
+    "num_workers": 8,
+    "subsample_training": 1000000,
+    "subsample_validation": 10000,
+    "pin_memory": true,
+    "persistent_workers": true,
+    "prefetch_factor": 8,
+    "memory_efficient": true
+  },
+  "analysis": {
+    "top_k_segments": 15,
+    "min_activation_freq": 0.005,
+    "max_activation_freq": 0.6,
+    "correlation_threshold": 0.25,
+    "save_visualizations": true,
+    "analyze_harmony": true,
+    "analyze_rhythm": true,
+    "analyze_melody": true
+  },
+  "input_dir": null,
+  "output_dir": null,
+  "config_name": "gpu_optimized",
+  "run_extraction": true,
+  "run_training": true,
+  "run_analysis": false,
+  "log_level": "INFO",
+  "save_logs": true
+}

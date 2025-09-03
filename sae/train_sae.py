@@ -6,7 +6,7 @@ import pathlib
 import logging
 from typing import Optional, Tuple
 import matplotlib.pyplot as plt
-from sae_data import create_sae_dataloader
+from .sae_data import create_sae_dataloader
 
 # Set up logging
 logging.basicConfig(level=logging.INFO, format="%(levelname)-8s %(message)s")
@@ -97,13 +97,14 @@ def train_sae(
 
     logging.info(f"Training SAE on {activations_path}")
 
-    # Create data loader
+    # Create data loader with memory-efficient loading
     dataloader, data_info = create_sae_dataloader(
         activations_path,
         layer_key=layer_key,
         batch_size=batch_size,
         shuffle=True,
         normalize=True,
+        memory_efficient=True,  # Enable memory-efficient loading for large datasets
     )
 
     logging.info(f"Data info: {data_info}")

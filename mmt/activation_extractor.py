@@ -24,6 +24,7 @@ class ActivationExtractor:
         self.model = model
         self.max_seq_len = max_seq_len
         self.activations = defaultdict(list)  # layer_idx -> list of tensors
+        self.metadata = defaultdict(list)  # layer_idx -> list of metadata dicts
         self.hooks = []
 
         # The model has 6 transformer layers, but they're organized as:
@@ -41,6 +42,18 @@ class ActivationExtractor:
         self.layer_indices = layer_indices
         self.total_transformer_layers = total_transformer_layers
         self._register_hooks()
+
+    def store_metadata(self, layer_idx: int, names: List[str], seq_lens: List[int]):
+        """
+        Store metadata for the current batch.
+
+        Args:
+            layer_idx: Layer index
+            names: List of source file names for this batch
+            seq_lens: List of sequence lengths for this batch
+        """
+        metadata = {"source_files": names, "sequence_lengths": seq_lens}
+        self.metadata[layer_idx].append(metadata)
 
     def _get_layer_group_indices(self, transformer_layer_idx):
         """
@@ -171,7 +184,7 @@ class ActivationExtractor:
 
     def save_activations(self, save_path: pathlib.Path):
         """
-        Save all extracted activations to HDF5 file.
+        Save all extracted activations and metadata to HDF5 file.
 
         Args:
             save_path: Path to save the activations
@@ -209,6 +222,7 @@ class ActivationExtractor:
             return
 
         with h5py.File(save_path, "w") as f:
+            # Save activations
             for layer_idx in self.layer_indices:
                 if (
                     layer_idx in self.activations
@@ -229,7 +243,51 @@ class ActivationExtractor:
                 else:
                     logging.warning(f"Skipping layer {layer_idx} - no activations")
 
-        logging.info(f"Activations saved to {save_path}")
+            # Save metadata
+            if self.metadata:
+                metadata_group = f.create_group("metadata")
+                for layer_idx in self.layer_indices:
+                    if layer_idx in self.metadata and self.metadata[layer_idx]:
+                        layer_metadata_group = metadata_group.create_group(
+                            f"layer_{layer_idx}"
+                        )
+
+                        # Flatten metadata across all batches for this layer
+                        all_source_files = []
+                        all_seq_lens = []
+                        batch_starts = (
+                            []
+                        )  # Track where each batch starts in the flattened data
+
+                        current_position = 0
+                        for batch_metadata in self.metadata[layer_idx]:
+                            batch_starts.append(current_position)
+                            source_files = batch_metadata["source_files"]
+                            seq_lens = batch_metadata["sequence_lengths"]
+
+                            all_source_files.extend(source_files)
+                            all_seq_lens.extend(seq_lens)
+
+                            # Each sample contributes seq_len tokens to the flattened data
+                            current_position += sum(seq_lens)
+
+                        # Save source files as string dataset
+                        string_dtype = h5py.string_dtype(encoding="utf-8")
+                        layer_metadata_group.create_dataset(
+                            "source_files", data=all_source_files, dtype=string_dtype
+                        )
+                        layer_metadata_group.create_dataset(
+                            "sequence_lengths", data=all_seq_lens
+                        )
+                        layer_metadata_group.create_dataset(
+                            "batch_starts", data=batch_starts
+                        )
+
+                        logging.info(
+                            f"Saved metadata for layer {layer_idx}: {len(all_source_files)} files"
+                        )
+
+        logging.info(f"Activations and metadata saved to {save_path}")
 
     def __enter__(self):
         return self

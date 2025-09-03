@@ -1,9 +1,8 @@
 import torch
 import numpy as np
-import pathlib
 import matplotlib.pyplot as plt
 import seaborn as sns
-from sae_data import create_sae_dataloader
+from .sae_data import create_sae_dataloader
 
 
 def analyze_sae_features(model_path: str, activations_path: str):
