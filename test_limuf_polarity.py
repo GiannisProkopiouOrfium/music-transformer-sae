@@ -32,18 +32,26 @@ def flip_limuf_direction(limuf_dir: str, feature_id: int, output_dir: str):
     
     print(f"📁 Loaded {len(limufs)} LiMuFs")
     
-    if feature_id not in limufs:
+    # Convert keys to integers for checking
+    limuf_keys = {int(k) if isinstance(k, str) else k: v for k, v in limufs.items()}
+    
+    if feature_id not in limuf_keys:
         print(f"❌ Feature {feature_id} not found in LiMuFs")
-        print(f"   Available features: {sorted(limufs.keys())}")
+        print(f"   Available features: {sorted(limuf_keys.keys())}")
         return
     
     # Flip the direction
-    original_vector = limufs[feature_id].clone()
+    original_vector = limuf_keys[feature_id].clone()
     flipped_vector = -original_vector
     
-    # Create new LiMuFs with flipped feature
+    # Create new LiMuFs with flipped feature (preserve original key types)
     flipped_limufs = limufs.copy()
-    flipped_limufs[feature_id] = flipped_vector
+    
+    # Find the original key format and update it
+    for orig_key, vector in limufs.items():
+        if (int(orig_key) if isinstance(orig_key, str) else orig_key) == feature_id:
+            flipped_limufs[orig_key] = flipped_vector
+            break
     
     # Create output directory
     output_path = Path(output_dir)
