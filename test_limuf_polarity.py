@@ -41,8 +41,14 @@ def flip_limuf_direction(limuf_dir: str, feature_id: int, output_dir: str):
         return
     
     # Flip the direction
-    original_vector = limuf_keys[feature_id].clone()
-    flipped_vector = -original_vector
+    original_vector = limuf_keys[feature_id]
+    if isinstance(original_vector, torch.Tensor):
+        flipped_vector = -original_vector.clone()
+    else:
+        # Convert numpy array to tensor, flip, then back to same type
+        original_tensor = torch.from_numpy(original_vector) if hasattr(original_vector, 'dtype') else torch.tensor(original_vector)
+        flipped_tensor = -original_tensor
+        flipped_vector = flipped_tensor.numpy() if hasattr(original_vector, 'dtype') else flipped_tensor
     
     # Create new LiMuFs with flipped feature (preserve original key types)
     flipped_limufs = limufs.copy()
@@ -72,9 +78,21 @@ def flip_limuf_direction(limuf_dir: str, feature_id: int, output_dir: str):
     
     print(f"✅ Saved flipped LiMuFs to: {output_file}")
     print(f"🔄 Feature {feature_id} vector flipped:")
-    print(f"   Original norm: {torch.norm(original_vector):.4f}")
-    print(f"   Flipped norm:  {torch.norm(flipped_vector):.4f}")
-    print(f"   Dot product:   {torch.dot(original_vector.flatten(), flipped_vector.flatten()):.4f}")
+    
+    # Calculate norms (handle both tensor and numpy array cases)
+    if isinstance(original_vector, torch.Tensor):
+        orig_norm = torch.norm(original_vector).item()
+        flipped_norm = torch.norm(flipped_vector).item()
+        dot_product = torch.dot(original_vector.flatten(), flipped_vector.flatten()).item()
+    else:
+        import numpy as np
+        orig_norm = np.linalg.norm(original_vector)
+        flipped_norm = np.linalg.norm(flipped_vector)
+        dot_product = np.dot(original_vector.flatten(), flipped_vector.flatten())
+    
+    print(f"   Original norm: {orig_norm:.4f}")
+    print(f"   Flipped norm:  {flipped_norm:.4f}")
+    print(f"   Dot product:   {dot_product:.4f}")
 
 
 def test_flipped_intervention(
