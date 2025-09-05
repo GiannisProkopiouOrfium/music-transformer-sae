@@ -272,7 +272,9 @@ Examples:
             if abs(strength) < 1e-6:  # Essentially zero
                 # Baseline generation (no intervention)
                 print("   (Baseline - no intervention)")
+                print(f"🔧 Calling model.generate with start_tokens.shape={start_tokens.shape}")
                 generated = model.generate(start_tokens, args.seq_len, temperature=1.0)
+                print(f"🔧 Baseline generation returned: {type(generated)}, shape={getattr(generated, 'shape', 'None')}")
                 baseline_generation = generated
                 description = "baseline_no_intervention"
             else:
