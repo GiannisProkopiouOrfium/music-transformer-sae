@@ -295,8 +295,19 @@ def _load_music_model(model_path: str, device: str = "cuda"):
 
     This is a placeholder function - adapt to your actual model loading logic.
     """
-    # Import your model loading utilities
-    from mmt import music_x_transformers, representation, utils
+    # Import your model loading utilities with full paths
+    import sys
+    from pathlib import Path
+
+    # Add the mmt directory to sys.path if needed
+    mmt_dir = Path(__file__).parent.parent
+    if str(mmt_dir) not in sys.path:
+        sys.path.insert(0, str(mmt_dir))
+
+    # Now import with proper paths
+    from mmt import music_x_transformers
+    from mmt import representation
+    from mmt import utils
     import pathlib
 
     model_path = pathlib.Path(model_path)
@@ -322,9 +333,7 @@ def _load_music_model(model_path: str, device: str = "cuda"):
                 "rel_pos_emb": True,
                 "abs_pos_emb": True,
             },
-        )
-
-    # Load encoding
+        )  # Load encoding
     encoding_path = model_path.parent.parent / "processed" / "notes" / "encoding.json"
     if encoding_path.exists():
         encoding = representation.load_encoding(encoding_path)
