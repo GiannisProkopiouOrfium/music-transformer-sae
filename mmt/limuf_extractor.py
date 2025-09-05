@@ -94,91 +94,146 @@ class LiMuFExtractor:
         high_threshold: float = 2.0,
         low_threshold: float = 0.5,
         min_samples: int = 100,
+        batch_size: int = 10000,
     ) -> torch.Tensor:
         """
         Extract Linear Music Feature direction for a specific SAE feature.
 
         This implements the difference-in-means methodology from the LiReFs paper,
-        adapted for musical concepts.
+        adapted for musical concepts, with memory-efficient batch processing.
 
         Args:
             feature_id: ID of the SAE feature
             high_threshold: Threshold for high activation samples
             low_threshold: Threshold for low activation samples
             min_samples: Minimum samples needed for reliable extraction
+            batch_size: Number of samples to process at once (for memory efficiency)
 
         Returns:
             Normalized LiMuF direction vector
         """
         print(f"🎵 Extracting LiMuF for feature {feature_id}")
 
-        # Get original activations
-        original_activations = self.activations_data["activations"].to(self.device)
+        # Get original activations (keep on CPU to save GPU memory)
+        original_activations = self.activations_data["activations"]
+        total_samples = original_activations.shape[0]
+        hidden_dim = original_activations.shape[1]
+        
+        print(f"   Processing {total_samples:,} samples in batches of {batch_size:,}")
 
+        # Initialize accumulators for memory-efficient processing
+        high_indices = []
+        low_indices = []
+        feature_activation_stats = {'min': float('inf'), 'max': float('-inf'), 'sum': 0.0, 'count': 0}
+
+        # First pass: identify high/low activation samples in batches
         with torch.no_grad():
-            # Pass through SAE encoder to get feature activations
-            sae_activations = self.sae_model.encoder(original_activations)
+            for batch_start in range(0, total_samples, batch_size):
+                batch_end = min(batch_start + batch_size, total_samples)
+                batch_activations = original_activations[batch_start:batch_end].to(self.device)
+                
+                # Pass through SAE encoder
+                batch_sae_activations = self.sae_model.encoder(batch_activations)
+                batch_feature_activations = batch_sae_activations[:, feature_id]
+                
+                # Update global statistics
+                feature_activation_stats['min'] = min(feature_activation_stats['min'], batch_feature_activations.min().item())
+                feature_activation_stats['max'] = max(feature_activation_stats['max'], batch_feature_activations.max().item())
+                feature_activation_stats['sum'] += batch_feature_activations.sum().item()
+                feature_activation_stats['count'] += batch_feature_activations.shape[0]
+                
+                # Find high and low activation samples in this batch
+                batch_high_mask = batch_feature_activations > high_threshold
+                batch_low_mask = batch_feature_activations < low_threshold
+                
+                # Store global indices
+                if batch_high_mask.any():
+                    batch_high_indices = torch.where(batch_high_mask)[0] + batch_start
+                    high_indices.extend(batch_high_indices.cpu().tolist())
+                
+                if batch_low_mask.any():
+                    batch_low_indices = torch.where(batch_low_mask)[0] + batch_start
+                    low_indices.extend(batch_low_indices.cpu().tolist())
+                
+                # Clear GPU memory
+                del batch_activations, batch_sae_activations, batch_feature_activations
+                torch.cuda.empty_cache()
 
-            # Get activations for this specific feature
-            feature_activations = sae_activations[:, feature_id]
+        high_count = len(high_indices)
+        low_count = len(low_indices)
+        
+        print(f"   High activation samples: {high_count}")
+        print(f"   Low activation samples: {low_count}")
+        print(f"   Feature activation range: [{feature_activation_stats['min']:.3f}, {feature_activation_stats['max']:.3f}]")
 
-            # Find high and low activation samples
-            high_mask = feature_activations > high_threshold
-            low_mask = feature_activations < low_threshold
+        if high_count < min_samples or low_count < min_samples:
+            print(f"   ⚠️  Insufficient samples for reliable LiMuF extraction")
+            print(f"   Need at least {min_samples} samples, got {high_count} high, {low_count} low")
+            return None
 
-            high_count = high_mask.sum().item()
-            low_count = low_mask.sum().item()
+        # Second pass: compute means efficiently
+        print(f"   Computing difference-in-means...")
+        
+        # Compute high mean in batches
+        high_sum = torch.zeros(hidden_dim, dtype=torch.float32)
+        high_processed = 0
+        
+        for i in range(0, len(high_indices), batch_size):
+            batch_indices = high_indices[i:i + batch_size]
+            batch_activations = original_activations[batch_indices]
+            high_sum += batch_activations.sum(dim=0)
+            high_processed += len(batch_indices)
+        
+        high_mean = high_sum / high_count
+        
+        # Compute low mean in batches
+        low_sum = torch.zeros(hidden_dim, dtype=torch.float32)
+        low_processed = 0
+        
+        for i in range(0, len(low_indices), batch_size):
+            batch_indices = low_indices[i:i + batch_size]
+            batch_activations = original_activations[batch_indices]
+            low_sum += batch_activations.sum(dim=0)
+            low_processed += len(batch_indices)
+        
+        low_mean = low_sum / low_count
 
-            print(f"   High activation samples: {high_count}")
-            print(f"   Low activation samples: {low_count}")
-            print(
-                f"   Feature activation range: [{feature_activations.min():.3f}, {feature_activations.max():.3f}]"
-            )
+        # LiMuF direction = difference vector
+        limuf_direction = high_mean - low_mean
 
-            if high_count < min_samples or low_count < min_samples:
-                print(f"   ⚠️  Insufficient samples for reliable LiMuF extraction")
-                print(
-                    f"   Need at least {min_samples} samples, got {high_count} high, {low_count} low"
-                )
-                return None
+        # Normalize the direction
+        direction_norm = limuf_direction.norm()
+        if direction_norm > 0:
+            limuf_direction = limuf_direction / direction_norm
+        else:
+            print(f"   ⚠️  Zero norm direction, skipping feature {feature_id}")
+            return None
 
-            # Compute difference-in-means (LiReFs methodology)
-            high_mean = original_activations[high_mask].mean(dim=0)
-            low_mean = original_activations[low_mask].mean(dim=0)
+        # Store statistics
+        feature_mean = feature_activation_stats['sum'] / feature_activation_stats['count']
+        self.feature_stats[feature_id] = {
+            "high_samples": high_count,
+            "low_samples": low_count,
+            "high_threshold": high_threshold,
+            "low_threshold": low_threshold,
+            "direction_norm": direction_norm.item(),
+            "feature_activation_mean": feature_mean,
+            "feature_activation_min": feature_activation_stats['min'],
+            "feature_activation_max": feature_activation_stats['max'],
+        }
 
-            # LiMuF direction = difference vector
-            limuf_direction = high_mean - low_mean
+        # Store the LiMuF
+        self.limufs[feature_id] = limuf_direction.cpu()
 
-            # Normalize the direction
-            direction_norm = limuf_direction.norm()
-            if direction_norm > 0:
-                limuf_direction = limuf_direction / direction_norm
-            else:
-                print(f"   ⚠️  Zero norm direction, skipping feature {feature_id}")
-                return None
-
-            # Store statistics
-            self.feature_stats[feature_id] = {
-                "high_samples": high_count,
-                "low_samples": low_count,
-                "high_threshold": high_threshold,
-                "low_threshold": low_threshold,
-                "direction_norm": direction_norm.item(),
-                "feature_activation_mean": feature_activations.mean().item(),
-                "feature_activation_std": feature_activations.std().item(),
-            }
-
-            # Store the LiMuF
-            self.limufs[feature_id] = limuf_direction.cpu()
-
-            print(f"   ✅ LiMuF extracted successfully (norm: {direction_norm:.4f})")
-            return limuf_direction.cpu()
+        print(f"   ✅ LiMuF extracted successfully (norm: {direction_norm:.4f})")
+        return limuf_direction.cpu()
 
     def extract_multiple_limufs(
         self,
         feature_interpretations: Dict,
         categories: List[str] = None,
         max_features: int = None,
+        batch_size: int = 10000,
     ) -> Dict[int, torch.Tensor]:
         """
         Extract LiMuFs for multiple features from interpretation results.
@@ -187,6 +242,7 @@ class LiMuFExtractor:
             feature_interpretations: Dict from enhanced_diversity_report
             categories: List of musical categories to extract (e.g., ['rhythmic_specific'])
             max_features: Maximum number of features to extract (None = all)
+            batch_size: Batch size for memory-efficient processing
 
         Returns:
             Dictionary mapping feature_id to LiMuF direction
@@ -205,6 +261,7 @@ class LiMuFExtractor:
         processed_count = 0
 
         print(f"🎼 Extracting LiMuFs for categories: {categories}")
+        print(f"   Using batch size: {batch_size:,} for memory efficiency")
         if max_features:
             print(f"   Maximum features to process: {max_features}")
 
@@ -238,6 +295,7 @@ class LiMuFExtractor:
                 feature_id=feature_id,
                 high_threshold=high_threshold,
                 low_threshold=low_threshold,
+                batch_size=batch_size,
             )
 
             if limuf is not None:

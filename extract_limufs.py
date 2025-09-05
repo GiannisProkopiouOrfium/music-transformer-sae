@@ -79,6 +79,12 @@ Examples:
     parser.add_argument(
         "--validate", action="store_true", help="Validate extracted LiMuFs quality"
     )
+    parser.add_argument(
+        "--batch-size",
+        type=int,
+        default=10000,
+        help="Batch size for memory-efficient processing (default: 10000)",
+    )
 
     args = parser.parse_args()
 
@@ -161,6 +167,7 @@ Examples:
             feature_interpretations=filtered_features,
             categories=args.categories,
             max_features=args.max_features,
+            batch_size=args.batch_size,
         )
     except Exception as e:
         print(f"❌ Failed to extract LiMuFs: {e}")
