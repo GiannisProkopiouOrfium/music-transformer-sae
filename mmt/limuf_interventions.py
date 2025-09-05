@@ -336,9 +336,8 @@ def _load_music_model(model_path: str, device: str = "cuda"):
         )  # Load encoding
     # encoding_path = model_path.parent.parent / "processed" / "notes" / "encoding.json"
     encoding_path = "data/sod/processed/notes/encoding.json"
-    if encoding_path.exists():
-        encoding = representation.load_encoding(encoding_path)
-    else:
+    encoding = representation.load_encoding(encoding_path)
+    if encoding is None:
         encoding = checkpoint.get("encoding")
         if encoding is None:
             raise ValueError(f"Cannot find encoding file at {encoding_path}")
