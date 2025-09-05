@@ -359,9 +359,9 @@ def _load_music_model(model_path: str, device: str = "cuda"):
         print(f"   Rotary PE: {has_rotary}, Absolute PE: {has_abs_pos}")
 
     # Load encoding
-    encoding_path = model_path.parent.parent / "processed" / "notes" / "encoding.json"
-    if encoding_path.exists():
-        encoding = representation.load_encoding(encoding_path)
+    encoding_path = "data/sod/processed/notes/encoding.json"
+    encoding = representation.load_encoding(encoding_path)
+    if encoding is not None:
         print(f"📖 Loaded encoding from: {encoding_path}")
     else:
         # Try alternative encoding path
