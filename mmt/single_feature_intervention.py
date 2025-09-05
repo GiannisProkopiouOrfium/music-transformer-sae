@@ -158,8 +158,8 @@ class SingleFeatureInterventionWrapper:
             # Generate with intervention
             with torch.no_grad():
                 output = self.model.generate(
-                    start_tokens=start_tokens,
-                    seq_len=seq_len,
+                    start_tokens,  # First positional argument (seq_in)
+                    seq_len,       # Second positional argument
                     monotonicity_dim=[],
                     **generation_kwargs,
                 )
