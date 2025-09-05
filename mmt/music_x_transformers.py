@@ -44,9 +44,7 @@ def parse_args(args=None, namespace=None):
     parser.add_argument(
         "-i", "--in_dir", type=pathlib.Path, help="input data directory"
     )
-    parser.add_argument(
-        "-q", "--quiet", action="store_true", help="show warnings only"
-    )
+    parser.add_argument("-q", "--quiet", action="store_true", help="show warnings only")
     return parser.parse_args(args=args, namespace=namespace)
 
 
@@ -86,24 +84,17 @@ class MusicTransformerWrapper(nn.Module):
 
         self.l2norm_embed = l2norm_embed
         self.token_emb = nn.ModuleList(
-            [
-                TokenEmbedding(emb_dim, n, l2norm_embed=l2norm_embed)
-                for n in n_tokens
-            ]
+            [TokenEmbedding(emb_dim, n, l2norm_embed=l2norm_embed) for n in n_tokens]
         )
         self.pos_emb = (
-            AbsolutePositionalEmbedding(
-                emb_dim, max_seq_len, l2norm_embed=l2norm_embed
-            )
+            AbsolutePositionalEmbedding(emb_dim, max_seq_len, l2norm_embed=l2norm_embed)
             if (use_abs_pos_emb and not attn_layers.has_pos_emb)
             else always(0)
         )
 
         self.emb_dropout = nn.Dropout(emb_dropout)
 
-        self.project_emb = (
-            nn.Linear(emb_dim, dim) if emb_dim != dim else nn.Identity()
-        )
+        self.project_emb = nn.Linear(emb_dim, dim) if emb_dim != dim else nn.Identity()
         self.attn_layers = attn_layers
         self.norm = nn.LayerNorm(dim)
 
@@ -119,9 +110,7 @@ class MusicTransformerWrapper(nn.Module):
         num_memory_tokens = default(num_memory_tokens, 0)
         self.num_memory_tokens = num_memory_tokens
         if num_memory_tokens > 0:
-            self.memory_tokens = nn.Parameter(
-                torch.randn(num_memory_tokens, dim)
-            )
+            self.memory_tokens = nn.Parameter(torch.randn(num_memory_tokens, dim))
 
     def init_(self):
         if self.l2norm_embed:
@@ -146,9 +135,9 @@ class MusicTransformerWrapper(nn.Module):
         b, _, _ = x.shape
         num_mem = self.num_memory_tokens
 
-        x = sum(
-            emb(x[..., i]) for i, emb in enumerate(self.token_emb)
-        ) + self.pos_emb(x)
+        x = sum(emb(x[..., i]) for i, emb in enumerate(self.token_emb)) + self.pos_emb(
+            x
+        )
         x = self.emb_dropout(x)
 
         x = self.project_emb(x)
@@ -176,9 +165,7 @@ class MusicTransformerWrapper(nn.Module):
         mem, x = x[:, :num_mem], x[:, num_mem:]
 
         out = (
-            [to_logit(x) for to_logit in self.to_logits]
-            if not return_embeddings
-            else x
+            [to_logit(x) for to_logit in self.to_logits] if not return_embeddings else x
         )
 
         if return_mems:
@@ -194,9 +181,7 @@ class MusicTransformerWrapper(nn.Module):
                 else hiddens
             )
             new_mems = list(
-                map(
-                    lambda t: t[..., -self.max_mem_len :, :].detach(), new_mems
-                )
+                map(lambda t: t[..., -self.max_mem_len :, :].detach(), new_mems)
             )
             return out, new_mems
 
@@ -220,8 +205,7 @@ def sample(logits, kind, threshold, temperature, min_p_pow, min_p_ratio):
         probs = F.softmax(top_p(logits, thres=threshold) / temperature, dim=-1)
     elif kind == "top_a":
         probs = F.softmax(
-            top_a(logits, min_p_pow=min_p_pow, min_p_ratio=min_p_ratio)
-            / temperature,
+            top_a(logits, min_p_pow=min_p_pow, min_p_ratio=min_p_ratio) / temperature,
             dim=-1,
         )
     elif kind == "entmax":
@@ -284,9 +268,7 @@ class MusicAutoregressiveWrapper(nn.Module):
         elif len(temperature) == 1:
             temperature = temperature * dim
         else:
-            assert (
-                len(temperature) == dim
-            ), f"`temperature` must be of length {dim}"
+            assert len(temperature) == dim, f"`temperature` must be of length {dim}"
 
         if isinstance(filter_logits_fn, str):
             filter_logits_fn = [filter_logits_fn] * dim
@@ -302,13 +284,11 @@ class MusicAutoregressiveWrapper(nn.Module):
         elif len(filter_thres) == 1:
             filter_thres = filter_thres * dim
         else:
-            assert (
-                len(filter_thres) == dim
-            ), f"`filter_thres` must be of length {dim}"
+            assert len(filter_thres) == dim, f"`filter_thres` must be of length {dim}"
 
         if isinstance(monotonicity_dim, str):
             monotonicity_dim = [self.dimensions[monotonicity_dim]]
-        else:
+        elif monotonicity_dim is not None:
             monotonicity_dim = [self.dimensions[d] for d in monotonicity_dim]
 
         was_training = self.net.training
@@ -330,8 +310,7 @@ class MusicAutoregressiveWrapper(nn.Module):
 
         if monotonicity_dim is not None:
             current_values = {
-                d: torch.max(start_tokens[:, :, d], 1)[0]
-                for d in monotonicity_dim
+                d: torch.max(start_tokens[:, :, d], 1)[0] for d in monotonicity_dim
             }
         else:
             current_values = None
@@ -343,14 +322,10 @@ class MusicAutoregressiveWrapper(nn.Module):
             mask = mask[:, -self.max_seq_len :]
 
             if return_attn:
-                logits, attn = self.net(
-                    x, mask=mask, return_attn=True, **kwargs
-                )
+                logits, attn = self.net(x, mask=mask, return_attn=True, **kwargs)
                 logits = [l[:, -1, :] for l in logits]
             else:
-                logits = [
-                    l[:, -1, :] for l in self.net(x, mask=mask, **kwargs)
-                ]
+                logits = [l[:, -1, :] for l in self.net(x, mask=mask, **kwargs)]
 
             # Enforce monotonicity
             if monotonicity_dim is not None and 0 in monotonicity_dim:
@@ -385,14 +360,10 @@ class MusicAutoregressiveWrapper(nn.Module):
                     self.eos_type_code,
                     self.son_type_code,
                 ):
-                    samples[idx] += [torch.zeros_like(s_type)] * (
-                        len(logits) - 1
-                    )
+                    samples[idx] += [torch.zeros_like(s_type)] * (len(logits) - 1)
                 # An instrument code
                 elif s_type == self.instrument_type_code:
-                    samples[idx] += [torch.zeros_like(s_type)] * (
-                        len(logits) - 2
-                    )
+                    samples[idx] += [torch.zeros_like(s_type)] * (len(logits) - 2)
                     logits[instrument_dim][:, 0] = -float("inf")  # avoid none
                     sampled = sample(
                         logits[instrument_dim][idx : idx + 1],
@@ -407,13 +378,8 @@ class MusicAutoregressiveWrapper(nn.Module):
                 elif s_type == self.note_type_code:
                     for d in range(1, dim):
                         # Enforce monotonicity
-                        if (
-                            monotonicity_dim is not None
-                            and d in monotonicity_dim
-                        ):
-                            logits[d][idx, : current_values[d][idx]] = -float(
-                                "inf"
-                            )
+                        if monotonicity_dim is not None and d in monotonicity_dim:
+                            logits[d][idx, : current_values[d][idx]] = -float("inf")
 
                         # Sample from the logits
                         logits[d][:, 0] = -float("inf")  # avoid none
@@ -428,19 +394,14 @@ class MusicAutoregressiveWrapper(nn.Module):
                         samples[idx].append(sampled)
 
                         # Update current values
-                        if (
-                            monotonicity_dim is not None
-                            and d in monotonicity_dim
-                        ):
+                        if monotonicity_dim is not None and d in monotonicity_dim:
                             current_values[d][idx] = torch.max(
                                 current_values[d][idx], sampled
                             )[0]
                 else:
                     raise ValueError(f"Unknown event type code: {s_type}")
 
-            stacked = torch.stack(
-                [torch.cat(s).expand(1, -1) for s in samples], 0
-            )
+            stacked = torch.stack([torch.cat(s).expand(1, -1) for s in samples], 0)
             out = torch.cat((out, stacked), dim=1)
             mask = F.pad(mask, (0, 1), value=True)
 
@@ -508,9 +469,7 @@ class MusicXTransformer(nn.Module):
             attn_layers=Decoder(dim=dim, **kwargs),
             **transformer_kwargs,
         )
-        self.decoder = MusicAutoregressiveWrapper(
-            self.decoder, encoding=encoding
-        )
+        self.decoder = MusicAutoregressiveWrapper(self.decoder, encoding=encoding)
 
     @torch.no_grad()
     def generate(self, seq_in, seq_len, **kwargs):
@@ -560,9 +519,7 @@ def main():
 
     # Summarize the model
     n_parameters = sum(p.numel() for p in model.parameters())
-    n_trainables = sum(
-        p.numel() for p in model.parameters() if p.requires_grad
-    )
+    n_trainables = sum(p.numel() for p in model.parameters() if p.requires_grad)
     print(f"Number of parameters: {n_parameters}")
     print(f"Number of trainable parameters: {n_trainables}")
 

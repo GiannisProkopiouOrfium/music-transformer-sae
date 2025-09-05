@@ -185,9 +185,13 @@ class LiMuFInterventionWrapper(nn.Module):
 
         try:
             # Generate with intervention
-            print(f"🔧 Calling model.generate with start_tokens.shape={start_tokens.shape}")
+            print(
+                f"🔧 Calling model.generate with start_tokens.shape={start_tokens.shape}"
+            )
             generated = self.model.generate(start_tokens, seq_len, **generation_kwargs)
-            print(f"🔧 Generation returned: {type(generated)}, shape={getattr(generated, 'shape', 'None')}")
+            print(
+                f"🔧 Generation returned: {type(generated)}, shape={getattr(generated, 'shape', 'None')}"
+            )
 
             print(f"✅ Generation complete with intervention")
             return generated
@@ -196,6 +200,7 @@ class LiMuFInterventionWrapper(nn.Module):
             print(f"❌ Exception during generation: {e}")
             print(f"❌ Exception type: {type(e)}")
             import traceback
+
             traceback.print_exc()
             return None
         finally:
