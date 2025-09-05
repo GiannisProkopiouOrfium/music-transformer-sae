@@ -334,7 +334,8 @@ def _load_music_model(model_path: str, device: str = "cuda"):
                 "abs_pos_emb": True,
             },
         )  # Load encoding
-    encoding_path = model_path.parent.parent / "processed" / "notes" / "encoding.json"
+    # encoding_path = model_path.parent.parent / "processed" / "notes" / "encoding.json"
+    encoding_path = "data/sod/processed/notes/encoding.json"
     if encoding_path.exists():
         encoding = representation.load_encoding(encoding_path)
     else:
