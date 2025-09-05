@@ -20,9 +20,10 @@ class LiMuFInterventionWrapper(nn.Module):
     ):
         super().__init__()
         self.model = model
-        self.limufs = {k: v.to(model.device) for k, v in limufs.items()}
+        # Get device from model parameters
+        self.device = next(model.parameters()).device
+        self.limufs = {k: v.to(self.device) for k, v in limufs.items()}
         self.intervention_layer = intervention_layer
-        self.device = model.device
 
         # Store original hooks for restoration
         self._original_hooks = []
