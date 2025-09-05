@@ -25,13 +25,26 @@ class SingleFeatureInterventionWrapper:
         self.sae_model = torch.load(sae_model_path, map_location=self.device)
 
         # Extract decoder weights (these are the feature directions)
-        if "decoder.weight" in self.sae_model:
-            # Shape: [hidden_dim, n_features]
+        if "model_state_dict" in self.sae_model:
+            state_dict = self.sae_model["model_state_dict"]
+            if "decoder.weight" in state_dict:
+                # Shape: [hidden_dim, n_features]
+                self.feature_directions = state_dict[
+                    "decoder.weight"
+                ].T  # [n_features, hidden_dim]
+            else:
+                raise ValueError(
+                    f"Could not find decoder.weight in model_state_dict. Available keys: {list(state_dict.keys())}"
+                )
+        elif "decoder.weight" in self.sae_model:
+            # Fallback for older format
             self.feature_directions = self.sae_model[
                 "decoder.weight"
             ].T  # [n_features, hidden_dim]
         else:
-            raise ValueError("Could not find decoder weights in SAE model")
+            raise ValueError(
+                f"Could not find decoder weights in SAE model. Available keys: {list(self.sae_model.keys())}"
+            )
 
         # Load feature interpretations
         with open(feature_interpretations_path) as f:

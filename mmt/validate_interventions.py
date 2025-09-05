@@ -29,20 +29,62 @@ class InterventionValidator:
         sae_checkpoint = torch.load(sae_model_path, map_location=self.device)
 
         # Extract SAE components
-        if "encoder.weight" in sae_checkpoint and "encoder.bias" in sae_checkpoint:
-            self.sae_encoder_weight = sae_checkpoint[
-                "encoder.weight"
-            ]  # [n_features, hidden_dim]
-            self.sae_encoder_bias = sae_checkpoint["encoder.bias"]  # [n_features]
-        else:
-            raise ValueError("Could not find SAE encoder weights in checkpoint")
+        if "model_state_dict" in sae_checkpoint:
+            state_dict = sae_checkpoint["model_state_dict"]
+            if "encoder.weight" in state_dict:
+                self.sae_encoder_weight = state_dict[
+                    "encoder.weight"
+                ]  # [n_features, hidden_dim]
+                # Check if bias exists, if not create zero bias
+                if "encoder.bias" in state_dict:
+                    self.sae_encoder_bias = state_dict["encoder.bias"]  # [n_features]
+                else:
+                    print("⚠️  No encoder.bias found, using zero bias")
+                    self.sae_encoder_bias = torch.zeros(
+                        state_dict["encoder.weight"].shape[0]
+                    )
+            else:
+                raise ValueError(
+                    f"Could not find SAE encoder weights in model_state_dict. Available keys: {list(state_dict.keys())}"
+                )
 
-        if "decoder.weight" in sae_checkpoint:
-            self.sae_decoder_weight = sae_checkpoint[
-                "decoder.weight"
-            ]  # [hidden_dim, n_features]
+            if "decoder.weight" in state_dict:
+                self.sae_decoder_weight = state_dict[
+                    "decoder.weight"
+                ]  # [hidden_dim, n_features]
+            else:
+                raise ValueError(
+                    f"Could not find SAE decoder weights in model_state_dict. Available keys: {list(state_dict.keys())}"
+                )
         else:
-            raise ValueError("Could not find SAE decoder weights in checkpoint")
+            # Fallback for older format
+            if "encoder.weight" in sae_checkpoint:
+                self.sae_encoder_weight = sae_checkpoint[
+                    "encoder.weight"
+                ]  # [n_features, hidden_dim]
+                # Check if bias exists, if not create zero bias
+                if "encoder.bias" in sae_checkpoint:
+                    self.sae_encoder_bias = sae_checkpoint[
+                        "encoder.bias"
+                    ]  # [n_features]
+                else:
+                    print("⚠️  No encoder.bias found, using zero bias")
+                    self.sae_encoder_bias = torch.zeros(
+                        sae_checkpoint["encoder.weight"].shape[0]
+                    )
+            else:
+                raise ValueError(
+                    f"Could not find SAE encoder weights in checkpoint. Available keys: {list(sae_checkpoint.keys())}"
+                )
+
+            if "decoder.weight" in sae_checkpoint:
+                self.sae_decoder_weight = sae_checkpoint[
+                    "decoder.weight"
+                ]  # [hidden_dim, n_features]
+            else:
+                raise ValueError(
+                    f"Could not find SAE decoder weights in checkpoint. Available keys: {list(sae_checkpoint.keys())}"
+                )
 
         print(f"📊 Loaded SAE with {self.sae_encoder_weight.shape[0]} features")
 
