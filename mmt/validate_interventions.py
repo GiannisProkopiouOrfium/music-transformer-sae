@@ -193,7 +193,11 @@ class InterventionValidator:
                     if strength == 0.0:
                         # Baseline - no intervention
                         with torch.no_grad():
-                            output = self.wrapper.model.generate(start_tokens, seq_len)
+                            output = self.wrapper.model.generate(
+                                start_tokens,
+                                seq_len,
+                                monotonicity_dim=[],  # Explicitly pass empty list
+                            )
                     else:
                         # Generate with intervention
                         output = self.wrapper.generate_with_feature_intervention(
@@ -550,7 +554,7 @@ def run_intervention_validation():
     wrapper = load_model_and_create_wrapper(
         model_path="exp/sod/ape/checkpoints/best_model.pt",
         sae_path="exp/sod/ape/sae_models/sae_layer_2048d.pt",
-        interpretations_path="layer_interpretations/enhanced_diversity_report.json",
+        interpretations_path="interpretation/enhanced_diversity/enhanced_diversity_report.json",
         config_path="exp/sod/ape/train-args.json",
     )
 

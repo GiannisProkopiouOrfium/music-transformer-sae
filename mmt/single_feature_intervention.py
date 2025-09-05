@@ -158,7 +158,10 @@ class SingleFeatureInterventionWrapper:
             # Generate with intervention
             with torch.no_grad():
                 output = self.model.generate(
-                    start_tokens=start_tokens, seq_len=seq_len, **generation_kwargs
+                    start_tokens=start_tokens,
+                    seq_len=seq_len,
+                    monotonicity_dim=[],
+                    **generation_kwargs,
                 )
             return output
 
@@ -185,7 +188,9 @@ class SingleFeatureInterventionWrapper:
         # Generate baseline samples
         print("🎼 Generating baseline samples...")
         for i in range(n_samples):
-            baseline_output = self.model.generate(start_tokens, seq_len)
+            baseline_output = self.model.generate(
+                start_tokens, seq_len, monotonicity_dim=[]
+            )
             results["baseline"].append(baseline_output.cpu().numpy())
 
         # Test each feature at each strength
@@ -357,7 +362,7 @@ if __name__ == "__main__":
     wrapper = load_model_and_create_wrapper(
         model_path="exp/sod/ape/checkpoints/best_model.pt",  # Adjust path
         sae_path="exp/sod/ape/sae_models/sae_layer_2048d.pt",
-        interpretations_path="layer_interpretations/enhanced_diversity_report_layer3.json",
+        interpretations_path="interpretation/enhanced_diversity/enhanced_diversity_report.json",
         config_path="exp/sod/ape/train-args.json",  # Adjust path
     )
 
