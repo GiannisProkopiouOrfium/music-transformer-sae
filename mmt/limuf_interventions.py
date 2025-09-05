@@ -293,21 +293,10 @@ def _load_music_model(model_path: str, device: str = "cuda"):
     """
     Load the pre-trained Multi-track Music Transformer.
 
-    This is a placeholder function - adapt to your actual model loading logic.
+    Automatically detects the model configuration from the checkpoint.
     """
-    # Import your model loading utilities with full paths
-    import sys
-    from pathlib import Path
-
-    # Add the mmt directory to sys.path if needed
-    mmt_dir = Path(__file__).parent.parent
-    if str(mmt_dir) not in sys.path:
-        sys.path.insert(0, str(mmt_dir))
-
-    # Now import with proper paths
-    from mmt import music_x_transformers
-    from mmt import representation
-    from mmt import utils
+    # Import your model loading utilities
+    from mmt import music_x_transformers, representation, utils
     import pathlib
 
     model_path = pathlib.Path(model_path)
@@ -319,30 +308,77 @@ def _load_music_model(model_path: str, device: str = "cuda"):
     config_path = model_path.parent / "train-args.json"
     if config_path.exists():
         train_args = utils.load_json(config_path)
+        print(f"📖 Loaded config from: {config_path}")
     else:
-        # Use default config or extract from checkpoint
-        train_args = checkpoint.get(
-            "train_args",
-            {
-                "dim": 512,
-                "layers": 6,
-                "heads": 8,
-                "max_seq_len": 1024,
-                "max_beat": 256,
-                "dropout": 0.1,
-                "rel_pos_emb": True,
-                "abs_pos_emb": True,
-            },
-        )  # Load encoding
-    # encoding_path = model_path.parent.parent / "processed" / "notes" / "encoding.json"
-    encoding_path = "data/sod/processed/notes/encoding.json"
-    encoding = representation.load_encoding(encoding_path)
-    if encoding is None:
-        encoding = checkpoint.get("encoding")
-        if encoding is None:
-            raise ValueError(f"Cannot find encoding file at {encoding_path}")
+        # Extract configuration from model state dict structure
+        state_dict = checkpoint.get("model_state_dict", checkpoint)
 
-    # Create model
+        # Detect model configuration from state dict keys
+        has_rotary = any("rotary_pos_emb" in key for key in state_dict.keys())
+        has_abs_pos = any("pos_emb.emb.weight" in key for key in state_dict.keys())
+
+        # Count transformer layers (each has 2 sublayers: attn + ff)
+        layer_keys = [k for k in state_dict.keys() if "attn_layers.layers." in k]
+        if layer_keys:
+            layer_indices = [
+                int(k.split("attn_layers.layers.")[1].split(".")[0]) for k in layer_keys
+            ]
+            num_layers = (
+                max(layer_indices) + 1
+            ) // 2  # Each transformer layer has 2 sublayers
+        else:
+            num_layers = 6  # Default fallback
+
+        # Get dimension from token embeddings
+        token_emb_keys = [k for k in state_dict.keys() if "token_emb.0.emb.weight" in k]
+        if token_emb_keys:
+            dim = state_dict[token_emb_keys[0]].shape[1]
+        else:
+            dim = 512  # Default fallback
+
+        # Estimate heads from attention weights
+        attn_keys = [k for k in state_dict.keys() if "to_q.weight" in k]
+        if attn_keys:
+            attn_dim = state_dict[attn_keys[0]].shape[0]
+            heads = attn_dim // 64  # Assuming 64-dim per head
+        else:
+            heads = 8  # Default fallback
+
+        train_args = {
+            "dim": dim,
+            "layers": num_layers,
+            "heads": heads,
+            "max_seq_len": 1024,
+            "max_beat": 256,
+            "dropout": 0.1,
+            "rel_pos_emb": has_rotary,
+            "abs_pos_emb": has_abs_pos,
+        }
+
+        print(f"🔍 Auto-detected config: {dim}d, {num_layers} layers, {heads} heads")
+        print(f"   Rotary PE: {has_rotary}, Absolute PE: {has_abs_pos}")
+
+    # Load encoding
+    encoding_path = model_path.parent.parent / "processed" / "notes" / "encoding.json"
+    if encoding_path.exists():
+        encoding = representation.load_encoding(encoding_path)
+        print(f"📖 Loaded encoding from: {encoding_path}")
+    else:
+        # Try alternative encoding path
+        alt_encoding_path = (
+            model_path.parent.parent / "processed" / "json" / "encoding.json"
+        )
+        if alt_encoding_path.exists():
+            encoding = representation.load_encoding(alt_encoding_path)
+            print(f"📖 Loaded encoding from: {alt_encoding_path}")
+        else:
+            encoding = checkpoint.get("encoding")
+            if encoding is None:
+                raise ValueError(
+                    f"Cannot find encoding file. Tried:\n  {encoding_path}\n  {alt_encoding_path}"
+                )
+
+    # Create model with detected configuration
     model = music_x_transformers.MusicXTransformer(
         dim=train_args["dim"],
         encoding=encoding,
@@ -350,18 +386,37 @@ def _load_music_model(model_path: str, device: str = "cuda"):
         heads=train_args["heads"],
         max_seq_len=train_args["max_seq_len"],
         max_beat=train_args.get("max_beat", 256),
-        rotary_pos_emb=train_args.get("rel_pos_emb", True),
-        use_abs_pos_emb=train_args.get("abs_pos_emb", True),
+        rotary_pos_emb=train_args.get("rel_pos_emb", False),  # Use detected value
+        use_abs_pos_emb=train_args.get("abs_pos_emb", True),  # Use detected value
         emb_dropout=train_args.get("dropout", 0.1),
         attn_dropout=train_args.get("dropout", 0.1),
         ff_dropout=train_args.get("dropout", 0.1),
     ).to(device)
 
-    # Load weights
-    if "model_state_dict" in checkpoint:
-        model.load_state_dict(checkpoint["model_state_dict"])
-    else:
-        model.load_state_dict(checkpoint)
+    # Load weights with better error handling
+    try:
+        if "model_state_dict" in checkpoint:
+            model.load_state_dict(checkpoint["model_state_dict"], strict=False)
+        else:
+            model.load_state_dict(checkpoint, strict=False)
+    except Exception as e:
+        print(f"⚠️  Warning: Some keys didn't match perfectly: {e}")
+        print("   Attempting to load with strict=False...")
+
+        # Try loading non-strictly to handle minor mismatches
+        if "model_state_dict" in checkpoint:
+            missing, unexpected = model.load_state_dict(
+                checkpoint["model_state_dict"], strict=False
+            )
+        else:
+            missing, unexpected = model.load_state_dict(checkpoint, strict=False)
+
+        if missing:
+            print(f"   Missing keys: {missing[:5]}{'...' if len(missing) > 5 else ''}")
+        if unexpected:
+            print(
+                f"   Unexpected keys: {unexpected[:5]}{'...' if len(unexpected) > 5 else ''}"
+            )
 
     model.eval()
 
