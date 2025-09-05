@@ -20,8 +20,8 @@ import json
 # Add current directory to path
 sys.path.append(str(Path(__file__).parent))
 
-from mmt.limuf_extractor import LiMuFExtractor
-from mmt.limuf_interventions import LiMuFInterventionWrapper, _load_music_model
+from limuf_extractor import LiMuFExtractor
+from limuf_interventions import LiMuFInterventionWrapper, _load_music_model
 
 
 def create_start_tokens(model, device: str = "cuda") -> torch.Tensor:
