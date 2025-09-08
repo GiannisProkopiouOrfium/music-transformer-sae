@@ -19,7 +19,7 @@ warnings.filterwarnings("ignore")
 class AudioFlamingoAnalyzer:
     """Analyze audio using Audio Flamingo for rhythmic properties."""
 
-    def __init__(self, model_name: str = "nvidia/audio-flamingo-2"):
+    def __init__(self, model_name: str = "nvidia/audio-flamingo-2-0.5B"):
         """
         Initialize Audio Flamingo analyzer.
 
@@ -29,7 +29,11 @@ class AudioFlamingoAnalyzer:
         print(f"🤖 Loading Audio Flamingo model: {model_name}")
 
         try:
-            self.processor = AutoProcessor.from_pretrained(model_name)
+            # Load processor and model
+            self.processor = AutoProcessor.from_pretrained(
+                model_name, 
+                trust_remote_code=True
+            )
             self.model = AutoModelForCausalLM.from_pretrained(
                 model_name,
                 torch_dtype=torch.float16,
@@ -37,12 +41,14 @@ class AudioFlamingoAnalyzer:
                 trust_remote_code=True,
             )
             print("✅ Audio Flamingo model loaded successfully")
+            self.model_available = True
 
         except Exception as e:
             print(f"❌ Error loading Audio Flamingo: {e}")
             print("   Falling back to simple audio analysis...")
             self.processor = None
             self.model = None
+            self.model_available = False
 
     def analyze_rhythm(self, audio_path: str, question: str) -> str:
         """
@@ -55,7 +61,7 @@ class AudioFlamingoAnalyzer:
         Returns:
             Response from Audio Flamingo
         """
-        if self.model is None:
+        if not self.model_available:
             return self._fallback_analysis(audio_path, question)
 
         try:
@@ -418,7 +424,7 @@ def main():
     )
     parser.add_argument(
         "--model-name",
-        default="nvidia/audio-flamingo-2",
+        default="nvidia/audio-flamingo-2-0.5B",
         help="Audio Flamingo model name",
     )
 
