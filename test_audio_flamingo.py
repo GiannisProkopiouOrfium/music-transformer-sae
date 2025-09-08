@@ -87,10 +87,10 @@ def test_audio_flamingo_model(model_name: str = "nvidia/audio-flamingo-2-0.5B"):
 def test_multiple_models():
     """Test multiple Audio Flamingo models."""
     models_to_test = [
-        "nvidia/audio-flamingo-2-0.5B",
+        "nvidia/audio-flamingo-3",  # Latest version - try this first
+        "nvidia/audio-flamingo-2",  # Previous stable version
         "nvidia/audio-flamingo-2-1.5B", 
-        "nvidia/audio-flamingo-2",
-        "nvidia/audio-flamingo-3",
+        "nvidia/audio-flamingo-2-0.5B",
     ]
     
     results = {}
@@ -126,7 +126,7 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Test Audio Flamingo models")
     parser.add_argument(
         "--model", 
-        default="nvidia/audio-flamingo-2-0.5B",
+        default="nvidia/audio-flamingo-3",  # Try latest version first
         help="Specific model to test"
     )
     parser.add_argument(

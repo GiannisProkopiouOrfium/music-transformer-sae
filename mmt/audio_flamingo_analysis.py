@@ -19,7 +19,7 @@ warnings.filterwarnings("ignore")
 class AudioFlamingoAnalyzer:
     """Analyze audio using Audio Flamingo for rhythmic properties."""
 
-    def __init__(self, model_name: str = "nvidia/audio-flamingo-2-0.5B"):
+    def __init__(self, model_name: str = "nvidia/audio-flamingo-3"):
         """
         Initialize Audio Flamingo analyzer.
 
@@ -424,7 +424,7 @@ def main():
     )
     parser.add_argument(
         "--model-name",
-        default="nvidia/audio-flamingo-2-0.5B",
+        default="nvidia/audio-flamingo-3",
         help="Audio Flamingo model name",
     )
 
