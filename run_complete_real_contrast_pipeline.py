@@ -156,7 +156,7 @@ def main():
     if not args.skip_testing and success:
         cmd = [
             sys.executable,
-            "test_real_contrast_interventions.py",
+            "mmt/test_real_contrast_interventions.py",
             "--contrast-limuf-path",
             f"{contrast_dir}/limufs.pt",
             "--output-dir",
