@@ -11,6 +11,7 @@ This script uses:
 import torch
 import sys
 from pathlib import Path
+import pathlib
 import argparse
 import json
 from tqdm import tqdm
@@ -20,49 +21,40 @@ sys.path.append(str(Path(__file__).parent))
 
 # Import your existing model components
 from music_x_transformers import MusicXTransformer
+import representation
+import utils
 
 
 def load_music_transformer(model_path: str, device: str = "cuda"):
     """Load your trained MusicXTransformer."""
     print(f"📦 Loading MusicXTransformer from: {model_path}")
 
-    checkpoint = torch.load(model_path, map_location="cpu")
+    # Load training arguments
+    exp_dir = pathlib.Path(model_path).parent.parent
+    train_args = utils.load_json(exp_dir / "train-args.json")
+    print(f"📄 Loaded training args from: {exp_dir / 'train-args.json'}")
 
-    # Get model configuration from checkpoint
-    if "model_args" in checkpoint:
-        args = checkpoint["model_args"]
-    elif "args" in checkpoint:
-        args = checkpoint["args"]
-    else:
-        # Fallback defaults for MusicXTransformer
-        args = type(
-            "Args",
-            (),
-            {
-                "num_tokens": 388,
-                "max_seq_len": 1024,
-                "dim": 512,
-                "depth": 12,
-                "heads": 8,
-                "dim_head": 64,
-                "attn_dropout": 0.1,
-                "ff_dropout": 0.1,
-            },
-        )()
+    # Load encoding
+    encoding = representation.load_encoding(exp_dir / "encoding.json")
+    print(f"📄 Loaded encoding from: {exp_dir / 'encoding.json'}")
 
-    # Create MusicXTransformer with the loaded configuration
+    # Create MusicXTransformer with proper parameters
     model = MusicXTransformer(
-        num_tokens=getattr(args, "num_tokens", 388),
-        max_seq_len=getattr(args, "max_seq_len", 1024),
-        dim=getattr(args, "dim", 512),
-        depth=getattr(args, "depth", 12),
-        heads=getattr(args, "heads", 8),
-        dim_head=getattr(args, "dim_head", 64),
-        attn_dropout=getattr(args, "attn_dropout", 0.1),
-        ff_dropout=getattr(args, "ff_dropout", 0.1),
-    )
+        dim=train_args["dim"],
+        encoding=encoding,
+        depth=train_args["layers"],
+        heads=train_args["heads"],
+        max_seq_len=train_args["max_seq_len"],
+        max_beat=train_args["max_beat"],
+        rotary_pos_emb=train_args["rel_pos_emb"],
+        use_abs_pos_emb=train_args["abs_pos_emb"],
+        emb_dropout=train_args["dropout"],
+        attn_dropout=train_args["dropout"],
+        ff_dropout=train_args["dropout"],
+    ).to(device)
 
-    # Load state dict
+    # Load checkpoint
+    checkpoint = torch.load(model_path, map_location="cpu")
     if "model_state_dict" in checkpoint:
         model.load_state_dict(checkpoint["model_state_dict"])
     elif "model" in checkpoint:
@@ -70,9 +62,7 @@ def load_music_transformer(model_path: str, device: str = "cuda"):
     else:
         model.load_state_dict(checkpoint)
 
-    model.to(device)
     model.eval()
-
     print(f"✅ Model loaded: {sum(p.numel() for p in model.parameters()):,} parameters")
     return model
 
@@ -383,6 +373,7 @@ def main():
         model_path=args.model_path,
         contrast_limuf_path=args.contrast_limuf_path,
         output_dir=args.output_dir,
+        strengths=strengths,
         intervention_layer=args.intervention_layer,
         seq_len=args.seq_len,
         num_sequences=args.num_sequences,
