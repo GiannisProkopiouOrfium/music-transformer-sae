@@ -383,7 +383,6 @@ def main():
         model_path=args.model_path,
         contrast_limuf_path=args.contrast_limuf_path,
         output_dir=args.output_dir,
-        strengths=strengths,
         intervention_layer=args.intervention_layer,
         seq_len=args.seq_len,
         num_sequences=args.num_sequences,
