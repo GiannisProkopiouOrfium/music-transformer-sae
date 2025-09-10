@@ -5,7 +5,7 @@ REAL Contrast LiMuF Extractor for Features 182 vs 1743
 Uses your existing infrastructure:
 - SAE model: exp/sod/ape/sae_models/sae_layer_2048d.pt
 - Activations: exp/sod/ape/activations/activations_layers_3.h5
-- Interpretations: layer_interpretations/enhanced_diversity_report_layer3.json
+- Interpretations: interpretation/enhanced_diversity/enhanced_diversity_report.json
 
 NO SIMULATION - uses real difference-in-means on actual activations.
 """
@@ -28,7 +28,7 @@ class RealContrastLiMuFExtractor:
         self,
         sae_model_path: str = "exp/sod/ape/sae_models/sae_layer_2048d.pt",
         activations_path: str = "exp/sod/ape/activations/activations_layers_3.h5",
-        interpretations_path: str = "layer_interpretations/enhanced_diversity_report_layer3.json",
+        interpretations_path: str = "interpretation/enhanced_diversity/enhanced_diversity_report.json",
         device: str = "cuda",
     ):
         self.device = device

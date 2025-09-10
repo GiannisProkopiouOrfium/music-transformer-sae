@@ -50,7 +50,7 @@ def check_files():
         "exp/sod/ape/sae_models/sae_layer_2048d.pt",
         "exp/sod/ape/activations/activations_layers_3.h5",
         "exp/sod/ape/checkpoints/best_model.pt",
-        "layer_interpretations/enhanced_diversity_report_layer3.json",
+        "interpretation/enhanced_diversity/enhanced_diversity_report.json",
     ]
 
     all_exist = True
