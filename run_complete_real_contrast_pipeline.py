@@ -161,8 +161,6 @@ def main():
             f"{contrast_dir}/limufs.pt",
             "--output-dir",
             test_dir,
-            "--strengths",
-            args.strengths,
             "--num-sequences",
             str(args.num_sequences),
             "--device",
