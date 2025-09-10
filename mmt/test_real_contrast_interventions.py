@@ -35,8 +35,8 @@ def load_music_transformer(model_path: str, device: str = "cuda"):
     print(f"📄 Loaded training args from: {exp_dir / 'train-args.json'}")
 
     # Load encoding
-    encoding = representation.load_encoding(exp_dir / "encoding.json")
-    print(f"📄 Loaded encoding from: {exp_dir / 'encoding.json'}")
+    encoding = representation.load_encoding("data/sod/processed/notes/encoding.json")
+    print(f"📄 Loaded encoding from: data/sod/processed/notes/encoding.json")
 
     # Create MusicXTransformer with proper parameters
     model = MusicXTransformer(
