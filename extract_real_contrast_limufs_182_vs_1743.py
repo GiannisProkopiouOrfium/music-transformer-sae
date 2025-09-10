@@ -178,8 +178,9 @@ class RealContrastLiMuFExtractor:
             for i in tqdm(range(0, n_samples, batch_size), desc="SAE encoding"):
                 batch = activations_subset[i : i + batch_size].to(self.device)
 
-                # Get SAE feature activations
-                encoded = self.sae_model.encode(batch)  # [batch_size, n_features]
+                # Get SAE feature activations using forward pass
+                # forward returns (reconstructed, hidden) where hidden is what we need
+                _, encoded = self.sae_model.forward(batch)  # [batch_size, n_features]
                 all_feature_activations.append(encoded.cpu())
 
             feature_activations = torch.cat(
@@ -233,22 +234,22 @@ class RealContrastLiMuFExtractor:
 
         # The contrast vector
         contrast_vector = mean_a - mean_b  # [d_model]
-        contrast_norm = torch.norm(contrast_vector).item()
+        contrast_norm = torch.norm(contrast_vector, dim=0).item()
 
         # Normalize
-        contrast_vector_normalized = contrast_vector / torch.norm(contrast_vector)
+        contrast_vector_normalized = contrast_vector / torch.norm(contrast_vector, dim=0)
 
-        print(f"🎯 Contrast vector extracted:")
+        print("🎯 Contrast vector extracted:")
         print(f"   Raw norm: {contrast_norm:.4f}")
         print(
-            f"   Normalized norm: {torch.norm(contrast_vector_normalized).item():.4f}"
+            f"   Normalized norm: {torch.norm(contrast_vector_normalized, dim=0).item():.4f}"
         )
         print(f"   Vector shape: {contrast_vector_normalized.shape}")
 
         # Calculate some statistics
         dot_product = torch.dot(mean_a, mean_b).item()
-        a_norm = torch.norm(mean_a).item()
-        b_norm = torch.norm(mean_b).item()
+        a_norm = torch.norm(mean_a, dim=0).item()
+        b_norm = torch.norm(mean_b, dim=0).item()
 
         print(f"📈 Statistics:")
         print(f"   Mean A norm: {a_norm:.4f}")
