@@ -157,10 +157,8 @@ def main():
         cmd = [
             sys.executable,
             "test_real_contrast_interventions.py",
-            "--limuf-dir",
-            contrast_dir,
-            "--contrast-name",
-            contrast_name,
+            "--contrast-limuf-path",
+            f"{contrast_dir}/limufs.pt",
             "--output-dir",
             test_dir,
             "--strengths",
