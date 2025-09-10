@@ -19,7 +19,7 @@ from tqdm import tqdm
 sys.path.append(str(Path(__file__).parent))
 
 # Import your existing model components
-from mmt.music_x_transformers import MusicXTransformer
+from music_x_transformers import MusicXTransformer
 
 
 def load_music_transformer(model_path: str, device: str = "cuda"):
