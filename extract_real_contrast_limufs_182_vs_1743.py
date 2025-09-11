@@ -237,7 +237,9 @@ class RealContrastLiMuFExtractor:
         contrast_norm = torch.norm(contrast_vector, dim=0).item()
 
         # Normalize
-        contrast_vector_normalized = contrast_vector / torch.norm(contrast_vector, dim=0)
+        contrast_vector_normalized = contrast_vector / torch.norm(
+            contrast_vector, dim=0
+        )
 
         print("🎯 Contrast vector extracted:")
         print(f"   Raw norm: {contrast_norm:.4f}")

@@ -43,8 +43,8 @@ def load_music_transformer(model_path: str, device: str = "cuda"):
     print(f"📄 Loaded training args from: {exp_dir / 'train-args.json'}")
 
     # Load encoding
-    encoding = representation.load_encoding(exp_dir / "encoding.json")
-    print(f"📄 Loaded encoding from: {exp_dir / 'encoding.json'}")
+    encoding = representation.load_encoding("data/sod/processed/notes/encoding.json")
+    print(f"📄 Loaded encoding from: data/sod/processed/notes/encoding.json")
 
     # Create MusicXTransformer with proper parameters
     model = MusicXTransformer(
@@ -85,12 +85,12 @@ def generate_with_intervention(
     device: str = "cuda",
 ):
     """Generate sequences with contrast intervention using model.generate()."""
-    
+
     # Create proper start tokens
     start_tokens = create_start_tokens(device)
-    
+
     generated_sequences = []
-    
+
     # Hook for intervention
     def intervention_hook(module, input, output):
         if hasattr(intervention_hook, "active") and intervention_hook.active:
@@ -147,18 +147,18 @@ def generate_with_intervention(
             try:
                 # Activate intervention
                 intervention_hook.active = True
-                
+
                 # Use model.generate() like in test_feature_interventions.py
                 if abs(strength) < 1e-6:  # Baseline
-                    generated = model.generate(start_tokens, seq_len, temperature=1.0)
+                    generated = model.generate(start_tokens, seq_len)
                 else:
-                    generated = model.generate(start_tokens, seq_len, temperature=1.0)
-                
+                    generated = model.generate(start_tokens, seq_len)
+
                 # Deactivate intervention
                 intervention_hook.active = False
-                
+
                 generated_sequences.append(generated.cpu())
-                
+
             except Exception as e:
                 print(f"     Generation error for sequence {seq_idx}: {e}")
                 intervention_hook.active = False
@@ -239,10 +239,10 @@ def test_real_contrast_interventions(
             .replace("+", "plus")
             .replace("-", "minus")
         )
-        
+
         for seq_idx, sequence in enumerate(sequences):
             output_file = output_path / f"{contrast_name}_{strength_name}_{seq_idx}.pt"
-            
+
             torch.save(
                 {
                     "generated": sequence.cpu(),  # Use "generated" key like test_feature_interventions.py
@@ -262,12 +262,17 @@ def test_real_contrast_interventions(
             )
 
         all_results[strength] = {
-            "files": [str(output_path / f"{contrast_name}_{strength_name}_{i}.pt") for i in range(len(sequences))],
+            "files": [
+                str(output_path / f"{contrast_name}_{strength_name}_{i}.pt")
+                for i in range(len(sequences))
+            ],
             "num_sequences": len(sequences),
             "avg_length": float(torch.stack(sequences).shape[1]) if sequences else 0,
         }
 
-        print(f"   ✅ Saved {len(sequences)} sequences as {contrast_name}_{strength_name}_*.pt")
+        print(
+            f"   ✅ Saved {len(sequences)} sequences as {contrast_name}_{strength_name}_*.pt"
+        )
 
     # Save summary
     summary = {
