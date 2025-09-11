@@ -168,7 +168,7 @@ def convert_sequence_to_audio(
 
 def convert_all_sequences(
     results_dir: str = "feature_182_test",
-    feature_id: int = 182,
+    feature_id: str = "182",
     sample_rate: int = 22050,
     duration: float = 30.0,
 ) -> Dict[str, str]:
@@ -198,12 +198,14 @@ def convert_all_sequences(
 
     # Find sequence files
     sequence_files = {
-        "suppress_strong": f"feature_{feature_id}_strength_minus2.0.pt",
-        "suppress_weak": f"feature_{feature_id}_strength_minus1.0.pt",
-        "baseline": f"feature_{feature_id}_strength_plus0.0.pt",
-        "promote_weak": f"feature_{feature_id}_strength_plus1.0.pt",
-        "promote_strong": f"feature_{feature_id}_strength_plus2.0.pt",
+        "suppress_strong": f"feature_{feature_id}_strength_minus2_0.pt",
+        "suppress_weak": f"feature_{feature_id}_strength_minus1_0.pt",
+        "baseline": f"feature_{feature_id}_strength_plus0_0.pt",
+        "promote_weak": f"feature_{feature_id}_strength_plus1_0.pt",
+        "promote_strong": f"feature_{feature_id}_strength_plus2_0.pt",
     }
+
+    # feature_182_vs_1743_strength_minus1_0.pt
 
     audio_files = {}
 
@@ -241,7 +243,7 @@ def main():
         help="Directory containing generated sequences",
     )
     parser.add_argument(
-        "--feature-id", type=int, default=182, help="Feature ID that was tested"
+        "--feature-id", type=str, default="182", help="Feature ID that was tested"
     )
     parser.add_argument(
         "--sample-rate", type=int, default=22050, help="Audio sample rate"
