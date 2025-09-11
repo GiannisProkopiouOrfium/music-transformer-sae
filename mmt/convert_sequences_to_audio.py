@@ -150,7 +150,25 @@ def convert_sequence_to_audio(
 
     # Load tensor
     data = torch.load(tensor_path, map_location="cpu")
-    sequence = data["generated"]
+    print(f"     Data keys: {list(data.keys())}")
+
+    # Get sequences from the correct key
+    if "sequences" in data:
+        sequences = data["sequences"]
+        print(f"     Found {len(sequences)} sequences")
+        # Take the first sequence for conversion
+        if len(sequences) > 0:
+            sequence = sequences[0]  # Use first sequence
+            print(f"     Using first sequence with shape: {sequence.shape}")
+        else:
+            print("     No sequences found!")
+            return output_path
+    elif "generated" in data:
+        sequence = data["generated"]
+        print(f"     Using 'generated' key with shape: {sequence.shape}")
+    else:
+        print(f"     Error: No 'sequences' or 'generated' key found in data!")
+        return output_path
 
     # Convert to notes
     notes = tensor_to_notes(sequence, encoding)
@@ -204,8 +222,6 @@ def convert_all_sequences(
         "promote_weak": f"feature_{feature_id}_strength_plus1_0.pt",
         "promote_strong": f"feature_{feature_id}_strength_plus2_0.pt",
     }
-
-    # feature_182_vs_1743_strength_minus1_0.pt
 
     audio_files = {}
 
