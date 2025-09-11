@@ -25,6 +25,14 @@ import representation
 import utils
 
 
+def create_start_tokens(device: str = "cuda") -> torch.Tensor:
+    """Create start tokens for generation."""
+    # Simple start-of-song token - adapt based on your tokenization
+    start_tokens = torch.zeros((1, 1, 6), dtype=torch.long, device=device)
+    start_tokens[0, 0, 0] = 1  # Start-of-song type
+    return start_tokens
+
+
 def load_music_transformer(model_path: str, device: str = "cuda"):
     """Load your trained MusicXTransformer."""
     print(f"📦 Loading MusicXTransformer from: {model_path}")
@@ -35,8 +43,8 @@ def load_music_transformer(model_path: str, device: str = "cuda"):
     print(f"📄 Loaded training args from: {exp_dir / 'train-args.json'}")
 
     # Load encoding
-    encoding = representation.load_encoding("data/sod/processed/notes/encoding.json")
-    print(f"📄 Loaded encoding from: data/sod/processed/notes/encoding.json")
+    encoding = representation.load_encoding(exp_dir / "encoding.json")
+    print(f"📄 Loaded encoding from: {exp_dir / 'encoding.json'}")
 
     # Create MusicXTransformer with proper parameters
     model = MusicXTransformer(
@@ -76,8 +84,13 @@ def generate_with_intervention(
     num_sequences: int = 3,
     device: str = "cuda",
 ):
-    """Generate sequences with contrast intervention."""
-
+    """Generate sequences with contrast intervention using model.generate()."""
+    
+    # Create proper start tokens
+    start_tokens = create_start_tokens(device)
+    
+    generated_sequences = []
+    
     # Hook for intervention
     def intervention_hook(module, input, output):
         if hasattr(intervention_hook, "active") and intervention_hook.active:
@@ -124,79 +137,38 @@ def generate_with_intervention(
 
     if hook_handle is None:
         print(f"⚠️  Could not find layer {intervention_layer} for intervention")
-        print("   Available modules:")
-        for name, _ in list(model.named_modules())[:10]:  # Show first 10
-            print(f"     {name}")
-        print("     ...")
+        return []
 
-    # Generate sequences
-    generated_sequences = []
-
+    # Generate sequences using model.generate()
     with torch.no_grad():
         for seq_idx in tqdm(
             range(num_sequences), desc=f"Generating (strength {strength:+.1f})"
         ):
-            # Create simple prompt (adjust based on your representation)
-            prompt = torch.tensor([[1, 2]], device=device)  # Start tokens
-
-            # Activate intervention
-            intervention_hook.active = True
-
-            # Generate sequence
-            sequence = generate_sequence(
-                model=model, prompt=prompt, max_length=seq_len, device=device
-            )
-
-            # Deactivate intervention
-            intervention_hook.active = False
-
-            generated_sequences.append(sequence.cpu())
+            try:
+                # Activate intervention
+                intervention_hook.active = True
+                
+                # Use model.generate() like in test_feature_interventions.py
+                if abs(strength) < 1e-6:  # Baseline
+                    generated = model.generate(start_tokens, seq_len, temperature=1.0)
+                else:
+                    generated = model.generate(start_tokens, seq_len, temperature=1.0)
+                
+                # Deactivate intervention
+                intervention_hook.active = False
+                
+                generated_sequences.append(generated.cpu())
+                
+            except Exception as e:
+                print(f"     Generation error for sequence {seq_idx}: {e}")
+                intervention_hook.active = False
+                continue
 
     # Remove hook
     if hook_handle:
         hook_handle.remove()
 
     return generated_sequences
-
-
-def generate_sequence(
-    model, prompt, max_length: int, device: str = "cuda", temperature: float = 1.0
-):
-    """Generate a single sequence using MusicXTransformer."""
-    model.eval()
-
-    with torch.no_grad():
-        sequence = prompt.clone()
-
-        for _ in range(max_length - prompt.shape[1]):
-            try:
-                # Forward pass with MusicXTransformer
-                # MusicXTransformer returns logits directly
-                logits = model(sequence)
-
-                # Handle different output formats
-                if isinstance(logits, tuple):
-                    logits = logits[0]  # Take first element if tuple
-
-                # Get next token logits
-                next_token_logits = logits[:, -1, :] / temperature
-
-                # Sample next token
-                probs = torch.softmax(next_token_logits, dim=-1)
-                next_token = torch.multinomial(probs, 1)
-
-                # Append to sequence
-                sequence = torch.cat([sequence, next_token], dim=1)
-
-                # Check for end token or max length
-                if next_token.item() == 0:  # Assuming 0 is end token
-                    break
-
-            except Exception as e:
-                print(f"     Generation error at step {sequence.shape[1]}: {e}")
-                break
-
-    return sequence.squeeze(0)
 
 
 def test_real_contrast_interventions(
@@ -261,37 +233,41 @@ def test_real_contrast_interventions(
             device=device,
         )
 
-        # Save sequences
+        # Save sequences (save each separately for consistency)
         strength_name = (
             f"strength_{strength:+.1f}".replace(".", "_")
             .replace("+", "plus")
             .replace("-", "minus")
         )
-        output_file = output_path / f"{contrast_name}_{strength_name}.pt"
-
-        torch.save(
-            {
-                "sequences": sequences,
-                "strength": strength,
-                "contrast_name": contrast_name,
-                "metadata": metadata,
-                "generation_params": {
-                    "num_sequences": num_sequences,
-                    "seq_len": seq_len,
-                    "intervention_layer": intervention_layer,
-                    "model_path": model_path,
+        
+        for seq_idx, sequence in enumerate(sequences):
+            output_file = output_path / f"{contrast_name}_{strength_name}_{seq_idx}.pt"
+            
+            torch.save(
+                {
+                    "generated": sequence.cpu(),  # Use "generated" key like test_feature_interventions.py
+                    "strength": strength,
+                    "contrast_name": contrast_name,
+                    "metadata": metadata,
+                    "sequence_index": seq_idx,
+                    "shape": list(sequence.shape),
+                    "generation_params": {
+                        "num_sequences": num_sequences,
+                        "seq_len": seq_len,
+                        "intervention_layer": intervention_layer,
+                        "model_path": model_path,
+                    },
                 },
-            },
-            output_file,
-        )
+                output_file,
+            )
 
         all_results[strength] = {
-            "file": str(output_file),
+            "files": [str(output_path / f"{contrast_name}_{strength_name}_{i}.pt") for i in range(len(sequences))],
             "num_sequences": len(sequences),
             "avg_length": float(torch.stack(sequences).shape[1]) if sequences else 0,
         }
 
-        print(f"   ✅ Saved {len(sequences)} sequences to {output_file}")
+        print(f"   ✅ Saved {len(sequences)} sequences as {contrast_name}_{strength_name}_*.pt")
 
     # Save summary
     summary = {

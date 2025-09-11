@@ -153,21 +153,12 @@ def convert_sequence_to_audio(
     print(f"     Data keys: {list(data.keys())}")
 
     # Get sequences from the correct key
-    if "sequences" in data:
-        sequences = data["sequences"]
-        print(f"     Found {len(sequences)} sequences")
-        # Take the first sequence for conversion
-        if len(sequences) > 0:
-            sequence = sequences[0]  # Use first sequence
-            print(f"     Using first sequence with shape: {sequence.shape}")
-        else:
-            print("     No sequences found!")
-            return output_path
-    elif "generated" in data:
+    if "generated" in data:
+        # New format (like test_feature_interventions.py)
         sequence = data["generated"]
         print(f"     Using 'generated' key with shape: {sequence.shape}")
     else:
-        print(f"     Error: No 'sequences' or 'generated' key found in data!")
+        print("     Error: No 'generated' key found in data!")
         return output_path
 
     # Convert to notes
