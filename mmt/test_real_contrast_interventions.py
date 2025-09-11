@@ -23,14 +23,21 @@ sys.path.append(str(Path(__file__).parent))
 from music_x_transformers import MusicXTransformer
 import representation
 import utils
+from generate import save_result
 
 
-def create_start_tokens(device: str = "cuda") -> torch.Tensor:
+def create_start_tokens(encoding, device: str = "cuda") -> torch.Tensor:
     """Create start tokens for generation."""
+    sos = encoding["type_code_map"]["start-of-song"]
+    eos = encoding["type_code_map"]["end-of-song"]
+    # beat_0 = encoding["beat_code_map"][0]
+    # beat_4 = encoding["beat_code_map"][4]
+    # beat_16 = encoding["beat_code_map"][16]
     # Simple start-of-song token - adapt based on your tokenization
     start_tokens = torch.zeros((1, 1, 6), dtype=torch.long, device=device)
-    start_tokens[0, 0, 0] = 1  # Start-of-song type
-    return start_tokens
+    start_tokens[:, 0, 0] = sos  # Start-of-song type
+
+    return start_tokens, eos
 
 
 def load_music_transformer(model_path: str, device: str = "cuda"):
@@ -72,11 +79,12 @@ def load_music_transformer(model_path: str, device: str = "cuda"):
 
     model.eval()
     print(f"✅ Model loaded: {sum(p.numel() for p in model.parameters()):,} parameters")
-    return model
+    return model, encoding
 
 
 def generate_with_intervention(
     model,
+    encoding,
     contrast_vector: torch.Tensor,
     strength: float,
     intervention_layer: int = 3,
@@ -87,7 +95,7 @@ def generate_with_intervention(
     """Generate sequences with contrast intervention using model.generate()."""
 
     # Create proper start tokens
-    start_tokens = create_start_tokens(device)
+    start_tokens, eos = create_start_tokens(encoding, device)
 
     generated_sequences = []
 
@@ -150,14 +158,26 @@ def generate_with_intervention(
 
                 # Use model.generate() like in test_feature_interventions.py
                 if abs(strength) < 1e-6:  # Baseline
-                    generated = model.generate(start_tokens, seq_len)
+                    generated = model.generate(
+                        start_tokens,
+                        seq_len,
+                        eos_token=eos,
+                        monotonicity_dim=("type", "beat"),
+                    )
                 else:
-                    generated = model.generate(start_tokens, seq_len)
+                    generated = model.generate(
+                        start_tokens,
+                        seq_len,
+                        eos_token=eos,
+                        monotonicity_dim=("type", "beat"),
+                    )
 
                 # Deactivate intervention
                 intervention_hook.active = False
 
-                generated_sequences.append(generated.cpu())
+                generated_np = torch.cat((start_tokens, generated), 1).cpu().numpy()
+
+                generated_sequences.append(generated_np)
 
             except Exception as e:
                 print(f"     Generation error for sequence {seq_idx}: {e}")
@@ -196,7 +216,7 @@ def test_real_contrast_interventions(
     output_path.mkdir(parents=True, exist_ok=True)
 
     # Load model
-    model = load_music_transformer(model_path, device)
+    model, encoding = load_music_transformer(model_path, device)
 
     # Load contrast LiMuF
     print("📁 Loading contrast LiMuF...")
@@ -225,6 +245,7 @@ def test_real_contrast_interventions(
 
         sequences = generate_with_intervention(
             model=model,
+            encoding=encoding,
             contrast_vector=contrast_vector,
             strength=strength,
             intervention_layer=intervention_layer,
@@ -238,6 +259,14 @@ def test_real_contrast_interventions(
             f"strength_{strength:+.1f}".replace(".", "_")
             .replace("+", "plus")
             .replace("-", "minus")
+        )
+
+        # Save the results
+        save_result(
+            f"{strength_name}_instrument-informed",
+            sequences[0][0],
+            output_dir,
+            encoding,
         )
 
         for seq_idx, sequence in enumerate(sequences):
