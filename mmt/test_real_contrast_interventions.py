@@ -175,7 +175,7 @@ def generate_with_intervention(
                 # Deactivate intervention
                 intervention_hook.active = False
 
-                generated_np = torch.cat((start_tokens, generated), 1).cpu().numpy()
+                generated_np = torch.cat((start_tokens, generated), 1)
 
                 generated_sequences.append(generated_np)
 
@@ -261,10 +261,12 @@ def test_real_contrast_interventions(
             .replace("-", "minus")
         )
 
+        save_seqs = [seq.cpu().numpy() for seq in sequences]
+
         # Save the results
         save_result(
             f"{strength_name}_instrument-informed",
-            sequences[0][0],
+            save_seqs[0],
             output_dir,
             encoding,
         )

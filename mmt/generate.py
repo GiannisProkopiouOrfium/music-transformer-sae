@@ -124,10 +124,10 @@ def save_result(filename, data, sample_dir, encoding):
     # music.write(sample_dir / "mid" / f"{filename}.mid")
 
     # Save as a WAV file
+    # sample_dir / "wav" / f"{filename}.wav"
     music.write(
-        # sample_dir / "wav" / f"{filename}.wav",
         f"{sample_dir}/wav/{filename}.wav",
-        options="-o synth.polyphony=4096",
+        # options="-o synth.polyphony=4096",
     )
 
     # Save also as a MP3 file
