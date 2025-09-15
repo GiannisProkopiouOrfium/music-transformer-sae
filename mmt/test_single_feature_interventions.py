@@ -251,15 +251,22 @@ def test_single_feature_interventions(
             .replace("-", "minus")
         )
 
-        save_seqs = [seq.cpu().numpy() for seq in sequences]
+        # Save the results (only if we have sequences)
+        if sequences:
+            save_seqs = [seq.cpu().numpy() for seq in sequences]
 
-        # Save the results
-        save_result(
-            f"{strength_name}_instrument-informed",
-            save_seqs[0],
-            output_dir,
-            encoding,
-        )
+            # Ensure the data format is correct for save_result
+            # The save_result function expects a 2D array [seq_len, features]
+            first_seq = save_seqs[0]
+            if len(first_seq.shape) == 3:  # [batch, seq_len, features]
+                first_seq = first_seq[0]  # Take first batch element
+
+            save_result(
+                f"{strength_name}_instrument-informed",
+                first_seq,
+                output_dir,
+                encoding,
+            )
 
         for seq_idx, sequence in enumerate(sequences):
             output_file = output_path / f"{feature_name}_{strength_name}_{seq_idx}.pt"
