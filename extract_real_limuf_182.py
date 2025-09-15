@@ -335,6 +335,13 @@ def main():
         default="cuda" if torch.cuda.is_available() else "cpu",
         help="Device to use",
     )
+    # add max samples as arg
+    parser.add_argument(
+        "--max-samples",
+        type=int,
+        default=10000,
+        help="Maximum number of samples to process",
+    )
 
     args = parser.parse_args()
 
@@ -357,6 +364,7 @@ def main():
     limuf_vector, metadata = extractor.extract_limuf(
         feature_id=args.feature_id,
         activation_threshold=args.threshold,
+        max_samples=args.max_samples,
     )
 
     # Save results
