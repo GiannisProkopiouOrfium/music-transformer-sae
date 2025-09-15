@@ -352,12 +352,12 @@ def main():
         default="single_feature_interventions",
         help="Output directory",
     )
+
     parser.add_argument(
         "--strengths",
         default="-2.0,-1.0,0.0,1.0,2.0",
         help="Comma-separated intervention strengths",
         type=str,
-        nargs="?",
     )
     parser.add_argument(
         "--intervention-layer", type=int, default=3, help="Layer to apply intervention"
