@@ -87,17 +87,26 @@ def generate_with_intervention(
     encoding,
     feature_vector: torch.Tensor,
     strength: float,
+    intervention_type: str = "addition",
     intervention_layer: int = 3,
     seq_len: int = 256,
     num_sequences: int = 3,
     device: str = "cuda",
 ):
-    """Generate sequences with single feature intervention using model.generate()."""
+    """Generate sequences with single feature intervention using model.generate().
+
+    Args:
+        intervention_type: "addition" for h'(x) = h(x) + α * r
+                          "ablation" for h'(x) = h(x) - r̂r̂ᵀh(x)
+    """
 
     # Create proper start tokens
     start_tokens, eos = create_start_tokens(encoding, device)
 
     generated_sequences = []
+
+    # Normalize feature vector for ablation (specify dim=0 for 1D tensor)
+    feature_unit = feature_vector / torch.norm(feature_vector, dim=0)
 
     # Hook for intervention
     def intervention_hook(module, input, output):
@@ -105,9 +114,35 @@ def generate_with_intervention(
             # Apply intervention to last token
             # output shape: [batch_size, seq_len, d_model]
             if len(output.shape) == 3:
-                output[:, -1, :] += strength * feature_vector.unsqueeze(0)
+                target_activations = output[:, -1, :]  # [batch_size, d_model]
             else:
-                output += strength * feature_vector.unsqueeze(0)
+                target_activations = output  # [batch_size, d_model]
+
+            if intervention_type == "addition":
+                # Feature addition: h'(x) = h(x) + α * r
+                if len(output.shape) == 3:
+                    output[:, -1, :] += strength * feature_vector.unsqueeze(0)
+                else:
+                    output += strength * feature_vector.unsqueeze(0)
+
+            elif intervention_type == "ablation":
+                # Feature ablation: h'(x) = h(x) - r̂r̂ᵀh(x)
+                # Compute projection: r̂r̂ᵀh(x) = r̂ * (r̂ᵀ * h(x))
+                projection_coeff = torch.matmul(
+                    target_activations, feature_unit
+                )  # [batch_size]
+                projection = feature_unit.unsqueeze(0) * projection_coeff.unsqueeze(
+                    1
+                )  # [batch_size, d_model]
+
+                if len(output.shape) == 3:
+                    output[:, -1, :] -= projection
+                else:
+                    output -= projection
+
+            else:
+                raise ValueError(f"Unknown intervention_type: {intervention_type}")
+
         return output
 
     # Register hook on intervention layer
@@ -162,6 +197,7 @@ def generate_with_intervention(
                     seq_len,
                     eos_token=eos,
                     monotonicity_dim=("type", "beat"),
+                    temperature=0.0,
                 )
 
                 # Deactivate intervention
@@ -188,17 +224,23 @@ def test_single_feature_interventions(
     feature_limuf_path: str,
     output_dir: str,
     strengths: list = [-2.0, -1.0, 0.0, 1.0, 2.0],
+    intervention_type: str = "addition",
     intervention_layer: int = 3,
     seq_len: int = 256,
     num_sequences: int = 3,
     device: str = "cuda",
 ):
-    """Test single feature interventions."""
+    """Test single feature interventions.
+
+    Args:
+        intervention_type: "addition" for feature addition, "ablation" for feature ablation
+    """
 
     print("🎼 TESTING SINGLE FEATURE INTERVENTIONS")
     print("=" * 50)
     print(f"Model: {model_path}")
     print(f"Feature LiMuF: {feature_limuf_path}")
+    print(f"Intervention Type: {intervention_type}")
     print(f"Strengths: {strengths}")
     print(f"Output: {output_dir}")
     print()
@@ -231,13 +273,14 @@ def test_single_feature_interventions(
     all_results = {}
 
     for strength in strengths:
-        print(f"🎵 Testing strength {strength:+.1f}")
+        print(f"🎵 Testing strength {strength:+.1f} ({intervention_type})")
 
         sequences = generate_with_intervention(
             model=model,
             encoding=encoding,
             feature_vector=feature_vector,
             strength=strength,
+            intervention_type=intervention_type,
             intervention_layer=intervention_layer,
             seq_len=seq_len,
             num_sequences=num_sequences,
@@ -251,6 +294,9 @@ def test_single_feature_interventions(
             .replace("-", "minus")
         )
 
+        # Include intervention type in filename
+        intervention_prefix = "add" if intervention_type == "addition" else "abl"
+
         # Save the results (only if we have sequences)
         if sequences:
             save_seqs = [seq.cpu().numpy() for seq in sequences]
@@ -262,14 +308,17 @@ def test_single_feature_interventions(
                 first_seq = first_seq[0]  # Take first batch element
 
             save_result(
-                f"{strength_name}_instrument-informed",
+                f"{intervention_prefix}_{strength_name}_instrument-informed",
                 first_seq,
                 output_dir,
                 encoding,
             )
 
         for seq_idx, sequence in enumerate(sequences):
-            output_file = output_path / f"{feature_name}_{strength_name}_{seq_idx}.pt"
+            output_file = (
+                output_path
+                / f"{feature_name}_{intervention_prefix}_{strength_name}_{seq_idx}.pt"
+            )
 
             torch.save(
                 {
@@ -291,7 +340,10 @@ def test_single_feature_interventions(
 
         all_results[strength] = {
             "files": [
-                str(output_path / f"{feature_name}_{strength_name}_{i}.pt")
+                str(
+                    output_path
+                    / f"{feature_name}_{intervention_prefix}_{strength_name}_{i}.pt"
+                )
                 for i in range(len(sequences))
             ],
             "num_sequences": len(sequences),
@@ -299,7 +351,7 @@ def test_single_feature_interventions(
         }
 
         print(
-            f"   ✅ Saved {len(sequences)} sequences as {feature_name}_{strength_name}_*.pt"
+            f"   ✅ Saved {len(sequences)} sequences as {feature_name}_{intervention_prefix}_{strength_name}_*.pt"
         )
 
     # Save summary
@@ -327,9 +379,20 @@ def test_single_feature_interventions(
     print(f"📁 Generated files: {output_dir}/")
     print()
     print("🎯 EXPECTED RESULTS:")
-    print(f"   • Negative strengths: Less {metadata['feature_description'][:50]}...")
-    print(f"   • Positive strengths: More {metadata['feature_description'][:50]}...")
-    print("   • Baseline (0.0): Normal model behavior")
+    if intervention_type == "addition":
+        print(
+            f"   • Negative strengths: Less {metadata['feature_description'][:50]}..."
+        )
+        print(
+            f"   • Positive strengths: More {metadata['feature_description'][:50]}..."
+        )
+        print("   • Baseline (0.0): Normal model behavior")
+    else:  # ablation
+        print("   • Ablation removes the feature direction from activations")
+        print(
+            f"   • Should reduce {metadata['feature_description'][:50]}... regardless of strength"
+        )
+        print("   • Baseline (0.0): Normal model behavior")
 
     return summary
 
@@ -353,6 +416,12 @@ def main():
         help="Output directory",
     )
 
+    parser.add_argument(
+        "--intervention-type",
+        default="addition",
+        choices=["addition", "ablation"],
+        help="Type of intervention: 'addition' for h'(x) = h(x) + α*r, 'ablation' for h'(x) = h(x) - r̂r̂ᵀh(x)",
+    )
     parser.add_argument(
         "--strengths",
         default="-2.0,-1.0,0.0,1.0,2.0",
@@ -385,6 +454,7 @@ def main():
         feature_limuf_path=args.feature_limuf_path,
         output_dir=args.output_dir,
         strengths=strengths,
+        intervention_type=args.intervention_type,
         intervention_layer=args.intervention_layer,
         seq_len=args.seq_len,
         num_sequences=args.num_sequences,
