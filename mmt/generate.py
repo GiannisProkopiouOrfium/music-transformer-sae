@@ -129,6 +129,7 @@ def save_result(filename, data, sample_dir, encoding):
         f"{sample_dir}/wav/{filename}.wav",
         # options="-o synth.polyphony=4096",
     )
+    print(f"Saved WAV to {sample_dir}/wav/{filename}.wav")
 
     # Save also as a MP3 file
     # subprocess.check_output(
