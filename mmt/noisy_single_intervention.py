@@ -208,18 +208,29 @@ def generate_with_controlled_noise(
                 for _ in range(seq_len):
                     # Get model logits for next token
                     try:
-                        # Use the model to get logits (avoid autocast if causing issues)
-                        logits = model(
+                        # Use the decoder's net to get logits (not the full model)
+                        # model.decoder.net returns a list of logits for each dimension
+                        logits_list = model.decoder.net(
                             current_sequence
-                        )  # Shape: [batch_size, seq_len, vocab_size]
+                        )  # Returns list of [batch, seq, vocab] tensors
 
-                        # Get logits for the last position
-                        if len(logits.shape) == 3 and logits.shape[1] > 0:
-                            next_token_logits = logits[
-                                :, -1, :
-                            ]  # [batch_size, vocab_size]
+                        # The first dimension is the token type (what we want to sample)
+                        if isinstance(logits_list, list) and len(logits_list) > 0:
+                            # Get type logits for the last position
+                            type_logits = logits_list[
+                                0
+                            ]  # [batch_size, seq_len, vocab_size] for type dimension
+                            if type_logits.shape[1] > 0:
+                                next_token_logits = type_logits[
+                                    :, -1, :
+                                ]  # [batch_size, vocab_size]
+                            else:
+                                print(
+                                    f"Empty sequence in type logits: {type_logits.shape}"
+                                )
+                                break
                         else:
-                            print(f"Unexpected logits shape: {logits.shape}")
+                            print(f"Unexpected logits format: {type(logits_list)}")
                             break
 
                     except Exception as e:
@@ -237,25 +248,30 @@ def generate_with_controlled_noise(
                     probs = F.softmax(scaled_logits, dim=-1)
 
                     # Check if probs are valid
-                    if torch.isnan(probs).any() or probs.sum() == 0:
+                    if torch.isnan(probs).any() or probs.sum(dim=-1).min() == 0:
                         print("Invalid probabilities, breaking generation")
                         break
 
-                    next_token = torch.multinomial(
+                    next_token_type = torch.multinomial(
                         probs, num_samples=1
                     )  # [batch_size, 1]
 
                     # Check for EOS token
-                    if next_token.item() == eos:
+                    if next_token_type.item() == eos:
                         break
 
-                    # Append to sequence (use the actual next_token value)
-                    next_token_expanded = torch.zeros(
+                    # Create the full 6-dimensional token
+                    # For simplicity, we'll set other dimensions to 0 (this mimics the start token format)
+                    next_token_full = torch.zeros(
                         (1, 1, 6), dtype=torch.long, device=device
                     )
-                    next_token_expanded[:, 0, 0] = next_token.squeeze()
+                    next_token_full[:, 0, 0] = (
+                        next_token_type.squeeze()
+                    )  # Set type dimension
+                    # Other dimensions (beat, position, pitch, duration, instrument) remain 0
+
                     current_sequence = torch.cat(
-                        [current_sequence, next_token_expanded], dim=1
+                        [current_sequence, next_token_full], dim=1
                     )
 
                 # Deactivate intervention
@@ -362,8 +378,8 @@ def test_noisy_single_feature_interventions(
             "noisy_add" if intervention_type == "addition" else "noisy_abl"
         )
 
-        # Save the results (only if we have sequences)
-        if sequences:
+        # Save the results (only if we have sequences and they're not empty)
+        if sequences and len(sequences) > 0:
             save_seqs = [seq.cpu().numpy() for seq in sequences]
 
             # Ensure the data format is correct for save_result
@@ -371,12 +387,23 @@ def test_noisy_single_feature_interventions(
             if len(first_seq.shape) == 3:  # [batch, seq_len, features]
                 first_seq = first_seq[0]  # Take first batch element
 
-            save_result(
-                f"{intervention_prefix}_{strength_name}_temp{temperature}_seed{noise_seed}",
-                first_seq,
-                output_dir,
-                encoding,
-            )
+            # Only save if sequence has meaningful length (more than just start token)
+            if first_seq.shape[0] > 1:
+                try:
+                    save_result(
+                        f"{intervention_prefix}_{strength_name}_temp{temperature}_seed{noise_seed}",
+                        first_seq,
+                        output_dir,
+                        encoding,
+                    )
+                except Exception as e:
+                    print(f"Warning: Could not save MIDI result: {e}")
+            else:
+                print(
+                    f"Warning: Generated sequence too short ({first_seq.shape[0]} tokens), skipping MIDI save"
+                )
+        else:
+            print("Warning: No sequences generated, skipping MIDI save")
 
         for seq_idx, sequence in enumerate(sequences):
             output_file = (
