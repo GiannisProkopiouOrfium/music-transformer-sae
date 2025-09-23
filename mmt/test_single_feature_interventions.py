@@ -108,6 +108,12 @@ def generate_with_intervention(
     # Normalize feature vector for ablation (specify dim=0 for 1D tensor)
     feature_unit = feature_vector / torch.norm(feature_vector, dim=0)
 
+    # Scale down the feature vector if it's too large (prevent numerical instability)
+    feature_norm = torch.norm(feature_vector, dim=0).item()
+    if feature_norm > 10.0:
+        print(f"⚠️  Large feature vector norm ({feature_norm:.2f}), scaling down...")
+        feature_vector = feature_vector / (feature_norm / 1.0)  # Scale to norm=1.0
+
     # Hook for intervention
     def intervention_hook(module, input, output):
         if hasattr(intervention_hook, "active") and intervention_hook.active:
@@ -118,22 +124,41 @@ def generate_with_intervention(
             else:
                 target_activations = output  # [batch_size, d_model]
 
+            # Debug: Check for existing NaN/inf before intervention
+            if torch.isnan(output).any() or torch.isinf(output).any():
+                print("⚠️  NaN/inf detected in output BEFORE intervention!")
+
             if intervention_type == "addition":
                 # Feature addition: h'(x) = h(x) + α * r
+                intervention_vector = strength * feature_vector.unsqueeze(0)
+
+                # Debug: Check intervention vector
+                if (
+                    torch.isnan(intervention_vector).any()
+                    or torch.isinf(intervention_vector).any()
+                ):
+                    print(f"⚠️  NaN/inf in intervention vector! Strength: {strength}")
+                    return output
+
+                # Apply intervention
                 if len(output.shape) == 3:
-                    output[:, -1, :] += strength * feature_vector.unsqueeze(0)
+                    output[:, -1, :] += intervention_vector
                 else:
-                    output += strength * feature_vector.unsqueeze(0)
+                    output += intervention_vector
 
             elif intervention_type == "ablation":
                 # Feature ablation: h'(x) = h(x) - r̂r̂ᵀh(x)
-                # Compute projection: r̂r̂ᵀh(x) = r̂ * (r̂ᵀ * h(x))
                 projection_coeff = torch.matmul(
                     target_activations, feature_unit
                 )  # [batch_size]
                 projection = feature_unit.unsqueeze(0) * projection_coeff.unsqueeze(
                     1
                 )  # [batch_size, d_model]
+
+                # Debug: Check projection
+                if torch.isnan(projection).any() or torch.isinf(projection).any():
+                    print("⚠️  NaN/inf in projection!")
+                    return output
 
                 if len(output.shape) == 3:
                     output[:, -1, :] -= projection
@@ -142,6 +167,10 @@ def generate_with_intervention(
 
             else:
                 raise ValueError(f"Unknown intervention_type: {intervention_type}")
+
+            # Debug: Check for NaN/inf after intervention
+            if torch.isnan(output).any() or torch.isinf(output).any():
+                print("⚠️  NaN/inf detected in output AFTER intervention!")
 
         return output
 
@@ -267,6 +296,14 @@ def test_single_feature_interventions(
         f"   Feature ID: {metadata['feature_id']} - {metadata['feature_description'][:80]}..."
     )
     print(f"   Active samples: {metadata['active_samples']}")
+
+    # Debug: Check feature vector validity
+    print("   Feature vector stats:")
+    print(f"     Min: {feature_vector.min().item():.6f}")
+    print(f"     Max: {feature_vector.max().item():.6f}")
+    print(f"     Norm: {torch.norm(feature_vector, dim=0).item():.6f}")
+    print(f"     Contains NaN: {torch.isnan(feature_vector).any().item()}")
+    print(f"     Contains Inf: {torch.isinf(feature_vector).any().item()}")
     print()
 
     # Test each strength
