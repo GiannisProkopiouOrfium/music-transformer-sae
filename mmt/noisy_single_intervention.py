@@ -207,12 +207,24 @@ def generate_with_controlled_noise(
 
                 for _ in range(seq_len):
                     # Get model logits for next token
-                    with torch.cuda.amp.autocast():
-                        outputs = model.forward(current_sequence)
-                        logits = outputs  # Shape: [batch_size, seq_len, vocab_size]
+                    try:
+                        # Use the model to get logits (avoid autocast if causing issues)
+                        logits = model(
+                            current_sequence
+                        )  # Shape: [batch_size, seq_len, vocab_size]
 
                         # Get logits for the last position
-                        next_token_logits = logits[:, -1, :]  # [batch_size, vocab_size]
+                        if len(logits.shape) == 3 and logits.shape[1] > 0:
+                            next_token_logits = logits[
+                                :, -1, :
+                            ]  # [batch_size, vocab_size]
+                        else:
+                            print(f"Unexpected logits shape: {logits.shape}")
+                            break
+
+                    except Exception as e:
+                        print(f"Error getting logits: {e}")
+                        break
 
                     # Apply controlled noise (same seed = same noise pattern)
                     noise = torch.randn_like(next_token_logits) * noise_scale
@@ -223,6 +235,12 @@ def generate_with_controlled_noise(
 
                     # Sample next token
                     probs = F.softmax(scaled_logits, dim=-1)
+
+                    # Check if probs are valid
+                    if torch.isnan(probs).any() or probs.sum() == 0:
+                        print("Invalid probabilities, breaking generation")
+                        break
+
                     next_token = torch.multinomial(
                         probs, num_samples=1
                     )  # [batch_size, 1]
@@ -231,7 +249,7 @@ def generate_with_controlled_noise(
                     if next_token.item() == eos:
                         break
 
-                    # Append to sequence
+                    # Append to sequence (use the actual next_token value)
                     next_token_expanded = torch.zeros(
                         (1, 1, 6), dtype=torch.long, device=device
                     )
