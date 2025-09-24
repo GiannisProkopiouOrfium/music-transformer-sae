@@ -101,18 +101,140 @@ def generate_with_controlled_noise(
 ):
     """Generate sequences with controlled noise for reproducible creativity.
 
-    Args:
-        feature_vector: The feature direction vector
-        strength: Intervention strength
-        intervention_type: "addition" or "ablation"
-        intervention_layer: Layer to apply intervention
-        seq_len: Sequence length to generate
-        num_sequences: Number of sequences to generate
-        noise_seed: Fixed seed for reproducible noise
-        temperature: Sampling temperature (higher = more creative)
-        noise_scale: Scale of the noise injection
-        device: Device to use
+    Uses the model's built-in generation with noise injection hooks.
     """
+
+    # Create proper start tokens
+    start_tokens, eos = create_start_tokens(encoding, device)
+
+    generated_sequences = []
+
+    # Normalize feature vector for ablation
+    feature_unit = feature_vector / torch.norm(feature_vector, dim=0)
+
+    # Hook for intervention
+    def intervention_hook(module, input, output):
+        if hasattr(intervention_hook, "active") and intervention_hook.active:
+            # Apply intervention to last token
+            if len(output.shape) == 3:
+                target_activations = output[:, -1, :]  # [batch_size, d_model]
+            else:
+                target_activations = output  # [batch_size, d_model]
+
+            if intervention_type == "addition":
+                # Feature addition: h'(x) = h(x) + α * r
+                if len(output.shape) == 3:
+                    output[:, -1, :] += strength * feature_vector.unsqueeze(0)
+                else:
+                    output += strength * feature_vector.unsqueeze(0)
+
+            elif intervention_type == "ablation":
+                # Feature ablation: h'(x) = h(x) - r̂r̂ᵀh(x)
+                projection_coeff = torch.matmul(target_activations, feature_unit)
+                projection = feature_unit.unsqueeze(0) * projection_coeff.unsqueeze(1)
+
+                if len(output.shape) == 3:
+                    output[:, -1, :] -= projection
+                else:
+                    output -= projection
+
+            else:
+                raise ValueError(f"Unknown intervention_type: {intervention_type}")
+
+        return output
+
+    # Hook for noise injection
+    def noise_hook(module, input, output):
+        if hasattr(noise_hook, "active") and noise_hook.active:
+            # Apply controlled noise to the logits
+            if isinstance(output, list):
+                # For MusicTransformerWrapper which returns list of logits
+                for i in range(len(output)):
+                    if output[i].dim() == 3:  # [batch, seq, vocab]
+                        # Apply noise to the last position logits
+                        noise = torch.randn_like(output[i][:, -1, :]) * noise_scale
+                        output[i][:, -1, :] += noise
+            return output
+
+    # Register hooks
+    intervention_handle = None
+    noise_handle = None
+
+    # Register intervention hook
+    possible_layer_patterns = [
+        f"decoder.net.attn_layers.layers.{intervention_layer}",
+        f"decoder.net.attn_layers.layers.{intervention_layer}.ff",
+        f"decoder.net.attn_layers.layers.{intervention_layer}.attn",
+    ]
+
+    for pattern in possible_layer_patterns:
+        for name, module in model.named_modules():
+            if pattern in name and (
+                "ln" not in name.lower() and "norm" not in name.lower()
+            ):
+                intervention_handle = module.register_forward_hook(intervention_hook)
+                print(f"   Registered intervention hook on: {name}")
+                break
+        if intervention_handle:
+            break
+
+    # Register noise hook on the output layer
+    for name, module in model.named_modules():
+        if "decoder.net.to_logits" in name or name.endswith("to_logits"):
+            noise_handle = module.register_forward_hook(noise_hook)
+            print(f"   Registered noise hook on: {name}")
+            break
+
+    if intervention_handle is None:
+        print(f"⚠️  Could not find layer {intervention_layer} for intervention")
+        return []
+
+    # Generate sequences using model's built-in generation
+    with torch.no_grad():
+        for seq_idx in tqdm(
+            range(num_sequences), desc=f"Generating (strength {strength:+.1f}, noise)"
+        ):
+            try:
+                # Set fixed seed for reproducible noise
+                torch.manual_seed(noise_seed + seq_idx)
+
+                # Activate hooks
+                intervention_hook.active = True
+                if noise_handle:
+                    noise_hook.active = True
+
+                # Use model's generate method with controlled temperature
+                generated = model.generate(
+                    start_tokens,
+                    seq_len,
+                    eos_token=eos,
+                    temperature=temperature,
+                    monotonicity_dim=("type", "beat"),
+                )
+
+                # Deactivate hooks
+                intervention_hook.active = False
+                if noise_handle:
+                    noise_hook.active = False
+
+                # Combine start tokens with generated sequence
+                full_sequence = torch.cat((start_tokens, generated), dim=1)
+                generated_sequences.append(full_sequence)
+
+            except Exception as e:
+                print(f"     Generation error for sequence {seq_idx}: {e}")
+                intervention_hook.active = False
+                if noise_handle:
+                    noise_hook.active = False
+                continue
+
+    # Remove hooks
+    if intervention_handle:
+        intervention_handle.remove()
+    if noise_handle:
+        noise_handle.remove()
+
+    return generated_sequences
 
     # Create proper start tokens
     start_tokens, eos = create_start_tokens(encoding, device)
