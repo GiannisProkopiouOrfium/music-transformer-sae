@@ -125,9 +125,21 @@ def corrected_manual_generate_with_noise(
     # Normalize feature vector for ablation (using proper L2 norm)
     feature_unit = feature_vector / (torch.norm(feature_vector, dim=0) + 1e-8)
 
-    # Hook for intervention - with corrected logic
+    # Hook for intervention - with extensive debugging
     def intervention_hook(module, inputs, output):
+        # CRITICAL DEBUG: Always print when hook is called
+        if not hasattr(intervention_hook, 'call_count'):
+            intervention_hook.call_count = 0
+        intervention_hook.call_count += 1
+        
+        if intervention_hook.call_count <= 5:  # Print first 5 calls
+            print(f"🔍 Hook called #{intervention_hook.call_count}, active={getattr(intervention_hook, 'active', 'NOT SET')}")
+            print(f"   Output shape: {output.shape}")
+        
         if hasattr(intervention_hook, "active") and intervention_hook.active:
+            if intervention_hook.call_count <= 5:
+                print(f"✅ INTERVENTION ACTIVE - Processing intervention")
+            
             # Only intervene on the LAST token of the sequence (most recent token being processed)
             if len(output.shape) == 3:  # [batch_size, seq_len, d_model]
                 _, _, d_model = output.shape
@@ -141,13 +153,20 @@ def corrected_manual_generate_with_noise(
 
                 # Get the last token activations
                 last_token_activations = output[:, -1, :]  # [batch_size, d_model]
+                original_norm = torch.norm(last_token_activations).item()
 
                 if intervention_type == "addition":
                     # Feature addition: h'(x) = h(x) + α * r
-                    print(f"🔧 Applying addition intervention with strength {strength}")
-                    output[:, -1, :] = (
-                        last_token_activations + strength * feature_vector.unsqueeze(0)
-                    )
+                    intervention_vector = strength * feature_vector.unsqueeze(0)
+                    output[:, -1, :] = last_token_activations + intervention_vector
+                    
+                    new_norm = torch.norm(output[:, -1, :]).item()
+                    change_magnitude = torch.norm(intervention_vector).item()
+                    
+                    if intervention_hook.call_count <= 5:
+                        print(f"🔧 ADDITION: strength={strength}, original_norm={original_norm:.4f}")
+                        print(f"   change_magnitude={change_magnitude:.4f}, new_norm={new_norm:.4f}")
+                        print(f"   relative_change={(new_norm-original_norm)/original_norm*100:.2f}%")
 
                 elif intervention_type == "ablation":
                     # Feature ablation: h'(x) = h(x) - r̂r̂ᵀh(x)
