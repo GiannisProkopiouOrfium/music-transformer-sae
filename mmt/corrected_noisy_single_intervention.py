@@ -128,18 +128,20 @@ def corrected_manual_generate_with_noise(
     # Hook for intervention - with extensive debugging
     def intervention_hook(module, inputs, output):
         # CRITICAL DEBUG: Always print when hook is called
-        if not hasattr(intervention_hook, 'call_count'):
+        if not hasattr(intervention_hook, "call_count"):
             intervention_hook.call_count = 0
         intervention_hook.call_count += 1
-        
+
         if intervention_hook.call_count <= 5:  # Print first 5 calls
-            print(f"🔍 Hook called #{intervention_hook.call_count}, active={getattr(intervention_hook, 'active', 'NOT SET')}")
+            print(
+                f"🔍 Hook called #{intervention_hook.call_count}, active={getattr(intervention_hook, 'active', 'NOT SET')}"
+            )
             print(f"   Output shape: {output.shape}")
-        
+
         if hasattr(intervention_hook, "active") and intervention_hook.active:
             if intervention_hook.call_count <= 5:
                 print(f"✅ INTERVENTION ACTIVE - Processing intervention")
-            
+
             # Only intervene on the LAST token of the sequence (most recent token being processed)
             if len(output.shape) == 3:  # [batch_size, seq_len, d_model]
                 _, _, d_model = output.shape
@@ -159,14 +161,20 @@ def corrected_manual_generate_with_noise(
                     # Feature addition: h'(x) = h(x) + α * r
                     intervention_vector = strength * feature_vector.unsqueeze(0)
                     output[:, -1, :] = last_token_activations + intervention_vector
-                    
+
                     new_norm = torch.norm(output[:, -1, :]).item()
                     change_magnitude = torch.norm(intervention_vector).item()
-                    
+
                     if intervention_hook.call_count <= 5:
-                        print(f"🔧 ADDITION: strength={strength}, original_norm={original_norm:.4f}")
-                        print(f"   change_magnitude={change_magnitude:.4f}, new_norm={new_norm:.4f}")
-                        print(f"   relative_change={(new_norm-original_norm)/original_norm*100:.2f}%")
+                        print(
+                            f"🔧 ADDITION: strength={strength}, original_norm={original_norm:.4f}"
+                        )
+                        print(
+                            f"   change_magnitude={change_magnitude:.4f}, new_norm={new_norm:.4f}"
+                        )
+                        print(
+                            f"   relative_change={(new_norm-original_norm)/original_norm*100:.2f}%"
+                        )
 
                 elif intervention_type == "ablation":
                     # Feature ablation: h'(x) = h(x) - r̂r̂ᵀh(x)
@@ -199,28 +207,30 @@ def corrected_manual_generate_with_noise(
 
         return output
 
-    # Find and register intervention hook - with better targeting
+    # Find and register intervention hook - FIXED targeting
     intervention_handle = None
     target_layer_name = None
 
-    # Try different layer patterns, prioritizing the main attention/feedforward layers
-    layer_patterns = [
-        f"decoder.net.attn_layers.layers.{intervention_layer}",  # Full layer
-        f"decoder.net.attn_layers.layers.{intervention_layer}.attn",  # Attention sublayer
-        f"decoder.net.attn_layers.layers.{intervention_layer}.ff",  # Feedforward sublayer
+    # FIXED: Target the actual computation modules, not ModuleList containers
+    # Based on model structure: layers.N.1 = FeedForward, layers.N.1 = Attention (alternating)
+    target_patterns = [
+        f"decoder.net.attn_layers.layers.{intervention_layer}.1",  # The actual computation module in layer N
+        f"decoder.net.attn_layers.layers.{intervention_layer}.1.net",  # FeedForward.net
+        f"decoder.net.attn_layers.layers.{intervention_layer}.1.to_out",  # Attention output
     ]
 
-    for pattern in layer_patterns:
+    print(f"🔍 Looking for intervention targets in layer {intervention_layer}:")
+    
+    for name, module in model.named_modules():
+        if f"layers.{intervention_layer}." in name and not isinstance(module, (torch.nn.ModuleList, torch.nn.LayerNorm, torch.nn.Dropout)):
+            print(f"   Available: {name} ({type(module).__name__})")
+    
+    for pattern in target_patterns:
         for name, module in model.named_modules():
-            if name == pattern:  # Exact match
+            if name == pattern:
                 intervention_handle = module.register_forward_hook(intervention_hook)
                 target_layer_name = name
-                print(f"✅ Registered intervention hook on: {name}")
-                break
-            elif pattern in name and name.endswith(("attn", "ff")):  # Sublayer match
-                intervention_handle = module.register_forward_hook(intervention_hook)
-                target_layer_name = name
-                print(f"✅ Registered intervention hook on: {name}")
+                print(f"✅ FIXED: Registered intervention hook on: {name} ({type(module).__name__})")
                 break
         if intervention_handle:
             break
