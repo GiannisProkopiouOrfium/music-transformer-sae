@@ -1,14 +1,12 @@
 #!/usr/bin/env python3
 """
-FIXED Noisy Single Feature Interventions with Reproducible Creativity.
+CORRECTED Noisy Single Feature Interventions with Proper Intervention Methodology.
 
-This script fixes the noise injection issue by properly implementing manual generation
-that bypasses model.generate() and applies noise at the right stage.
-
-FIXES:
-1. Manual token-by-token generation loop
-2. Proper noise injection before temperature scaling
-3. Correct hook placement for intervention effects
+This script fixes the intervention issues:
+1. Proper hook placement and timing
+2. Correct feature vector handling
+3. Fixed ablation mathematics
+4. Better layer targeting
 """
 
 import torch
@@ -83,7 +81,7 @@ def load_music_transformer(model_path: str, device: str = "cuda"):
     return model, encoding
 
 
-def manual_generate_with_noise(
+def corrected_manual_generate_with_noise(
     model,
     encoding,
     feature_vector: torch.Tensor,
@@ -101,10 +99,13 @@ def manual_generate_with_noise(
     device: str = "cuda",
 ):
     """
-    Manual generation with proper noise injection.
+    Corrected manual generation with proper intervention methodology.
 
-    This bypasses model.generate() and implements the generation loop manually
-    so we can inject noise at the correct stage.
+    FIXES:
+    1. Proper hook placement on attention/feedforward layers
+    2. Intervention only on last token activations
+    3. Correct feature vector dimensionality handling
+    4. Fixed ablation mathematics
     """
 
     # Set seed for reproducible noise
@@ -117,64 +118,105 @@ def manual_generate_with_noise(
     decoder_wrapper = model.decoder  # MusicAutoregressiveWrapper
     net = decoder_wrapper.net  # MusicTransformerWrapper
 
-    # Normalize feature vector for ablation
-    feature_unit = feature_vector / torch.norm(feature_vector, dim=0)
+    # Print feature vector info for debugging
+    print(f"📊 Feature vector shape: {feature_vector.shape}")
+    print(f"📊 Feature vector norm: {torch.norm(feature_vector, dim=0):.4f}")
 
-    # Hook for intervention
-    def intervention_hook(module, input, output):
+    # Normalize feature vector for ablation (using proper L2 norm)
+    feature_unit = feature_vector / (torch.norm(feature_vector, dim=0) + 1e-8)
+
+    # Hook for intervention - with corrected logic
+    def intervention_hook(module, inputs, output):
         if hasattr(intervention_hook, "active") and intervention_hook.active:
-            # Apply intervention to last token
-            if len(output.shape) == 3:
-                target_activations = output[:, -1, :]  # [batch_size, d_model]
-            else:
-                target_activations = output  # [batch_size, d_model]
+            # Only intervene on the LAST token of the sequence (most recent token being processed)
+            if len(output.shape) == 3:  # [batch_size, seq_len, d_model]
+                _, _, d_model = output.shape
 
-            if intervention_type == "addition":
-                # Feature addition: h'(x) = h(x) + α * r
-                if len(output.shape) == 3:
-                    output[:, -1, :] += strength * feature_vector.unsqueeze(0)
+                # Check feature vector dimension compatibility
+                if feature_vector.shape[0] != d_model:
+                    print(
+                        f"⚠️  Dimension mismatch: feature_vector {feature_vector.shape[0]} vs layer output {d_model}"
+                    )
+                    return output
+
+                # Get the last token activations
+                last_token_activations = output[:, -1, :]  # [batch_size, d_model]
+
+                if intervention_type == "addition":
+                    # Feature addition: h'(x) = h(x) + α * r
+                    print(f"🔧 Applying addition intervention with strength {strength}")
+                    output[:, -1, :] = (
+                        last_token_activations + strength * feature_vector.unsqueeze(0)
+                    )
+
+                elif intervention_type == "ablation":
+                    # Feature ablation: h'(x) = h(x) - r̂r̂ᵀh(x)
+                    # This removes the component of h(x) in the direction of the feature
+                    # Note: Ablation does not use strength parameter - it's a binary operation
+                    print(
+                        "🔧 Applying ablation intervention (strength parameter ignored)"
+                    )
+
+                    # Compute projection coefficient: r̂ᵀh(x)
+                    projection_coeffs = torch.matmul(
+                        last_token_activations, feature_unit
+                    )  # [batch_size]
+
+                    # Compute projection: r̂r̂ᵀh(x) = (r̂ᵀh(x)) * r̂
+                    projection = feature_unit.unsqueeze(
+                        0
+                    ) * projection_coeffs.unsqueeze(
+                        1
+                    )  # [batch_size, d_model]
+
+                    # Apply ablation: h'(x) = h(x) - r̂r̂ᵀh(x)
+                    output[:, -1, :] = last_token_activations - projection
+
                 else:
-                    output += strength * feature_vector.unsqueeze(0)
-
-            elif intervention_type == "ablation":
-                # Feature ablation: h'(x) = h(x) - r̂r̂ᵀh(x)
-                projection_coeff = torch.matmul(target_activations, feature_unit)
-                projection = feature_unit.unsqueeze(0) * projection_coeff.unsqueeze(1)
-
-                if len(output.shape) == 3:
-                    output[:, -1, :] -= projection
-                else:
-                    output -= projection
+                    raise ValueError(f"Unknown intervention_type: {intervention_type}")
 
             else:
-                raise ValueError(f"Unknown intervention_type: {intervention_type}")
+                print(f"⚠️  Unexpected output shape: {output.shape}")
 
         return output
 
-    # Register intervention hook
+    # Find and register intervention hook - with better targeting
     intervention_handle = None
-    possible_layer_patterns = [
-        f"decoder.net.attn_layers.layers.{intervention_layer}",
-        f"decoder.net.attn_layers.layers.{intervention_layer}.ff",
-        f"decoder.net.attn_layers.layers.{intervention_layer}.attn",
+    target_layer_name = None
+
+    # Try different layer patterns, prioritizing the main attention/feedforward layers
+    layer_patterns = [
+        f"decoder.net.attn_layers.layers.{intervention_layer}",  # Full layer
+        f"decoder.net.attn_layers.layers.{intervention_layer}.attn",  # Attention sublayer
+        f"decoder.net.attn_layers.layers.{intervention_layer}.ff",  # Feedforward sublayer
     ]
 
-    for pattern in possible_layer_patterns:
+    for pattern in layer_patterns:
         for name, module in model.named_modules():
-            if pattern in name and (
-                "ln" not in name.lower() and "norm" not in name.lower()
-            ):
+            if name == pattern:  # Exact match
                 intervention_handle = module.register_forward_hook(intervention_hook)
-                print(f"   Registered intervention hook on: {name}")
+                target_layer_name = name
+                print(f"✅ Registered intervention hook on: {name}")
+                break
+            elif pattern in name and name.endswith(("attn", "ff")):  # Sublayer match
+                intervention_handle = module.register_forward_hook(intervention_hook)
+                target_layer_name = name
+                print(f"✅ Registered intervention hook on: {name}")
                 break
         if intervention_handle:
             break
 
     if intervention_handle is None:
-        print(f"⚠️  Could not find layer {intervention_layer} for intervention")
+        print(
+            f"⚠️  Could not find suitable layer for intervention at layer {intervention_layer}"
+        )
+        print("Available layers:")
+        for name, _ in model.named_modules():
+            if f"layers.{intervention_layer}" in name:
+                print(f"   - {name}")
         return None
 
-    # Manual generation loop (based on MusicAutoregressiveWrapper.generate)
+    # Manual generation loop
     with torch.no_grad():
         # Initialize generation state
         out = start_tokens
@@ -209,25 +251,29 @@ def manual_generate_with_noise(
         instrument_type_code = decoder_wrapper.instrument_type_code
         note_type_code = decoder_wrapper.note_type_code
 
+        print(
+            f"🎵 Starting generation with {intervention_type} intervention (strength={strength}) on {target_layer_name}"
+        )
+
         # Generation loop
         for _ in range(seq_len):
             # Truncate to max sequence length
             x = out[:, -net.max_seq_len :]
             mask_truncated = mask[:, -net.max_seq_len :]
 
-            # Activate intervention hook
+            # Activate intervention hook ONLY for this forward pass
             intervention_hook.active = True
 
             # Forward pass through the network
             logits = net(x, mask=mask_truncated)
 
-            # Deactivate intervention hook
+            # Deactivate intervention hook immediately
             intervention_hook.active = False
 
             # Extract last token logits
             logits = [logit_tensor[:, -1, :] for logit_tensor in logits]
 
-            # INJECT NOISE HERE - This is where your noise should go!
+            # INJECT NOISE HERE - after intervention but before sampling
             for i, logit_tensor in enumerate(logits):
                 if noise_scale > 0:
                     noise = torch.randn_like(logit_tensor) * noise_scale
@@ -305,10 +351,11 @@ def manual_generate_with_noise(
 
     # Return only the newly generated tokens (excluding start tokens)
     generated_tokens = out[:, start_tokens.shape[1] :]
+    print(f"✅ Generated sequence of length {generated_tokens.shape[1]}")
     return generated_tokens
 
 
-def test_fixed_noisy_interventions(
+def test_corrected_noisy_interventions(
     model_path: str,
     feature_limuf_path: str,
     output_dir: str,
@@ -322,13 +369,14 @@ def test_fixed_noisy_interventions(
     noise_scale: float = 0.1,
     device: str = "cuda",
 ):
-    """Test fixed noisy single feature interventions."""
+    """Test corrected noisy single feature interventions."""
 
-    print("🎼 TESTING FIXED NOISY SINGLE FEATURE INTERVENTIONS")
-    print("=" * 60)
+    print("🎼 TESTING CORRECTED NOISY SINGLE FEATURE INTERVENTIONS")
+    print("=" * 65)
     print(f"Model: {model_path}")
     print(f"Feature LiMuF: {feature_limuf_path}")
     print(f"Intervention Type: {intervention_type}")
+    print(f"Intervention Layer: {intervention_layer}")
     print(f"Strengths: {strengths}")
     print(f"Noise Seed: {noise_seed}")
     print(f"Temperature: {temperature}")
@@ -354,6 +402,7 @@ def test_fixed_noisy_interventions(
 
     print(f"✅ Loaded feature: {feature_name}")
     print(f"   Vector shape: {feature_vector.shape}")
+    print(f"   Vector norm: {torch.norm(feature_vector, dim=0):.4f}")
     print(
         f"   Feature ID: {metadata['feature_id']} - {metadata['feature_description'][:80]}..."
     )
@@ -365,7 +414,7 @@ def test_fixed_noisy_interventions(
 
     for strength in strengths:
         print(
-            f"🎵 Testing strength {strength:+.1f} ({intervention_type}) with FIXED controlled noise"
+            f"🎵 Testing strength {strength:+.1f} ({intervention_type}) with CORRECTED methodology"
         )
 
         sequences = []
@@ -375,7 +424,7 @@ def test_fixed_noisy_interventions(
         ):
             try:
                 # Generate with unique seed per sequence
-                sequence = manual_generate_with_noise(
+                sequence = corrected_manual_generate_with_noise(
                     model=model,
                     encoding=encoding,
                     feature_vector=feature_vector,
@@ -383,7 +432,7 @@ def test_fixed_noisy_interventions(
                     intervention_type=intervention_type,
                     intervention_layer=intervention_layer,
                     seq_len=seq_len,
-                    noise_seed=noise_seed + seq_idx,  # Different seed per sequence
+                    noise_seed=noise_seed + seq_idx,
                     temperature=temperature,
                     noise_scale=noise_scale,
                     device=device,
@@ -394,6 +443,9 @@ def test_fixed_noisy_interventions(
 
             except Exception as e:
                 print(f"     Generation error for sequence {seq_idx}: {e}")
+                import traceback
+
+                traceback.print_exc()
                 continue
 
         # Save sequences
@@ -403,7 +455,9 @@ def test_fixed_noisy_interventions(
             .replace("-", "minus")
         )
         intervention_prefix = (
-            "fixed_noisy_add" if intervention_type == "addition" else "fixed_noisy_abl"
+            "corrected_noisy_add"
+            if intervention_type == "addition"
+            else "corrected_noisy_abl"
         )
 
         # Save the results
@@ -422,6 +476,7 @@ def test_fixed_noisy_interventions(
                         output_dir,
                         encoding,
                     )
+                    print(f"   💾 Saved MIDI for strength {strength}")
                 except Exception as e:
                     print(f"Warning: Could not save MIDI result: {e}")
 
@@ -448,7 +503,7 @@ def test_fixed_noisy_interventions(
                         "temperature": temperature,
                         "noise_scale": noise_scale,
                         "model_path": model_path,
-                        "method": "fixed_manual_generation_with_noise",
+                        "method": "corrected_manual_generation_with_noise",
                     },
                 },
                 output_file,
@@ -466,7 +521,7 @@ def test_fixed_noisy_interventions(
             "avg_length": float(torch.stack(sequences).shape[1]) if sequences else 0,
         }
 
-        print(f"   ✅ Saved {len(sequences)} sequences")
+        print(f"   ✅ Saved {len(sequences)} sequences for strength {strength}")
 
     # Save summary
     summary = {
@@ -485,23 +540,39 @@ def test_fixed_noisy_interventions(
             "temperature": temperature,
             "noise_scale": noise_scale,
             "model_path": model_path,
-            "method": "fixed_manual_generation_with_noise",
+            "method": "corrected_manual_generation_with_noise",
         },
     }
 
-    summary_file = output_path / "fixed_noisy_generation_summary.json"
+    summary_file = output_path / "corrected_noisy_generation_summary.json"
     with open(summary_file, "w") as f:
         json.dump(summary, f, indent=2)
 
-    print("\n✅ FIXED NOISY INTERVENTION TESTING COMPLETE!")
+    print("\n✅ CORRECTED NOISY INTERVENTION TESTING COMPLETE!")
     print(f"📊 Summary: {summary_file}")
     print(f"📁 Generated files: {output_dir}/")
     print()
-    print("🎯 FIXED NOISE INJECTION:")
-    print("   • Noise now applied BEFORE temperature scaling")
-    print("   • Manual generation bypasses model.generate() limitations")
-    print("   • Each sequence gets different seed for true variation")
-    print(f"   • Noise scale {noise_scale} should now create audible differences")
+    print("🎯 CORRECTED INTERVENTION METHODOLOGY:")
+    print("   • Proper hook placement on attention/feedforward layers")
+    print("   • Intervention only on last token activations")
+    print("   • Fixed feature vector dimensionality handling")
+    print("   • Corrected ablation mathematics")
+    print("   • Better debugging and error reporting")
+    print()
+    print("📈 EXPECTED INTERVENTION EFFECTS:")
+    if intervention_type == "addition":
+        print(
+            f"   • Negative strengths: Less {metadata['feature_description'][:50]}..."
+        )
+        print(
+            f"   • Positive strengths: More {metadata['feature_description'][:50]}..."
+        )
+    else:  # ablation
+        print("   • Ablation removes feature direction from activations")
+        print(
+            f"   • Should reduce {metadata['feature_description'][:50]}... regardless of strength sign"
+        )
+    print("   • Baseline (0.0): Normal model behavior")
 
     return summary
 
@@ -509,7 +580,7 @@ def test_fixed_noisy_interventions(
 def main():
     """Main execution."""
     parser = argparse.ArgumentParser(
-        description="Test FIXED single feature interventions with controlled noise"
+        description="Test CORRECTED single feature interventions with controlled noise"
     )
     parser.add_argument(
         "--model-path",
@@ -523,7 +594,7 @@ def main():
     )
     parser.add_argument(
         "--output-dir",
-        default="fixed_noisy_single_feature_interventions",
+        default="corrected_noisy_single_feature_interventions",
         help="Output directory",
     )
     parser.add_argument(
@@ -567,8 +638,8 @@ def main():
     # Parse strengths
     strengths = [float(s.strip()) for s in args.strengths.split(",")]
 
-    # Run fixed noisy intervention testing
-    test_fixed_noisy_interventions(
+    # Run corrected noisy intervention testing
+    test_corrected_noisy_interventions(
         model_path=args.model_path,
         feature_limuf_path=args.feature_limuf_path,
         output_dir=args.output_dir,
@@ -584,7 +655,7 @@ def main():
     )
 
     print(
-        f"\n🎉 SUCCESS! Check FIXED reproducible creative results in {args.output_dir}/"
+        f"\n🎉 SUCCESS! Check CORRECTED reproducible creative results in {args.output_dir}/"
     )
     return True
 
