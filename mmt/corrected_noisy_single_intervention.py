@@ -220,17 +220,21 @@ def corrected_manual_generate_with_noise(
     ]
 
     print(f"🔍 Looking for intervention targets in layer {intervention_layer}:")
-    
+
     for name, module in model.named_modules():
-        if f"layers.{intervention_layer}." in name and not isinstance(module, (torch.nn.ModuleList, torch.nn.LayerNorm, torch.nn.Dropout)):
+        if f"layers.{intervention_layer}." in name and not isinstance(
+            module, (torch.nn.ModuleList, torch.nn.LayerNorm, torch.nn.Dropout)
+        ):
             print(f"   Available: {name} ({type(module).__name__})")
-    
+
     for pattern in target_patterns:
         for name, module in model.named_modules():
             if name == pattern:
                 intervention_handle = module.register_forward_hook(intervention_hook)
                 target_layer_name = name
-                print(f"✅ FIXED: Registered intervention hook on: {name} ({type(module).__name__})")
+                print(
+                    f"✅ FIXED: Registered intervention hook on: {name} ({type(module).__name__})"
+                )
                 break
         if intervention_handle:
             break
