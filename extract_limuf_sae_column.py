@@ -45,7 +45,7 @@ class SAEColumnLiMuFExtractor:
             self.base_path / f"layer_{layer}" / "sae_models" / "sae_layer_2048d.pt"
         )
         self.interpretations_path = Path(
-            f"layer_interpretations/enhanced_diversity_report_layer{layer}.json"
+            f"interpretation/enhanced_diversity_layer_{layer}/enhanced_diversity_report.json"
         )
 
         # Verify paths exist
