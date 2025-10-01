@@ -511,6 +511,9 @@ def test_conditioned_interventions(
     # Create output directory
     output_path = Path(output_dir)
     output_path.mkdir(parents=True, exist_ok=True)
+    # make a wav subfolder if it doesn't exist
+    wav_path = output_path / "wav"
+    wav_path.mkdir(parents=True, exist_ok=True)
 
     # Load model
     model, encoding = load_music_transformer(model_path, device)
