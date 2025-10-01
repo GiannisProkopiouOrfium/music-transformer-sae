@@ -756,7 +756,7 @@ def main():
     args = parser.parse_args()
 
     # Parse addition strengths
-    addition_strengths = [float(s.strip()) for s in args.addition_strengths.split(",")]
+    addition_strengths = [float(s) for s in args.addition_strengths.split(",")]
 
     # Run conditioned intervention testing
     test_conditioned_interventions(
