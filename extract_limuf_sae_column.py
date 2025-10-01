@@ -252,10 +252,10 @@ class SAEColumnLiMuFExtractor:
 
         return limuf_vector_normalized.cpu(), metadata
 
-    def save_limufs(self, limufs: dict, output_dir: str = None):
+    def save_limufs(self, limufs: dict, output_dir: str = None, feature_id: int = None):
         """Save extracted LiMuFs."""
         if output_dir is None:
-            output_dir = f"limufs_layer{self.layer}_sae_columns"
+            output_dir = f"limufs_layer{self.layer}_feature{feature_id}_sae_columns"
 
         output_path = Path(output_dir)
         output_path.mkdir(exist_ok=True)
@@ -392,7 +392,7 @@ def main():
 
     # Save results
     output_dir = args.output_dir or f"limufs_layer{args.layer}_sae_columns"
-    extractor.save_limufs(limufs=limufs, output_dir=output_dir)
+    extractor.save_limufs(limufs=limufs, output_dir=output_dir, feature_id=feature_id)
 
     print("\n🎯 SUCCESS!")
     print(f"Layer: {args.layer}")
