@@ -1,12 +1,19 @@
 #!/usr/bin/env python3
 """
-CORRECTED Noisy Single Feature Interventions with Proper Intervention Methodology.
+Controlled Feature Interventions with Optional Feature Component Removal.
 
-This script fixes the intervention issues:
-1. Proper hook placement and timing
-2. Correct feature vector handling
-3. Fixed ablation mathematics
-4. Better layer targeting
+This script provides both intervention methodologies:
+1. Standard Addition: h'(x) = h(x) + α * r̂ (original approach)
+2. Controlled Addition: h'(x) = (h(x) - r̂r̂ᵀh(x)) + α * r̂ (remove existing feature first)
+
+The --controlled-intervention flag determines which approach to use.
+
+Features:
+- Proper hook placement and timing
+- Correct feature vector handling
+- Fixed ablation mathematics
+- Better layer targeting
+- Controlled intervention option for precise feature manipulation
 """
 
 import torch
@@ -81,12 +88,13 @@ def load_music_transformer(model_path: str, device: str = "cuda"):
     return model, encoding
 
 
-def corrected_manual_generate_with_noise(
+def controlled_manual_generate_with_noise(
     model,
     encoding,
     feature_vector: torch.Tensor,
     strength: float,
     intervention_type: str = "addition",
+    controlled_intervention: bool = False,
     intervention_layer: int = 3,
     seq_len: int = 256,
     noise_seed: int = 42,
@@ -99,13 +107,21 @@ def corrected_manual_generate_with_noise(
     device: str = "cuda",
 ):
     """
-    Corrected manual generation with proper intervention methodology.
+    Controlled manual generation with optional feature component removal.
 
-    FIXES:
-    1. Proper hook placement on attention/feedforward layers
-    2. Intervention only on last token activations
-    3. Correct feature vector dimensionality handling
-    4. Fixed ablation mathematics
+    Args:
+        controlled_intervention: If True, removes existing feature component before addition
+                               If False, uses standard addition approach
+
+    APPROACHES:
+    1. Standard Addition (controlled_intervention=False):
+       h'(x) = h(x) + α * r̂
+
+    2. Controlled Addition (controlled_intervention=True):
+       h'(x) = (h(x) - r̂r̂ᵀh(x)) + α * r̂
+       - Removes existing feature component first
+       - Then adds desired amount of feature
+       - Gives precise control over feature strength
     """
 
     # Set seed for reproducible noise
@@ -121,8 +137,9 @@ def corrected_manual_generate_with_noise(
     # Print feature vector info for debugging
     print(f"📊 Feature vector shape: {feature_vector.shape}")
     print(f"📊 Feature vector norm: {torch.norm(feature_vector, dim=0):.4f}")
+    print(f"🎯 Controlled intervention: {controlled_intervention}")
 
-    # Normalize feature vector for ablation (using proper L2 norm)
+    # Normalize feature vector (consistent for both approaches)
     feature_unit = feature_vector / (torch.norm(feature_vector, dim=0) + 1e-8)
 
     # Hook for intervention - with extensive debugging
@@ -140,7 +157,10 @@ def corrected_manual_generate_with_noise(
 
         if hasattr(intervention_hook, "active") and intervention_hook.active:
             if intervention_hook.call_count <= 5:
-                print(f"✅ INTERVENTION ACTIVE - Processing intervention")
+                print("✅ INTERVENTION ACTIVE - Processing intervention")
+                print(
+                    f"   Method: {'Controlled' if controlled_intervention else 'Standard'} {intervention_type}"
+                )
 
             # Only intervene on the LAST token of the sequence (most recent token being processed)
             if len(output.shape) == 3:  # [batch_size, seq_len, d_model]
@@ -154,34 +174,76 @@ def corrected_manual_generate_with_noise(
                     return output
 
                 # Get the last token activations
-                last_token_activations = output[:, -1, :]  # [batch_size, d_model]
+                last_token_activations = output[
+                    :, -1, :
+                ].clone()  # [batch_size, d_model]
                 original_norm = torch.norm(last_token_activations).item()
 
                 if intervention_type == "addition":
-                    # Feature addition: h'(x) = h(x) + α * r
-                    intervention_vector = strength * feature_unit.unsqueeze(0)
-                    output[:, -1, :] = last_token_activations + intervention_vector
+                    if controlled_intervention:
+                        # CONTROLLED ADDITION: Remove existing feature component first
+                        # Step 1: Calculate existing feature strength
+                        existing_feature_strengths = torch.matmul(
+                            last_token_activations, feature_unit
+                        )  # [batch_size]
 
-                    new_norm = torch.norm(output[:, -1, :]).item()
-                    change_magnitude = torch.norm(intervention_vector).item()
+                        # Step 2: Remove existing feature component
+                        existing_feature_components = feature_unit.unsqueeze(
+                            0
+                        ) * existing_feature_strengths.unsqueeze(1)
+                        cleaned_activations = (
+                            last_token_activations - existing_feature_components
+                        )
 
-                    if intervention_hook.call_count <= 5:
-                        print(
-                            f"🔧 ADDITION: strength={strength}, original_norm={original_norm:.4f}"
+                        # Step 3: Add desired amount of feature
+                        desired_feature_components = strength * feature_unit.unsqueeze(
+                            0
+                        ).expand(last_token_activations.shape[0], -1)
+
+                        # Step 4: Combine cleaned activations with desired feature
+                        output[:, -1, :] = (
+                            cleaned_activations + desired_feature_components
                         )
-                        print(
-                            f"   change_magnitude={change_magnitude:.4f}, new_norm={new_norm:.4f}"
-                        )
-                        print(
-                            f"   relative_change={(new_norm-original_norm)/original_norm*100:.2f}%"
-                        )
+
+                        # Debugging info
+                        avg_existing_strength = existing_feature_strengths.mean().item()
+                        net_change = strength - avg_existing_strength
+
+                        if intervention_hook.call_count <= 5:
+                            print("🔧 CONTROLLED ADDITION:")
+                            print(
+                                f"   Existing feature strength: {avg_existing_strength:.4f}"
+                            )
+                            print(f"   Target feature strength: {strength:.4f}")
+                            print(f"   Net change: {net_change:+.4f}")
+                            print(f"   Original norm: {original_norm:.4f}")
+                            print(
+                                f"   New norm: {torch.norm(output[:, -1, :]).item():.4f}"
+                            )
+
+                    else:
+                        # STANDARD ADDITION: Add feature vector directly
+                        intervention_vector = strength * feature_unit.unsqueeze(0)
+                        output[:, -1, :] = last_token_activations + intervention_vector
+
+                        new_norm = torch.norm(output[:, -1, :]).item()
+                        change_magnitude = torch.norm(intervention_vector).item()
+
+                        if intervention_hook.call_count <= 5:
+                            print("🔧 STANDARD ADDITION:")
+                            print(f"   Strength: {strength}")
+                            print(f"   Original norm: {original_norm:.4f}")
+                            print(f"   Change magnitude: {change_magnitude:.4f}")
+                            print(f"   New norm: {new_norm:.4f}")
+                            print(
+                                f"   Relative change: {(new_norm-original_norm)/original_norm*100:.2f}%"
+                            )
 
                 elif intervention_type == "ablation":
                     # Feature ablation: h'(x) = h(x) - r̂r̂ᵀh(x)
-                    # This removes the component of h(x) in the direction of the feature
-                    # Note: Ablation does not use strength parameter - it's a binary operation
+                    # Note: Ablation ignores controlled_intervention flag - always removes feature
                     print(
-                        "🔧 Applying ablation intervention (strength parameter ignored)"
+                        "🔧 Applying ablation intervention (controlled_intervention flag ignored)"
                     )
 
                     # Compute projection coefficient: r̂ᵀh(x)
@@ -198,6 +260,13 @@ def corrected_manual_generate_with_noise(
 
                     # Apply ablation: h'(x) = h(x) - r̂r̂ᵀh(x)
                     output[:, -1, :] = last_token_activations - projection
+
+                    if intervention_hook.call_count <= 5:
+                        print(
+                            f"   Removed feature strength: {projection_coeffs.mean().item():.4f}"
+                        )
+                        print(f"   Original norm: {original_norm:.4f}")
+                        print(f"   New norm: {torch.norm(output[:, -1, :]).item():.4f}")
 
                 else:
                     raise ValueError(f"Unknown intervention_type: {intervention_type}")
@@ -284,8 +353,9 @@ def corrected_manual_generate_with_noise(
         instrument_type_code = decoder_wrapper.instrument_type_code
         note_type_code = decoder_wrapper.note_type_code
 
+        intervention_method = "Controlled" if controlled_intervention else "Standard"
         print(
-            f"🎵 Starting generation with {intervention_type} intervention (strength={strength}) on {target_layer_name}"
+            f"🎵 Starting generation with {intervention_method} {intervention_type} intervention (strength={strength}) on {target_layer_name}"
         )
 
         # Generation loop
@@ -388,12 +458,13 @@ def corrected_manual_generate_with_noise(
     return generated_tokens
 
 
-def test_corrected_noisy_interventions(
+def test_controlled_interventions(
     model_path: str,
     feature_limuf_path: str,
     output_dir: str,
     strengths: list = [-2.0, -1.0, 0.0, 1.0, 2.0],
     intervention_type: str = "addition",
+    controlled_intervention: bool = False,
     intervention_layer: int = 3,
     seq_len: int = 256,
     num_sequences: int = 3,
@@ -402,13 +473,16 @@ def test_corrected_noisy_interventions(
     noise_scale: float = 0.1,
     device: str = "cuda",
 ):
-    """Test corrected noisy single feature interventions."""
+    """Test controlled single feature interventions."""
 
-    print("🎼 TESTING CORRECTED NOISY SINGLE FEATURE INTERVENTIONS")
+    intervention_method = "controlled" if controlled_intervention else "standard"
+
+    print("🎼 TESTING CONTROLLED SINGLE FEATURE INTERVENTIONS")
     print("=" * 65)
     print(f"Model: {model_path}")
     print(f"Feature LiMuF: {feature_limuf_path}")
     print(f"Intervention Type: {intervention_type}")
+    print(f"Intervention Method: {intervention_method}")
     print(f"Intervention Layer: {intervention_layer}")
     print(f"Strengths: {strengths}")
     print(f"Noise Seed: {noise_seed}")
@@ -439,7 +513,9 @@ def test_corrected_noisy_interventions(
     print(
         f"   Feature ID: {metadata['feature_id']} - {metadata['feature_description'][:80]}..."
     )
-    print(f"   Active samples: {metadata['active_samples']}")
+
+    if "active_samples" in metadata:
+        print(f"   Active samples: {metadata['active_samples']}")
     print()
 
     # Test each strength
@@ -447,7 +523,7 @@ def test_corrected_noisy_interventions(
 
     for strength in strengths:
         print(
-            f"🎵 Testing strength {strength:+.1f} ({intervention_type}) with CORRECTED methodology"
+            f"🎵 Testing strength {strength:+.1f} ({intervention_method} {intervention_type})"
         )
 
         sequences = []
@@ -457,12 +533,13 @@ def test_corrected_noisy_interventions(
         ):
             try:
                 # Generate with unique seed per sequence
-                sequence = corrected_manual_generate_with_noise(
+                sequence = controlled_manual_generate_with_noise(
                     model=model,
                     encoding=encoding,
                     feature_vector=feature_vector,
                     strength=strength,
                     intervention_type=intervention_type,
+                    controlled_intervention=controlled_intervention,
                     intervention_layer=intervention_layer,
                     seq_len=seq_len,
                     noise_seed=noise_seed + seq_idx,
@@ -487,11 +564,11 @@ def test_corrected_noisy_interventions(
             .replace("+", "plus")
             .replace("-", "minus")
         )
-        intervention_prefix = (
-            "corrected_noisy_add"
-            if intervention_type == "addition"
-            else "corrected_noisy_abl"
-        )
+
+        if intervention_type == "addition":
+            intervention_prefix = f"{intervention_method}_add"
+        else:
+            intervention_prefix = f"{intervention_method}_abl"
 
         # Save the results
         if sequences and len(sequences) > 0:
@@ -532,11 +609,12 @@ def test_corrected_noisy_interventions(
                         "seq_len": seq_len,
                         "intervention_layer": intervention_layer,
                         "intervention_type": intervention_type,
+                        "controlled_intervention": controlled_intervention,
                         "noise_seed": noise_seed,
                         "temperature": temperature,
                         "noise_scale": noise_scale,
                         "model_path": model_path,
-                        "method": "corrected_manual_generation_with_noise",
+                        "method": f"{intervention_method}_manual_generation_with_noise",
                     },
                 },
                 output_file,
@@ -569,43 +647,56 @@ def test_corrected_noisy_interventions(
             "seq_len": seq_len,
             "intervention_layer": intervention_layer,
             "intervention_type": intervention_type,
+            "controlled_intervention": controlled_intervention,
+            "intervention_method": intervention_method,
             "noise_seed": noise_seed,
             "temperature": temperature,
             "noise_scale": noise_scale,
             "model_path": model_path,
-            "method": "corrected_manual_generation_with_noise",
+            "method": f"{intervention_method}_manual_generation_with_noise",
         },
     }
 
-    summary_file = output_path / "corrected_noisy_generation_summary.json"
+    summary_file = output_path / f"{intervention_method}_intervention_summary.json"
     with open(summary_file, "w") as f:
         json.dump(summary, f, indent=2)
 
-    print("\n✅ CORRECTED NOISY INTERVENTION TESTING COMPLETE!")
+    print(f"\n✅ {intervention_method.upper()} INTERVENTION TESTING COMPLETE!")
     print(f"📊 Summary: {summary_file}")
     print(f"📁 Generated files: {output_dir}/")
     print()
-    print("🎯 CORRECTED INTERVENTION METHODOLOGY:")
+    print("🎯 INTERVENTION METHODOLOGY:")
+    if controlled_intervention:
+        print("   • CONTROLLED ADDITION: Removes existing feature component first")
+        print("   • Then adds desired amount: h'(x) = (h(x) - r̂r̂ᵀh(x)) + α * r̂")
+        print("   • Gives precise control over absolute feature strength")
+        print("   • strength=0.0: Feature completely removed")
+        print("   • strength=1.0: Feature set to unit strength")
+        print("   • strength=2.0: Feature set to double unit strength")
+    else:
+        print("   • STANDARD ADDITION: Adds feature vector directly")
+        print("   • Formula: h'(x) = h(x) + α * r̂")
+        print("   • May amplify existing feature content")
+        print("   • strength=0.0: No change (baseline)")
+        print("   • Positive/negative strengths add/subtract feature")
+
     print("   • Proper hook placement on attention/feedforward layers")
     print("   • Intervention only on last token activations")
-    print("   • Fixed feature vector dimensionality handling")
-    print("   • Corrected ablation mathematics")
-    print("   • Better debugging and error reporting")
+    print("   • Consistent feature vector normalization")
     print()
+
     print("📈 EXPECTED INTERVENTION EFFECTS:")
     if intervention_type == "addition":
-        print(
-            f"   • Negative strengths: Less {metadata['feature_description'][:50]}..."
-        )
-        print(
-            f"   • Positive strengths: More {metadata['feature_description'][:50]}..."
-        )
+        if controlled_intervention:
+            print("   • Precise feature strength control (absolute values)")
+        else:
+            print("   • Additive feature effects (relative to existing)")
+        print(f"   • Feature: {metadata['feature_description'][:60]}...")
     else:  # ablation
         print("   • Ablation removes feature direction from activations")
         print(
-            f"   • Should reduce {metadata['feature_description'][:50]}... regardless of strength sign"
+            f"   • Should reduce {metadata['feature_description'][:50]}... regardless of other params"
         )
-    print("   • Baseline (0.0): Normal model behavior")
 
     return summary
 
@@ -613,7 +704,7 @@ def test_corrected_noisy_interventions(
 def main():
     """Main execution."""
     parser = argparse.ArgumentParser(
-        description="Test CORRECTED single feature interventions with controlled noise"
+        description="Test controlled single feature interventions with optional feature component removal"
     )
     parser.add_argument(
         "--model-path",
@@ -622,12 +713,12 @@ def main():
     )
     parser.add_argument(
         "--feature-limuf-path",
-        default="real_limufs_layer3/limufs.pt",
+        default="limufs_layer3_sae_columns/limufs.pt",
         help="Path to extracted feature LiMuF",
     )
     parser.add_argument(
         "--output-dir",
-        default="corrected_noisy_single_feature_interventions",
+        default="controlled_single_feature_interventions",
         help="Output directory",
     )
     parser.add_argument(
@@ -635,6 +726,11 @@ def main():
         default="addition",
         choices=["addition", "ablation"],
         help="Type of intervention",
+    )
+    parser.add_argument(
+        "--controlled-intervention",
+        action="store_true",
+        help="Use controlled intervention (remove existing feature component first)",
     )
     parser.add_argument(
         "--strengths",
@@ -671,13 +767,14 @@ def main():
     # Parse strengths
     strengths = [float(s.strip()) for s in args.strengths.split(",")]
 
-    # Run corrected noisy intervention testing
-    test_corrected_noisy_interventions(
+    # Run controlled intervention testing
+    test_controlled_interventions(
         model_path=args.model_path,
         feature_limuf_path=args.feature_limuf_path,
         output_dir=args.output_dir,
         strengths=strengths,
         intervention_type=args.intervention_type,
+        controlled_intervention=args.controlled_intervention,
         intervention_layer=args.intervention_layer,
         seq_len=args.seq_len,
         num_sequences=args.num_sequences,
@@ -687,8 +784,9 @@ def main():
         device=args.device,
     )
 
+    intervention_method = "controlled" if args.controlled_intervention else "standard"
     print(
-        f"\n🎉 SUCCESS! Check CORRECTED reproducible creative results in {args.output_dir}/"
+        f"\n🎉 SUCCESS! Check {intervention_method} intervention results in {args.output_dir}/"
     )
     return True
 
