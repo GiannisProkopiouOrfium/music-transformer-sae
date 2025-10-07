@@ -255,11 +255,13 @@ class SAEColumnLiMuFExtractor:
     def save_limufs(self, limufs: dict, output_dir: str = None, feature_id: int = None):
         """Save extracted LiMuFs."""
         if output_dir is None:
-            base_output_dir = f"limufs_layer{self.layer}_feature{feature_id}_sae_columns"
+            base_output_dir = (
+                f"limufs_layer{self.layer}_feature{feature_id}_sae_columns"
+            )
         else:
             # Create subdirectory within provided output_dir that includes feature info
             base_output_dir = output_dir
-        
+
         # Create the expected subdirectory structure
         limuf_subdir = f"limufs_layer{self.layer}_sae_columns"
         output_path = Path(base_output_dir) / limuf_subdir
