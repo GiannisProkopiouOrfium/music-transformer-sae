@@ -262,7 +262,7 @@ run_intervention() {
     local feature_id="$2"
     local feature_name="$3"
     
-    local limuf_path="$OUTPUT_DIR/extractions/layer$layer/feature${feature_id}/limufs.pt"
+    local limuf_path="$OUTPUT_DIR/extractions/layer$layer/feature${feature_id}/limufs_layer${layer}_sae_columns/limufs.pt"
     local intervention_dir="$OUTPUT_DIR/interventions/layer$layer/feature${feature_id}_${feature_name}"
     
     # Generate feature-specific seeds based on layer and feature_id
@@ -272,14 +272,14 @@ run_intervention() {
     log_info "🎵 Running interventions for Layer $layer, Feature $feature_id ($feature_name)"
     log_info "   Using feature-specific seed: $feature_seed"
     
-    if [[ ! -f "$limuf_path" ]]; then
-        log_error "LiMuF file not found: $limuf_path"
-        return 1
-    fi
-    
     if [[ "$DRY_RUN" == "true" ]]; then
         log_info "🎵 [DRY RUN] Would run interventions for Layer $layer, Feature $feature_id (seed: $feature_seed)"
         return 0
+    fi
+    
+    if [[ ! -f "$limuf_path" ]]; then
+        log_error "LiMuF file not found: $limuf_path"
+        return 1
     fi
     
     # Run intervention command with feature-specific seeds

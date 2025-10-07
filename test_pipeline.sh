@@ -49,8 +49,8 @@ else
     exit 1
 fi
 
-# Check extraction output
-LIMUF_PATH="$TEST_OUTPUT_DIR/extractions/layer$TEST_LAYER/feature${TEST_FEATURE}/limufs.pt"
+# Check extraction output  
+LIMUF_PATH="$TEST_OUTPUT_DIR/extractions/layer$TEST_LAYER/feature${TEST_FEATURE}/limufs_layer${TEST_LAYER}_sae_columns/limufs.pt"
 if [[ -f "$LIMUF_PATH" ]]; then
     echo "✅ LiMuF file created: $LIMUF_PATH"
 else
