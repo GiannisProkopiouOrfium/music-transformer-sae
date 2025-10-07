@@ -143,19 +143,19 @@ def main():
     parser.add_argument(
         "--interventions-dir",
         type=Path,
-        default="../batch_extractions_interventions/interventions",
+        default="batch_extractions_interventions/interventions",
         help="Directory containing intervention results",
     )
     parser.add_argument(
         "--encoding-path",
         type=Path,
-        default="../data/sod/processed/notes/encoding.json",
+        default="data/sod/processed/notes/encoding.json",
         help="Path to encoding JSON file",
     )
     parser.add_argument(
         "--output-dir",
         type=Path,
-        default="../evaluation_results",
+        default="evaluation_results",
         help="Output directory for all evaluation results",
     )
     parser.add_argument(
