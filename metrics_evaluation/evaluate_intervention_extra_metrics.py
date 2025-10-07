@@ -24,8 +24,10 @@ import numpy as np
 import torch
 
 # Add parent directory to path for imports
-sys.path.append(str(Path(__file__).parent.parent))
-from mmt import representation
+parent_dir = Path(__file__).parent.parent
+sys.path.insert(0, str(parent_dir))
+sys.path.insert(0, str(parent_dir / "mmt"))
+import representation
 
 
 def setup_logging(output_dir: Path) -> logging.Logger:
