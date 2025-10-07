@@ -23,9 +23,9 @@ import numpy as np
 import torch
 import tqdm
 
-# Add mmt to path for imports
-sys.path.append(str(Path(__file__).parent.parent / "mmt"))
-import representation
+# Add parent directory to path for imports
+sys.path.append(str(Path(__file__).parent.parent))
+from mmt import representation
 
 
 def setup_logging(output_dir: Path) -> logging.Logger:
@@ -388,19 +388,19 @@ def main():
     parser.add_argument(
         "--interventions-dir",
         type=Path,
-        default="../batch_extractions_interventions/interventions",
+        default="batch_extractions_interventions/interventions",
         help="Directory containing intervention results",
     )
     parser.add_argument(
         "--encoding-path",
         type=Path,
-        default="../data/sod/processed/notes/encoding.json",
+        default="data/sod/processed/notes/encoding.json",
         help="Path to encoding JSON file",
     )
     parser.add_argument(
         "--output-dir",
         type=Path,
-        default="../evaluation_results",
+        default="evaluation_results",
         help="Output directory for evaluation results",
     )
     parser.add_argument(
