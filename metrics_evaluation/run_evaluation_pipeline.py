@@ -191,6 +191,9 @@ def main():
     # Create output directory
     args.output_dir.mkdir(parents=True, exist_ok=True)
 
+    # Get the directory where this script is located
+    script_dir = Path(__file__).parent
+
     # Set up logging
     logger = setup_logging()
 
@@ -211,7 +214,7 @@ def main():
 
         base_cmd = [
             "python",
-            "./evaluate_intervention_base_metrics.py",
+            str(script_dir / "evaluate_intervention_base_metrics.py"),
             "--interventions-dir",
             str(args.interventions_dir),
             "--encoding-path",
@@ -244,7 +247,7 @@ def main():
         else:
             extended_cmd = [
                 "python",
-                "./evaluate_intervention_extra_metrics.py",
+                str(script_dir / "evaluate_intervention_extra_metrics.py"),
                 "--base-results",
                 str(base_results_file),
                 "--encoding-path",
@@ -277,7 +280,7 @@ def main():
         else:
             comparative_cmd = [
                 "python",
-                "./compare_intervention_performance.py",
+                str(script_dir / "compare_intervention_performance.py"),
                 "--extended-results",
                 str(extended_results_file),
                 "--output-dir",
