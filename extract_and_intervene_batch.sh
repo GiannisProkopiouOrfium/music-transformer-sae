@@ -122,20 +122,14 @@ done
 
 # Logging functions
 log_info() {
-    # Ensure output directory exists for logging
-    mkdir -p "$OUTPUT_DIR"
     echo "[$(date '+%Y-%m-%d %H:%M:%S')] INFO: $*" | tee -a "$OUTPUT_DIR/batch_extraction.log"
 }
 
 log_error() {
-    # Ensure output directory exists for logging
-    mkdir -p "$OUTPUT_DIR"
     echo "[$(date '+%Y-%m-%d %H:%M:%S')] ERROR: $*" | tee -a "$OUTPUT_DIR/batch_extraction.log" >&2
 }
 
 log_success() {
-    # Ensure output directory exists for logging
-    mkdir -p "$OUTPUT_DIR"
     echo "[$(date '+%Y-%m-%d %H:%M:%S')] SUCCESS: $*" | tee -a "$OUTPUT_DIR/batch_extraction.log"
 }
 
@@ -283,7 +277,6 @@ run_intervention() {
         --feature-limuf-path "$limuf_path" \
         --output-dir "$intervention_dir" \
         --intervention-layer "$layer" \
-        --addition-strengths "$DEFAULT_STRENGTHS" \
         --conditioning-length "$CONDITIONING_LENGTH" \
         --seq-len "$SEQ_LEN" \
         --temperature "$TEMPERATURE" \
