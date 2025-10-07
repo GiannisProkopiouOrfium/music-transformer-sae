@@ -137,6 +137,7 @@ log_success() {
 create_output_structure() {
     local base_dir="$1"
     
+    # Create base directories first (before any logging that uses them)
     mkdir -p "$base_dir"/{extractions,interventions,progress,logs}
     
     for layer in $LAYERS; do
@@ -235,10 +236,11 @@ run_extraction() {
     # Create feature-specific extraction directory
     mkdir -p "$feature_specific_dir"
     
-    # Run extraction command - use feature-specific directory as base
-    if cd "$feature_specific_dir" && python "$OLDPWD/extract_limuf_sae_column.py" \
+    # Run extraction command with feature-specific output directory
+    if python extract_limuf_sae_column.py \
         --layer "$layer" \
-        --feature-id "$feature_id" 2>&1 | tee -a "$OUTPUT_DIR/logs/extraction_layer${layer}_feature${feature_id}.log"; then
+        --feature-id "$feature_id" \
+        --output-dir "$feature_specific_dir/limufs_layer${layer}_feature${feature_id}_sae_columns" 2>&1 | tee -a "$OUTPUT_DIR/logs/extraction_layer${layer}_feature${feature_id}.log"; then
         
         log_success "Extraction completed for Layer $layer, Feature $feature_id"
         mark_extraction_completed "$layer" "$feature_id"
@@ -255,7 +257,7 @@ run_intervention() {
     local feature_id="$2"
     local feature_name="$3"
     
-    local limuf_path="$OUTPUT_DIR/extractions/layer$layer/feature${feature_id}/limufs_layer${layer}_feature${feature_id}_sae_columns/limufs_layer${layer}_sae_columns/limufs.pt"
+    local limuf_path="$OUTPUT_DIR/extractions/layer$layer/feature${feature_id}/limufs_layer${layer}_feature${feature_id}_sae_columns/limufs.pt"
     local intervention_dir="$OUTPUT_DIR/interventions/layer$layer/feature${feature_id}_${feature_name}"
     
     # Generate feature-specific seeds based on layer and feature_id
@@ -280,6 +282,7 @@ run_intervention() {
         --feature-limuf-path "$limuf_path" \
         --output-dir "$intervention_dir" \
         --intervention-layer "$layer" \
+        --addition-strengths "$DEFAULT_STRENGTHS" \
         --conditioning-length "$CONDITIONING_LENGTH" \
         --seq-len "$SEQ_LEN" \
         --temperature "$TEMPERATURE" \
@@ -298,8 +301,8 @@ run_intervention() {
 
 # Main execution
 main() {
-    # Create output directory first so logging works
-    mkdir -p "$OUTPUT_DIR"
+    # Create output structure FIRST (before any logging)
+    create_output_structure "$OUTPUT_DIR"
     
     log_info "🚀 STARTING BATCH FEATURE EXTRACTION AND INTERVENTION PIPELINE"
     log_info "================================================================================"
@@ -311,9 +314,6 @@ main() {
     log_info "Dry run: $DRY_RUN"
     log_info "Parameters: conditioning_length=$CONDITIONING_LENGTH, seq_len=$SEQ_LEN, temperature=$TEMPERATURE, noise_scale=$NOISE_SCALE"
     log_info "Seeds: Auto-generated per feature as (layer * 1000 + feature_id) for diversity"
-    
-    # Create full output structure
-    create_output_structure "$OUTPUT_DIR"
     
     # Count total features
     local total_features=0
