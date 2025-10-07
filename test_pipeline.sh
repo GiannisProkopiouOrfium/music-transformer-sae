@@ -37,12 +37,12 @@ echo "------------------------------------"
 FEATURE_SPECIFIC_DIR="$TEST_OUTPUT_DIR/extractions/layer$TEST_LAYER/feature${TEST_FEATURE}"
 mkdir -p "$FEATURE_SPECIFIC_DIR"
 
-echo "Running: python extract_limuf_sae_column.py --layer $TEST_LAYER --feature-id $TEST_FEATURE --output-dir $FEATURE_SPECIFIC_DIR/limufs_layer${TEST_LAYER}_feature${TEST_FEATURE}_sae_columns"
+echo "Running: python extract_limuf_sae_column.py --layer $TEST_LAYER --feature-id $TEST_FEATURE --output-dir $FEATURE_SPECIFIC_DIR"
 
 if python extract_limuf_sae_column.py \
     --layer "$TEST_LAYER" \
     --feature-id "$TEST_FEATURE" \
-    --output-dir "$FEATURE_SPECIFIC_DIR/limufs_layer${TEST_LAYER}_feature${TEST_FEATURE}_sae_columns"; then
+    --output-dir "$FEATURE_SPECIFIC_DIR"; then
     echo "✅ Extraction test passed"
 else
     echo "❌ Extraction test failed"
@@ -50,7 +50,7 @@ else
 fi
 
 # Check extraction output
-LIMUF_PATH="$TEST_OUTPUT_DIR/extractions/layer$TEST_LAYER/feature${TEST_FEATURE}/limufs_layer${TEST_LAYER}_feature${TEST_FEATURE}_sae_columns/limufs.pt"
+LIMUF_PATH="$TEST_OUTPUT_DIR/extractions/layer$TEST_LAYER/feature${TEST_FEATURE}/limufs.pt"
 if [[ -f "$LIMUF_PATH" ]]; then
     echo "✅ LiMuF file created: $LIMUF_PATH"
 else
