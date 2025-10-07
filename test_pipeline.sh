@@ -13,10 +13,14 @@ TEST_LAYER=3
 TEST_FEATURE=997  # antiphonal_texture - should be easily audible
 TEST_OUTPUT_DIR="test_pipeline_output"
 
+# Generate feature-specific seed (same formula as batch script)
+FEATURE_SEED=$((TEST_LAYER * 1000 + TEST_FEATURE))
+
 echo "🧪 TESTING BATCH PIPELINE"
 echo "========================="
 echo "Test Layer: $TEST_LAYER"
 echo "Test Feature: $TEST_FEATURE (antiphonal_texture)"
+echo "Test Seed: $FEATURE_SEED (layer * 1000 + feature_id)"
 echo "Output Dir: $TEST_OUTPUT_DIR"
 echo ""
 
@@ -61,7 +65,7 @@ echo "-------------------------------------"
 
 INTERVENTION_DIR="$TEST_OUTPUT_DIR/interventions/layer$TEST_LAYER/feature${TEST_FEATURE}_antiphonal_texture"
 
-echo "Running: python mmt/conditioned_controlled_feature_intervention.py --feature-limuf-path $LIMUF_PATH --output-dir $INTERVENTION_DIR --intervention-layer $TEST_LAYER --conditioning-length 2 --seq-len 256"
+echo "Running: python mmt/conditioned_controlled_feature_intervention.py --feature-limuf-path $LIMUF_PATH --output-dir $INTERVENTION_DIR --intervention-layer $TEST_LAYER --conditioning-length 2 --seq-len 256 --conditioning-seed $FEATURE_SEED --generation-seed $FEATURE_SEED"
 
 if python mmt/conditioned_controlled_feature_intervention.py \
     --feature-limuf-path "$LIMUF_PATH" \
@@ -72,8 +76,8 @@ if python mmt/conditioned_controlled_feature_intervention.py \
     --seq-len 256 \
     --temperature 0.1 \
     --noise-scale 1.2 \
-    --conditioning-seed 24 \
-    --generation-seed 24; then
+    --conditioning-seed "$FEATURE_SEED" \
+    --generation-seed "$FEATURE_SEED"; then
     echo "✅ Intervention test passed"
 else
     echo "❌ Intervention test failed"

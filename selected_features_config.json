@@ -142,13 +142,14 @@
         "sequence_length": 512,
         "temperature": 0.1,
         "noise_scale": 1.2,
-        "conditioning_seed": 24,
-        "generation_seed": 24,
+        "seed_generation": "auto_per_feature",
+        "seed_formula": "layer * 1000 + feature_id",
         "rationale": {
             "conditioning_length": "Short conditioning (2 tokens) for immediate intervention impact",
             "strengths_range": "Covers negative (ablation-like), neutral (baseline), and positive (enhancement) intervention effects",
             "low_temperature": "Reduces randomness for clearer intervention signal",
-            "moderate_noise": "Adds variability while preserving intervention effects"
+            "moderate_noise": "Adds variability while preserving intervention effects",
+            "auto_seeds": "Different seeds per feature ensure diverse musical content while maintaining reproducibility within each feature experiment"
         }
     },
     "expected_outcomes": {
