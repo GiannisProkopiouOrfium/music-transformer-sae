@@ -235,11 +235,10 @@ run_extraction() {
     # Create feature-specific extraction directory
     mkdir -p "$feature_specific_dir"
     
-    # Run extraction command with feature-specific output directory
-    if python extract_limuf_sae_column.py \
+    # Run extraction command - use feature-specific directory as base
+    if cd "$feature_specific_dir" && python "$OLDPWD/extract_limuf_sae_column.py" \
         --layer "$layer" \
-        --feature-id "$feature_id" \
-        --output-dir "$feature_specific_dir/limufs_layer${layer}_feature${feature_id}_sae_columns" 2>&1 | tee -a "$OUTPUT_DIR/logs/extraction_layer${layer}_feature${feature_id}.log"; then
+        --feature-id "$feature_id" 2>&1 | tee -a "$OUTPUT_DIR/logs/extraction_layer${layer}_feature${feature_id}.log"; then
         
         log_success "Extraction completed for Layer $layer, Feature $feature_id"
         mark_extraction_completed "$layer" "$feature_id"
@@ -256,7 +255,7 @@ run_intervention() {
     local feature_id="$2"
     local feature_name="$3"
     
-    local limuf_path="$OUTPUT_DIR/extractions/layer$layer/feature${feature_id}/limufs_layer${layer}_feature${feature_id}_sae_columns/limufs.pt"
+    local limuf_path="$OUTPUT_DIR/extractions/layer$layer/feature${feature_id}/limufs_layer${layer}_feature${feature_id}_sae_columns/limufs_layer${layer}_sae_columns/limufs.pt"
     local intervention_dir="$OUTPUT_DIR/interventions/layer$layer/feature${feature_id}_${feature_name}"
     
     # Generate feature-specific seeds based on layer and feature_id
