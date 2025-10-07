@@ -367,8 +367,11 @@ main() {
                         successful_extractions=$((successful_extractions + 1))
                     else
                         failed_extractions=$((failed_extractions + 1))
-                        log_error "❌ Skipping intervention for failed extraction: layer${layer}_feature${feature_id}"
-                        continue
+                        # Skip intervention for failed extraction (but not in dry run)
+                        if [[ "$DRY_RUN" != "true" ]]; then
+                            log_error "❌ Skipping intervention for failed extraction: layer${layer}_feature${feature_id}"
+                            continue
+                        fi
                     fi
                 fi
             fi
@@ -377,6 +380,9 @@ main() {
             if [[ "$SKIP_INTERVENTION" != "true" ]]; then
                 if [[ "$RESUME" == "true" ]] && intervention_completed "$layer" "$feature_id"; then
                     log_info "⏭️  Intervention already completed: layer${layer}_feature${feature_id}"
+                elif [[ "$DRY_RUN" == "true" ]]; then
+                    log_info "🎵 [DRY RUN] Would run interventions for Layer $layer, Feature $feature_id ($feature_name)"
+                    successful_interventions=$((successful_interventions + 1))
                 else
                     if run_intervention "$layer" "$feature_id" "$feature_name"; then
                         successful_interventions=$((successful_interventions + 1))
