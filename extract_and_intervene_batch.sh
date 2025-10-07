@@ -121,15 +121,30 @@ done
 
 # Logging functions
 log_info() {
-    echo "[$(date '+%Y-%m-%d %H:%M:%S')] INFO: $*" | tee -a "$OUTPUT_DIR/batch_extraction.log"
+    local message="[$(date '+%Y-%m-%d %H:%M:%S')] INFO: $*"
+    echo "$message"
+    # Only write to log file if directory exists
+    if [[ -d "$OUTPUT_DIR" ]]; then
+        echo "$message" >> "$OUTPUT_DIR/batch_extraction.log"
+    fi
 }
 
 log_error() {
-    echo "[$(date '+%Y-%m-%d %H:%M:%S')] ERROR: $*" | tee -a "$OUTPUT_DIR/batch_extraction.log" >&2
+    local message="[$(date '+%Y-%m-%d %H:%M:%S')] ERROR: $*"
+    echo "$message" >&2
+    # Only write to log file if directory exists
+    if [[ -d "$OUTPUT_DIR" ]]; then
+        echo "$message" >> "$OUTPUT_DIR/batch_extraction.log"
+    fi
 }
 
 log_success() {
-    echo "[$(date '+%Y-%m-%d %H:%M:%S')] SUCCESS: $*" | tee -a "$OUTPUT_DIR/batch_extraction.log"
+    local message="[$(date '+%Y-%m-%d %H:%M:%S')] SUCCESS: $*"
+    echo "$message"
+    # Only write to log file if directory exists
+    if [[ -d "$OUTPUT_DIR" ]]; then
+        echo "$message" >> "$OUTPUT_DIR/batch_extraction.log"
+    fi
 }
 
 # Create output directory structure

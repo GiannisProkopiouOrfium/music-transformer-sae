@@ -67,6 +67,7 @@ if python mmt/conditioned_controlled_feature_intervention.py \
     --feature-limuf-path "$LIMUF_PATH" \
     --output-dir "$INTERVENTION_DIR" \
     --intervention-layer "$TEST_LAYER" \
+    --addition-strengths "-1.0,1.0" \
     --conditioning-length 2 \
     --seq-len 256 \
     --temperature 0.1 \
@@ -82,17 +83,12 @@ fi
 # Check intervention outputs
 echo ""
 echo "🔍 Checking intervention outputs:"
-# WAV files are saved in wav/ subdirectory
-if ls "$INTERVENTION_DIR"/wav/*.wav &>/dev/null; then
-    WAV_COUNT=$(ls "$INTERVENTION_DIR"/wav/*.wav | wc -l)
-    echo "✅ Generated $WAV_COUNT WAV files:"
-    ls "$INTERVENTION_DIR"/wav/*.wav | sed 's|.*/||'
-elif ls "$INTERVENTION_DIR"/*.wav &>/dev/null; then
+if ls "$INTERVENTION_DIR"/*.wav &>/dev/null; then
     WAV_COUNT=$(ls "$INTERVENTION_DIR"/*.wav | wc -l)
     echo "✅ Generated $WAV_COUNT WAV files:"
     ls "$INTERVENTION_DIR"/*.wav | sed 's|.*/||'
 else
-    echo "❌ No WAV files found in $INTERVENTION_DIR or $INTERVENTION_DIR/wav/"
+    echo "❌ No WAV files found in $INTERVENTION_DIR"
     exit 1
 fi
 
@@ -134,14 +130,7 @@ echo "✅ Output files generated correctly"
 echo ""
 echo "📁 Test outputs in: $TEST_OUTPUT_DIR/"
 echo "🎵 Test WAV files:"
-# Check both possible locations for WAV files
-if ls "$INTERVENTION_DIR"/wav/*.wav &>/dev/null; then
-    ls "$INTERVENTION_DIR"/wav/*.wav 2>/dev/null | sed 's|.*/|  - |'
-elif ls "$INTERVENTION_DIR"/*.wav &>/dev/null; then
-    ls "$INTERVENTION_DIR"/*.wav 2>/dev/null | sed 's|.*/|  - |'
-else
-    echo "  (no WAV files found)"
-fi
+ls "$INTERVENTION_DIR"/*.wav 2>/dev/null | sed 's|.*/|  - |' || echo "  (no WAV files)"
 echo ""
 echo "🚀 Ready to run full batch pipeline!"
 echo ""
