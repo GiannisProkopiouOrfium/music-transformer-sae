@@ -67,9 +67,9 @@ if python mmt/conditioned_controlled_feature_intervention.py \
     --feature-limuf-path "$LIMUF_PATH" \
     --output-dir "$INTERVENTION_DIR" \
     --intervention-layer "$TEST_LAYER" \
-    --addition-strengths "-1.0,1.0" \
     --conditioning-length 2 \
-    --seq-len 256 \
+    --seq-len 512 \
+    --addition-strengths "-2.0,-1.0,1.0,2.0" \
     --temperature 0.1 \
     --noise-scale 1.2 \
     --conditioning-seed 24 \
