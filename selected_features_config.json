@@ -1,0 +1,177 @@
+{
+    "feature_selection_metadata": {
+        "selection_criteria": {
+            "high_activation_frequency": "Features with significant presence in musical data (>0.01 activation frequency)",
+            "clear_musical_interpretation": "Features with well-understood, interpretable musical meaning from diversity analysis",
+            "diverse_categories": "Covering different aspects: rhythmic, dynamic, textural, structural, harmonic",
+            "audible_impact": "Features likely to produce perceptible changes in generated music"
+        },
+        "selection_methodology": "Analyzed enhanced diversity reports for layers 1, 3, 5 to identify features with highest combination of activation frequency, interpretability confidence (85%), and category diversity",
+        "total_features_available": {
+            "layer_1": 1198,
+            "layer_3": 1172,
+            "layer_5": 462
+        },
+        "total_features_selected": 9
+    },
+    "selected_features": {
+        "layer_1": [
+            {
+                "feature_id": 325,
+                "name": "rhythmic_displacement",
+                "interpretation": "Rhythmic displacement with sixteenth note shifts creating syncopation effect across instrumental lines",
+                "musical_category": "rhythmic_specific",
+                "activation_frequency": 0.184,
+                "confidence_score": 85,
+                "total_activations": 9036,
+                "mean_activation": 3.733,
+                "max_activation": 8.688,
+                "selection_rationale": "High activation frequency (18.4%), clear rhythmic interpretation, easily audible syncopation effects"
+            },
+            {
+                "feature_id": 256,
+                "name": "dynamic_contrasts",
+                "interpretation": "Sudden accents followed by soft dynamics creating dramatic ebb and flow within musical texture",
+                "musical_category": "dynamic_specific",
+                "activation_frequency": 0.019,
+                "confidence_score": 85,
+                "total_activations": 923,
+                "mean_activation": 3.981,
+                "max_activation": 6.379,
+                "selection_rationale": "Clear dynamic interpretation with high activation strength, easily perceptible volume changes"
+            },
+            {
+                "feature_id": 1323,
+                "name": "wide_pitch_range",
+                "interpretation": "Wide pitch range utilization across multiple instruments emphasizing broad harmonic spectrum and textural depth",
+                "musical_category": "textural_specific",
+                "activation_frequency": 0.088,
+                "confidence_score": 85,
+                "total_activations": 4319,
+                "mean_activation": 3.158,
+                "max_activation": 5.035,
+                "selection_rationale": "Good activation frequency (8.8%), textural category diversity, clear pitch range effects"
+            }
+        ],
+        "layer_3": [
+            {
+                "feature_id": 997,
+                "name": "antiphonal_texture",
+                "interpretation": "Call-and-response interaction between instrumental groups with contrasting dynamics or articulation",
+                "musical_category": "textural_specific",
+                "activation_frequency": 0.205,
+                "confidence_score": 85,
+                "total_activations": 10070,
+                "mean_activation": 6.106,
+                "max_activation": 22.344,
+                "selection_rationale": "Highest activation frequency (20.5%), very clear call-and-response interpretation, highly audible textural effect"
+            },
+            {
+                "feature_id": 855,
+                "name": "dynamic_contrasts",
+                "interpretation": "Sudden shifts between high and low velocity ranges within short musical passages creating dramatic tension and release",
+                "musical_category": "dynamic_specific",
+                "activation_frequency": 0.005,
+                "confidence_score": 85,
+                "total_activations": 223,
+                "mean_activation": 6.944,
+                "max_activation": 9.930,
+                "selection_rationale": "High activation strength despite lower frequency, clear dynamic interpretation, complements layer 1 dynamic feature"
+            },
+            {
+                "feature_id": 182,
+                "name": "steady_pulse",
+                "interpretation": "Steady pulse patterns with metronomic consistency and march-like rhythms reinforcing regularity and order",
+                "musical_category": "rhythmic_specific",
+                "activation_frequency": 0.027,
+                "confidence_score": 85,
+                "total_activations": 1327,
+                "mean_activation": 2.352,
+                "max_activation": 3.506,
+                "selection_rationale": "Clear rhythmic interpretation complementing layer 1 rhythmic displacement, steady vs syncopated contrast"
+            }
+        ],
+        "layer_5": [
+            {
+                "feature_id": 471,
+                "name": "unison_doubling",
+                "interpretation": "Multiple instruments playing same melodic line in octaves creating reinforced and powerful sound",
+                "musical_category": "textural_specific",
+                "activation_frequency": 0.034,
+                "confidence_score": 85,
+                "total_activations": 1669,
+                "mean_activation": 2.455,
+                "max_activation": 5.266,
+                "selection_rationale": "Clear textural interpretation, easily audible unison/octave effects, good activation frequency"
+            },
+            {
+                "feature_id": 1950,
+                "name": "dynamic_contrasts_layer5",
+                "interpretation": "Abrupt shifts between soft and loud dynamics creating dramatic and expressive effect within musical texture",
+                "musical_category": "dynamic_specific",
+                "activation_frequency": 0.012,
+                "confidence_score": 85,
+                "total_activations": 592,
+                "mean_activation": 2.379,
+                "max_activation": 3.881,
+                "selection_rationale": "Completes dynamic feature across all layers, clear interpretation, easily audible volume changes"
+            },
+            {
+                "feature_id": 904,
+                "name": "rhythmic_augmentation",
+                "interpretation": "Systematic lengthening of motifs creating sense of expansion and tension over time",
+                "musical_category": "rhythmic_specific",
+                "activation_frequency": 0.057,
+                "confidence_score": 85,
+                "total_activations": 2802,
+                "mean_activation": 2.707,
+                "max_activation": 4.184,
+                "selection_rationale": "Good activation frequency (5.7%), clear rhythmic interpretation, complements other layer rhythmic features"
+            }
+        ]
+    },
+    "intervention_parameters": {
+        "default_strengths": [
+            -2.0,
+            -1.0,
+            1.0,
+            2.0
+        ],
+        "baseline_strength": 0.0,
+        "conditioning_length": 2,
+        "sequence_length": 512,
+        "temperature": 0.1,
+        "noise_scale": 1.2,
+        "conditioning_seed": 24,
+        "generation_seed": 24,
+        "rationale": {
+            "conditioning_length": "Short conditioning (2 tokens) for immediate intervention impact",
+            "strengths_range": "Covers negative (ablation-like), neutral (baseline), and positive (enhancement) intervention effects",
+            "low_temperature": "Reduces randomness for clearer intervention signal",
+            "moderate_noise": "Adds variability while preserving intervention effects"
+        }
+    },
+    "expected_outcomes": {
+        "layer_1_features": {
+            "rhythmic_displacement": "Should produce syncopated rhythms, off-beat accents, rhythmic complexity variations",
+            "dynamic_contrasts": "Should create sudden volume changes, accent patterns, dynamic expression variations",
+            "wide_pitch_range": "Should affect pitch span, register usage, melodic range variations"
+        },
+        "layer_3_features": {
+            "antiphonal_texture": "Should create call-and-response patterns, instrumental dialogue, spatial effects",
+            "dynamic_contrasts": "Should produce dramatic volume shifts, expressive dynamics, tension-release patterns",
+            "steady_pulse": "Should affect rhythmic regularity, tempo stability, march-like vs fluid rhythm"
+        },
+        "layer_5_features": {
+            "unison_doubling": "Should create octave doubling, unison passages, instrumental reinforcement",
+            "dynamic_contrasts_layer5": "Should produce expressive volume changes, dramatic dynamic effects",
+            "rhythmic_augmentation": "Should affect note lengths, temporal expansion, rhythmic density changes"
+        }
+    },
+    "evaluation_plan": {
+        "perceptual_evaluation": "Manual listening to generated WAV files to assess intervention audibility and musical quality",
+        "quantitative_metrics": "MusPy metrics (pitch_class_entropy, scale_consistency, groove_consistency) to assess musical coherence",
+        "feature_specific_analysis": "Targeted measurements for each feature type (rhythm, dynamics, texture, pitch)",
+        "comparative_analysis": "Baseline vs intervention comparisons across all strength levels"
+    }
+}
