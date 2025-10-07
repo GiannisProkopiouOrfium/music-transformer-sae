@@ -185,19 +185,19 @@ class SAEColumnLiMuFExtractor:
         print()
 
         # Validate feature_id is within SAE bounds
-        n_features = self.sae_model.decoder.weight.shape[0]
+        n_features = self.sae_model.decoder.weight.shape[1]  # Hidden dimension (2048)
         if feature_id >= n_features:
             raise ValueError(
                 f"Feature ID {feature_id} exceeds SAE dimension {n_features}"
             )
 
-        # Extract encoder column for this feature
+        # Extract decoder column for this feature
         with torch.no_grad():
-            # The encoder weight shape is [hidden_dim, input_dim] = [2048, 512]
-            # We want the feature_id-th row of encoder, which represents the input direction
-            # that activates this specific feature in the 512-dim transformer space
+            # The decoder weight shape is [output_dim, hidden_dim] = [512, 2048]
+            # We want the feature_id-th column of decoder, which represents how
+            # this specific feature reconstructs back to the 512-dim transformer space
             limuf_vector_raw = (
-                self.sae_model.encoder.weight[feature_id, :].clone().detach()
+                self.sae_model.decoder.weight[:, feature_id].clone().detach()
             )
 
         # Calculate statistics
@@ -207,7 +207,7 @@ class SAEColumnLiMuFExtractor:
         limuf_vector_normalized = limuf_vector_raw / torch.norm(limuf_vector_raw, dim=0)
         normalized_norm = torch.norm(limuf_vector_normalized, dim=0).item()
 
-        print("🎯 LiMuF vector extracted from SAE encoder:")
+        print("🎯 LiMuF vector extracted from SAE decoder column:")
         print(f"   Raw norm: {raw_norm:.4f}")
         print(f"   Normalized norm: {normalized_norm:.4f}")
         print(f"   Vector shape: {limuf_vector_normalized.shape}")
@@ -228,8 +228,8 @@ class SAEColumnLiMuFExtractor:
             "feature_description": desc,
             "feature_category": category,
             "limuf_norm": raw_norm,
-            "method": "sae_encoder_column",
-            "extraction_source": "sae_encoder_weights",
+            "method": "sae_decoder_column",
+            "extraction_source": "sae_decoder_weights",
             "sae_info": {
                 "sae_model_path": str(self.sae_model_path),
                 "sae_dimensions": {
@@ -276,9 +276,9 @@ class SAEColumnLiMuFExtractor:
                 "metadata": metadata,
                 "extraction_info": {
                     "layer": self.layer,
-                    "method": "sae_encoder_column",
-                    "extractor_version": "sae_encoder_v1.0",
-                    "description": "LiMuFs extracted directly from SAE encoder columns (input directions)",
+                    "method": "sae_decoder_column",
+                    "extractor_version": "sae_decoder_v1.0",
+                    "description": "LiMuFs extracted directly from SAE decoder columns (reconstruction directions)",
                 },
             },
             output_file,
@@ -342,7 +342,7 @@ def main():
     print("=" * 45)
     print(f"Layer: {args.layer}")
     print(f"Device: {args.device}")
-    print("Method: Direct SAE encoder column extraction")
+    print("Method: Direct SAE decoder column extraction")
     print()
 
     # Create extractor
@@ -397,7 +397,7 @@ def main():
     print("\n🎯 SUCCESS!")
     print(f"Layer: {args.layer}")
     print(f"Features extracted: {len(limufs)}")
-    print("Method: SAE encoder column extraction")
+    print("Method: SAE decoder column extraction")
     print("Ready for intervention testing!")
     print()
     print("🎵 Next step:")

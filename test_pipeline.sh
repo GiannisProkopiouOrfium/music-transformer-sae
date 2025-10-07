@@ -10,13 +10,13 @@ set -e
 
 # Test parameters
 TEST_LAYER=3
-TEST_FEATURE=471  # unison_doubling - should be easily audible
+TEST_FEATURE=997  # antiphonal_texture - should be easily audible
 TEST_OUTPUT_DIR="test_pipeline_output"
 
 echo "🧪 TESTING BATCH PIPELINE"
 echo "========================="
 echo "Test Layer: $TEST_LAYER"
-echo "Test Feature: $TEST_FEATURE (unison_doubling)"
+echo "Test Feature: $TEST_FEATURE (antiphonal_texture)"
 echo "Output Dir: $TEST_OUTPUT_DIR"
 echo ""
 
@@ -59,7 +59,7 @@ echo ""
 echo "🔬 TEST 2: Single Feature Intervention"
 echo "-------------------------------------"
 
-INTERVENTION_DIR="$TEST_OUTPUT_DIR/interventions/layer$TEST_LAYER/feature${TEST_FEATURE}_unison_doubling"
+INTERVENTION_DIR="$TEST_OUTPUT_DIR/interventions/layer$TEST_LAYER/feature${TEST_FEATURE}_antiphonal_texture"
 
 echo "Running: python mmt/conditioned_controlled_feature_intervention.py --feature-limuf-path $LIMUF_PATH --output-dir $INTERVENTION_DIR --intervention-layer $TEST_LAYER --conditioning-length 2 --seq-len 256"
 
