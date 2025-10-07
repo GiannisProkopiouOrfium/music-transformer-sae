@@ -281,7 +281,6 @@ run_intervention() {
         --feature-limuf-path "$limuf_path" \
         --output-dir "$intervention_dir" \
         --intervention-layer "$layer" \
-        --addition-strengths "$DEFAULT_STRENGTHS" \
         --conditioning-length "$CONDITIONING_LENGTH" \
         --seq-len "$SEQ_LEN" \
         --temperature "$TEMPERATURE" \
@@ -300,6 +299,9 @@ run_intervention() {
 
 # Main execution
 main() {
+    # Create output directory first so logging works
+    mkdir -p "$OUTPUT_DIR"
+    
     log_info "🚀 STARTING BATCH FEATURE EXTRACTION AND INTERVENTION PIPELINE"
     log_info "================================================================================"
     log_info "Output directory: $OUTPUT_DIR"
@@ -311,7 +313,7 @@ main() {
     log_info "Parameters: conditioning_length=$CONDITIONING_LENGTH, seq_len=$SEQ_LEN, temperature=$TEMPERATURE, noise_scale=$NOISE_SCALE"
     log_info "Seeds: Auto-generated per feature as (layer * 1000 + feature_id) for diversity"
     
-    # Create output structure
+    # Create full output structure
     create_output_structure "$OUTPUT_DIR"
     
     # Count total features
