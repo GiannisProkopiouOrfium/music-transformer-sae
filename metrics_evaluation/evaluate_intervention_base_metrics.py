@@ -145,9 +145,9 @@ def evaluate_sequence_base_metrics(
 
         try:
             # Convert to percentage to match paper benchmarks (0-1 -> 0-100)
-            metrics["groove_consistency"] = muspy.groove_consistency(
-                music, 4 * music.resolution
-            ) * 100.0
+            metrics["groove_consistency"] = (
+                muspy.groove_consistency(music, 4 * music.resolution) * 100.0
+            )
         except Exception as e:
             metrics["groove_consistency"] = np.nan
             metrics["groove_consistency_error"] = str(e)

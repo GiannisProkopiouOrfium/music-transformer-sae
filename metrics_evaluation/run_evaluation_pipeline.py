@@ -18,8 +18,6 @@ import sys
 import json
 from pathlib import Path
 import logging
-from typing import Dict, Any
-
 
 def setup_logging() -> logging.Logger:
     """Set up logging for the master pipeline."""
@@ -339,7 +337,7 @@ def main():
         logger.info("\n🎯 STEP 1: BASE METRICS EVALUATION")
         
         base_cmd = [
-            "python", "evaluate_intervention_base_metrics.py",
+            "python", "metrics_evaluation/evaluate_intervention_base_metrics.py",
             "--interventions-dir", str(args.interventions_dir),
             "--encoding-path", str(args.encoding_path),
             "--output-dir", str(args.output_dir)
@@ -366,7 +364,7 @@ def main():
             pipeline_success = False
         else:
             extended_cmd = [
-                "python", "evaluate_intervention_extra_metrics.py",
+                "python", "metrics_evaluation/evaluate_intervention_extra_metrics.py",
                 "--base-results", str(base_results_file),
                 "--encoding-path", str(args.encoding_path),
                 "--output-dir", str(args.output_dir)
@@ -391,7 +389,7 @@ def main():
             pipeline_success = False
         else:
             comparative_cmd = [
-                "python", "compare_intervention_performance.py",
+                "python", "metrics_evaluation/compare_intervention_performance.py",
                 "--extended-results", str(extended_results_file),
                 "--output-dir", str(args.output_dir)
             ]
