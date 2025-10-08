@@ -456,7 +456,7 @@ run_intervention() {
         --feature-limuf-path "$limuf_path" \
         --output-dir "$intervention_dir" \
         --intervention-layer "$layer" \
-        --addition-strengths "$STRENGTHS" \
+        --addition-strengths="$STRENGTHS" \
         --conditioning-length "$CONDITIONING_LENGTH" \
         --seq-len "$SEQ_LEN" \
         --temperature "$TEMPERATURE" \
