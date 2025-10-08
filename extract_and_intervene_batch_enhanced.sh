@@ -475,6 +475,9 @@ run_intervention() {
 
 # Enhanced main execution with benchmark context
 main() {
+    # Create output structure first (before any logging that uses tee)
+    create_output_structure "$OUTPUT_DIR"
+    
     log_info "🚀 ENHANCED BATCH FEATURE EXTRACTION AND INTERVENTION PIPELINE"
     log_info "================================================================================"
     
@@ -493,9 +496,6 @@ main() {
     log_info "Resume mode: $RESUME"
     log_info "Dry run: $DRY_RUN"
     log_info "Parameters: conditioning_length=$CONDITIONING_LENGTH, seq_len=$SEQ_LEN, temperature=$TEMPERATURE, noise_scale=$NOISE_SCALE"
-    
-    # Create output structure (with metadata)
-    create_output_structure "$OUTPUT_DIR"
     
     # [Rest of main function same as original...]
     # Count total features
