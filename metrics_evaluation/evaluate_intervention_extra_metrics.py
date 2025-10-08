@@ -23,11 +23,12 @@ import muspy
 import numpy as np
 import torch
 
-# Add parent directory to path for imports
+# Add parent directory and mmt directory to path for imports
 sys.path.append(str(Path(__file__).parent.parent))
+sys.path.append(str(Path(__file__).parent.parent / "mmt"))
 
-# Import representation from mmt directory
-from mmt import representation
+# Import representation directly (it will find utils in the same directory)
+import representation
 
 # Import our benchmarks module
 try:
