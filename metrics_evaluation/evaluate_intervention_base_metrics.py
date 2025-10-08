@@ -137,15 +137,17 @@ def evaluate_sequence_base_metrics(
             metrics["pitch_class_entropy_error"] = str(e)
 
         try:
-            metrics["scale_consistency"] = muspy.scale_consistency(music)
+            # Convert to percentage to match paper benchmarks (0-1 -> 0-100)
+            metrics["scale_consistency"] = muspy.scale_consistency(music) * 100.0
         except Exception as e:
             metrics["scale_consistency"] = np.nan
             metrics["scale_consistency_error"] = str(e)
 
         try:
+            # Convert to percentage to match paper benchmarks (0-1 -> 0-100)
             metrics["groove_consistency"] = muspy.groove_consistency(
                 music, 4 * music.resolution
-            )
+            ) * 100.0
         except Exception as e:
             metrics["groove_consistency"] = np.nan
             metrics["groove_consistency_error"] = str(e)
