@@ -33,8 +33,8 @@ import tqdm
 # Add parent directory to path for imports
 sys.path.append(str(Path(__file__).parent.parent))
 
-# Import representation from parent directory
-import representation
+# Import representation from mmt directory
+from mmt import representation
 
 # Import our benchmarks module
 try:
