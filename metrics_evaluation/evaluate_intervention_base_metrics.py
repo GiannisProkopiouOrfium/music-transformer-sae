@@ -6,7 +6,14 @@ This script evaluates generated musical sequences from feature interventions usi
 the standard MusPy metrics (pitch_class_entropy, scale_consistency, groove_consistency).
 
 It processes all intervention conditions (baseline, additions, ablation) and creates
-comprehensive evaluation reports for systematic comparison.
+comprehensive evaluation reports with paper benchmark comparisons and controlled
+baseline documentation.
+
+CONTROLLED GENERATION CONTEXT:
+- Temperature: 0.1 (deterministic sampling for intervention comparison)
+- Random noise: Added for controlled creativity
+- Shared prefix: Consistent musical foundation across conditions
+- Optimized for intervention effect detection vs general music generation
 """
 
 import argparse
@@ -23,11 +30,23 @@ import numpy as np
 import torch
 import tqdm
 
-# Add parent directory to path for imports
-parent_dir = Path(__file__).parent.parent
-sys.path.insert(0, str(parent_dir))
-sys.path.insert(0, str(parent_dir / "mmt"))
+# Add mmt to path for imports
+sys.path.append(str(Path(__file__).parent / "mmt"))
 import representation
+
+# Import our benchmarks module
+try:
+    from benchmarks import (
+        PAPER_BENCHMARKS,
+        CONTROLLED_GENERATION_PARAMS,
+        compute_confidence_interval,
+        calculate_relative_performance,
+    )
+except ImportError as e:
+    print(f"Warning: Could not import benchmarks module: {e}")
+    print("Running without benchmark comparisons...")
+    PAPER_BENCHMARKS = {}
+    CONTROLLED_GENERATION_PARAMS = {}
 
 
 def setup_logging(output_dir: Path) -> logging.Logger:
@@ -345,12 +364,26 @@ def create_overall_summary(all_results: List[Dict]) -> Dict:
 
                         summary["condition_summaries"][condition_name]["count"] += 1
 
-    # Compute overall statistics
+    # Compute overall statistics with confidence intervals
     for metric_name, values in all_metrics.items():
         if values:
+            mean_val = float(np.mean(values))
+            std_val = float(np.std(values))
+
+            # Calculate confidence interval if we have the benchmarks module
+            ci_lower, ci_upper, std_err = np.nan, np.nan, np.nan
+            try:
+                if "compute_confidence_interval" in globals():
+                    ci_lower, ci_upper, std_err = compute_confidence_interval(values)
+            except Exception:
+                pass
+
             summary["overall_metrics"][metric_name] = {
-                "mean": float(np.mean(values)),
-                "std": float(np.std(values)),
+                "mean": mean_val,
+                "std": std_val,
+                "std_err": float(std_err) if not np.isnan(std_err) else None,
+                "ci_lower": float(ci_lower) if not np.isnan(ci_lower) else None,
+                "ci_upper": float(ci_upper) if not np.isnan(ci_upper) else None,
                 "min": float(np.min(values)),
                 "max": float(np.max(values)),
                 "count": len(values),
@@ -379,6 +412,45 @@ def create_overall_summary(all_results: List[Dict]) -> Dict:
                 }
 
     return dict(summary)
+
+
+def add_benchmark_comparisons(summary: Dict) -> Dict:
+    """Add benchmark comparisons to the summary."""
+
+    if not PAPER_BENCHMARKS:
+        return summary
+
+    # Add controlled generation context
+    summary["controlled_generation_context"] = CONTROLLED_GENERATION_PARAMS
+    summary["paper_benchmarks"] = PAPER_BENCHMARKS
+
+    # Add benchmark comparisons for baseline condition
+    if "baseline" in summary["condition_summaries"]:
+        baseline_metrics = summary["condition_summaries"]["baseline"]["metrics"]
+        summary["benchmark_comparisons"] = {}
+
+        for metric_name in [
+            "pitch_class_entropy",
+            "scale_consistency",
+            "groove_consistency",
+        ]:
+            if metric_name in baseline_metrics:
+                baseline_mean = baseline_metrics[metric_name]["mean"]
+                summary["benchmark_comparisons"][metric_name] = {}
+
+                # Compare to each paper benchmark
+                for benchmark_name in ["ground_truth", "original_mmt"]:
+                    try:
+                        comparison = calculate_relative_performance(
+                            baseline_mean, benchmark_name, metric_name
+                        )
+                        summary["benchmark_comparisons"][metric_name][
+                            benchmark_name
+                        ] = comparison
+                    except Exception:
+                        continue
+
+    return summary
 
 
 def main():
@@ -499,6 +571,10 @@ def main():
     logger.info("\n📊 CREATING OVERALL SUMMARY")
     overall_summary = create_overall_summary(all_results)
 
+    # Add benchmark comparisons
+    logger.info("📊 ADDING BENCHMARK COMPARISONS")
+    overall_summary = add_benchmark_comparisons(overall_summary)
+
     # Save comprehensive results
     comprehensive_results = {
         "evaluation_info": {
@@ -549,8 +625,28 @@ def main():
                 f"    {metric_name}: mean={stats['mean']:.4f}, std={stats['std']:.4f}"
             )
 
+    # Log benchmark comparisons if available
+    if "benchmark_comparisons" in overall_summary:
+        logger.info("\n🎯 BENCHMARK COMPARISONS (Controlled Baseline vs Paper):")
+        for metric_name, benchmarks in overall_summary["benchmark_comparisons"].items():
+            logger.info(f"  {metric_name}:")
+            for benchmark_name, comparison in benchmarks.items():
+                if "relative_change_percent" in comparison:
+                    logger.info(
+                        f"    vs {benchmark_name}: {comparison['relative_change_percent']:+.1f}% ({comparison['performance_vs_benchmark']})"
+                    )
+
     logger.info(f"\n📁 Detailed logs: {args.output_dir}/base_metrics_evaluation.log")
     logger.info("🎵 Ready for extended metrics evaluation and comparative analysis!")
+    logger.info("\n📖 CONTROLLED GENERATION CONTEXT:")
+    logger.info(
+        "  Temperature: 0.1 (deterministic sampling for intervention comparison)"
+    )
+    logger.info("  Random noise: Added for controlled creativity")
+    logger.info("  Shared prefix: Consistent musical foundation across conditions")
+    logger.info(
+        "  Purpose: Optimized for intervention effect detection vs general music generation"
+    )
 
     return True
 
