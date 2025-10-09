@@ -141,11 +141,14 @@ class FeatureSpecificAnalyzer:
                 "groove_characteristics",
             ],
             primary_metrics=[
-                "rhythmic_complexity",
-                "syncopation_score",
-                "beat_strength_distribution",
+                "musical_complexity.rhythmic_complexity",
+                "rhythmic_analysis.syncopation_score",
+                "rhythmic_analysis.beat_strength_distribution",
             ],
-            secondary_metrics=["groove_consistency", "rhythmic_diversity"],
+            secondary_metrics=[
+                "temporal_analysis.groove_consistency",
+                "rhythmic_analysis.rhythmic_diversity",
+            ],
             quality_thresholds={"min_rhythmic_complexity": 1.0, "max_syncopation": 0.8},
         )
 
@@ -735,8 +738,8 @@ class FeatureSpecificAnalyzer:
                 "note_patterns.note_density": 1,
             },  # Note density
             "182": {
-                "rhythmic_complexity": 1,
-                "syncopation_score": 1,
+                "musical_complexity.rhythmic_complexity": 1,
+                "rhythmic_analysis.syncopation_score": 1,
             },  # Rhythmic patterns
             "855": {
                 "phrase_length_avg": 1,
