@@ -36,21 +36,26 @@ class MIDIFeatureExtractor:
         self.logger = logging.getLogger(__name__)
 
     def extract_all_features(
-        self, sequence: np.ndarray, condition_info: Dict = None
+        self, sequence, condition_info: Dict = None
     ) -> Dict[str, Any]:
         """
         Extract all MIDI features from a sequence.
 
         Args:
-            sequence: Musical sequence array
+            sequence: Musical sequence array or MusPy Music object
             condition_info: Metadata about the condition (feature, strength, etc.)
 
         Returns:
             Comprehensive feature dictionary
         """
         try:
-            # Convert to MusPy Music object
-            music = representation.decode(sequence, self.encoding)
+            # Handle both raw sequences and already-decoded MusPy Music objects
+            if isinstance(sequence, muspy.Music):
+                music = sequence
+            else:
+                # Convert to MusPy Music object
+                music = representation.decode(sequence, self.encoding)
+            
             if music.resolution:
                 music.trim(music.resolution * 64)  # Trim to reasonable length
 
