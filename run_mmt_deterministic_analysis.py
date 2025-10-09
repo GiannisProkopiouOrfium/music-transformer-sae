@@ -10,16 +10,28 @@ import sys
 import torch
 from pathlib import Path
 
-# Add MMT modules
-sys.path.append(str(Path(__file__).parent.parent))
+# Add MMT modules to path
+current_dir = Path(__file__).parent
+mmt_dir = current_dir / "mmt"
+sys.path.insert(0, str(current_dir))
+sys.path.insert(0, str(mmt_dir))
 
 try:
-    import representation
-    from deterministic_analysis import BatchDeterministicAnalyzer
+    # Import MMT modules
+    from mmt import representation
     import muspy
+
+    # Import deterministic analysis
+    from deterministic_analysis import BatchDeterministicAnalyzer
+
+    print("✅ All modules imported successfully")
+
 except ImportError as e:
     print(f"Import error: {e}")
     print("Make sure you're running from the MMT directory")
+    print(f"Current directory: {current_dir}")
+    print(f"MMT directory exists: {mmt_dir.exists()}")
+    sys.exit(1)
 
 
 class MMTBatchAnalyzer(BatchDeterministicAnalyzer):
@@ -35,6 +47,7 @@ class MMTBatchAnalyzer(BatchDeterministicAnalyzer):
         if encoding_path is None:
             # Try common paths
             possible_paths = [
+                "mmt/encoding.json",
                 "data/sod/processed/notes/encoding.json",
                 "mmt/data/sod/processed/notes/encoding.json",
                 "../data/sod/processed/notes/encoding.json",
