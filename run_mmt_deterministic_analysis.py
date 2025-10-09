@@ -7,8 +7,11 @@ without requiring conversion.
 """
 
 import sys
-import torch
+import os
+import logging
 from pathlib import Path
+import torch
+import numpy as np
 
 # Add MMT modules to path
 current_dir = Path(__file__).parent
@@ -79,6 +82,44 @@ class MMTBatchAnalyzer(BatchDeterministicAnalyzer):
                 # Remove batch dimension if present
                 if len(seq_np.shape) == 3 and seq_np.shape[0] == 1:
                     seq_np = seq_np[0]
+
+                # Debug: Check what's in the sequence
+                self.logger.debug(f"Sequence shape: {seq_np.shape}")
+                self.logger.debug(f"Sequence dtype: {seq_np.dtype}")
+
+                # Check if the sequence contains Note objects instead of numeric codes
+                if seq_np.size > 0:
+                    sample_element = seq_np.flat[0]
+                    self.logger.debug(f"Sample element type: {type(sample_element)}")
+                    self.logger.debug(f"Sample element: {sample_element}")
+
+                    # If we have Note objects, we need to extract the numeric codes
+                    if hasattr(sample_element, "__class__") and "Note" in str(
+                        type(sample_element)
+                    ):
+                        self.logger.warning(
+                            f"Sequence contains Note objects instead of numeric codes in {path.name}"
+                        )
+                        self.logger.warning(
+                            "This suggests the tensor was saved in the wrong format. Skipping this file."
+                        )
+                        return None
+
+                    # If we have non-numeric data, try to convert
+                    if not isinstance(
+                        sample_element, (int, float, np.integer, np.floating)
+                    ):
+                        self.logger.warning(
+                            f"Sequence contains non-numeric data: {type(sample_element)}"
+                        )
+                        try:
+                            # Try to convert to numeric array
+                            seq_np = seq_np.astype(int)
+                        except (ValueError, TypeError) as e:
+                            self.logger.error(
+                                f"Cannot convert sequence to numeric: {e}"
+                            )
+                            return None
 
                 # Convert to MusPy Music object using your representation
                 music = representation.decode(seq_np, self.encoding)
