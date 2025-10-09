@@ -10,38 +10,16 @@ import sys
 import torch
 from pathlib import Path
 
-# Add MMT modules to path
-current_dir = Path(__file__).parent
-mmt_dir = current_dir / "mmt"
-sys.path.insert(0, str(current_dir))
-sys.path.insert(0, str(mmt_dir))
+# Add MMT modules
+sys.path.append(str(Path(__file__).parent.parent))
 
 try:
-    # Import MMT modules
-    from mmt import representation
+    import representation
+    from deterministic_analysis import BatchDeterministicAnalyzer
     import muspy
-
-    # Import deterministic analysis modules directly
-    from deterministic_analysis.batch_deterministic_analyzer import (
-        BatchDeterministicAnalyzer,
-    )
-
-    print("✅ All modules imported successfully")
-
 except ImportError as e:
     print(f"Import error: {e}")
     print("Make sure you're running from the MMT directory")
-    print(f"Current directory: {current_dir}")
-    print(f"MMT directory exists: {mmt_dir.exists()}")
-
-    try:
-        from mmt import representation
-
-        print("✅ mmt.representation found")
-    except ImportError:
-        print("❌ mmt.representation not found")
-
-    sys.exit(1)
 
 
 class MMTBatchAnalyzer(BatchDeterministicAnalyzer):
@@ -57,7 +35,6 @@ class MMTBatchAnalyzer(BatchDeterministicAnalyzer):
         if encoding_path is None:
             # Try common paths
             possible_paths = [
-                "mmt/encoding.json",
                 "data/sod/processed/notes/encoding.json",
                 "mmt/data/sod/processed/notes/encoding.json",
                 "../data/sod/processed/notes/encoding.json",
@@ -86,7 +63,7 @@ class MMTBatchAnalyzer(BatchDeterministicAnalyzer):
                 if "generated" in tensor_data:
                     sequence = tensor_data["generated"]
                 else:
-                    print(f"Warning: No 'generated' key in {path.name}")
+                    self.logger.warning(f"No 'generated' key in {path.name}")
                     return None
 
                 # Convert to numpy
@@ -103,6 +80,11 @@ class MMTBatchAnalyzer(BatchDeterministicAnalyzer):
                 music = representation.decode(seq_np, self.encoding)
                 return music
 
+            elif path.suffix.lower() in [".wav", ".mp3", ".mp4", ".flac"]:
+                # Skip audio files - they're not suitable for symbolic analysis
+                self.logger.debug(f"Skipping audio file: {path.name}")
+                return None
+
             else:
                 # Fall back to parent class for other formats
                 return super().load_musical_data(file_path)
@@ -117,6 +99,32 @@ class MMTBatchAnalyzer(BatchDeterministicAnalyzer):
             return data
         else:
             return super().convert_to_muspy_music(data, file_path)
+
+    def find_intervention_files(self, base_dir: str):
+        """Override to exclude audio files from processing."""
+        # Get files from parent method
+        files_by_feature = super().find_intervention_files(base_dir)
+
+        # Filter out audio files
+        audio_extensions = {".wav", ".mp3", ".mp4", ".flac", ".aiff", ".ogg"}
+
+        for feature_id in files_by_feature:
+            # Filter baseline files
+            files_by_feature[feature_id]["baseline"] = [
+                f
+                for f in files_by_feature[feature_id]["baseline"]
+                if Path(f).suffix.lower() not in audio_extensions
+            ]
+
+            # Filter intervention files
+            for strength in files_by_feature[feature_id]["interventions"]:
+                files_by_feature[feature_id]["interventions"][strength] = [
+                    f
+                    for f in files_by_feature[feature_id]["interventions"][strength]
+                    if Path(f).suffix.lower() not in audio_extensions
+                ]
+
+        return files_by_feature
 
 
 def run_mmt_analysis(

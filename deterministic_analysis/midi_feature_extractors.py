@@ -14,7 +14,8 @@ Features analyzed:
 """
 
 import numpy as np
-from typing import Dict, List, Any
+import pandas as pd
+from typing import Dict, List, Any, Tuple, Optional
 from pathlib import Path
 import json
 import sys
@@ -24,7 +25,7 @@ import logging
 # Add mmt to path for imports
 sys.path.append(str(Path(__file__).parent.parent / "mmt"))
 import muspy
-from mmt import representation
+import representation
 
 
 class MIDIFeatureExtractor:
@@ -105,9 +106,30 @@ class MIDIFeatureExtractor:
         if not all_notes:
             return {"error": "No notes found"}
 
-        # Note densities and patterns
-        durations = [note.duration for note in all_notes]
-        velocities = [note.velocity for note in all_notes if note.velocity is not None]
+        # Note densities and patterns - Handle both Note objects and direct access
+        try:
+            durations = []
+            velocities = []
+
+            for note in all_notes:
+                # Handle different note object types
+                if hasattr(note, "duration"):
+                    duration = note.duration
+                    velocity = getattr(note, "velocity", None)
+                else:
+                    # Fallback for other formats
+                    duration = getattr(note, "dur", 0)
+                    velocity = getattr(note, "vel", None)
+
+                # Ensure numeric values
+                if duration is not None:
+                    durations.append(float(duration))
+                if velocity is not None:
+                    velocities.append(int(velocity))
+
+        except Exception as e:
+            self.logger.error(f"Error extracting note properties: {e}")
+            return {"error": f"Failed to extract note properties: {e}"}
 
         return {
             "notes_per_beat": (
@@ -135,11 +157,25 @@ class MIDIFeatureExtractor:
     def _extract_pitch_analysis(self, music: muspy.Music) -> Dict[str, Any]:
         """Extract pitch-related characteristics."""
         all_pitches = []
-        for track in music.tracks:
-            all_pitches.extend([note.pitch for note in track.notes])
 
-        if not all_pitches:
-            return {"error": "No pitches found"}
+        try:
+            for track in music.tracks:
+                for note in track.notes:
+                    # Handle different note object types
+                    if hasattr(note, "pitch"):
+                        pitch = note.pitch
+                    else:
+                        pitch = getattr(note, "note", None)
+
+                    if pitch is not None:
+                        all_pitches.append(int(pitch))
+
+            if not all_pitches:
+                return {"error": "No pitches found"}
+
+        except Exception as e:
+            self.logger.error(f"Error extracting pitches: {e}")
+            return {"error": f"Failed to extract pitches: {e}"}
 
         pitches = np.array(all_pitches)
 
