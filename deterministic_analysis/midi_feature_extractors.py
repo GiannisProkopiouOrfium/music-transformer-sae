@@ -74,7 +74,10 @@ class MIDIFeatureExtractor:
             return features
 
         except Exception as e:
+            import traceback
+
             self.logger.error(f"Feature extraction failed: {e}")
+            self.logger.error(f"Traceback: {traceback.format_exc()}")
             return {"error": str(e), "condition_metadata": condition_info or {}}
 
     def _extract_basic_info(
