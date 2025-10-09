@@ -21,6 +21,7 @@ sys.path.insert(0, str(mmt_dir))
 
 # Import MMT modules
 from mmt import representation
+from mmt.representation import RESOLUTION
 import muspy
 
 # Import deterministic analysis modules directly
@@ -93,17 +94,59 @@ class MMTBatchAnalyzer(BatchDeterministicAnalyzer):
                     self.logger.debug(f"Sample element type: {type(sample_element)}")
                     self.logger.debug(f"Sample element: {sample_element}")
 
-                    # If we have Note objects, we need to extract the numeric codes
+                    # If we have Note objects, try to create a MusPy Music object directly
                     if hasattr(sample_element, "__class__") and "Note" in str(
                         type(sample_element)
                     ):
-                        self.logger.warning(
-                            f"Sequence contains Note objects instead of numeric codes in {path.name}"
+                        self.logger.info(
+                            f"Sequence contains Note objects - attempting direct MusPy conversion for {path.name}"
                         )
-                        self.logger.warning(
-                            "This suggests the tensor was saved in the wrong format. Skipping this file."
-                        )
-                        return None
+                        try:
+                            # Create a MusPy Music object from the Note objects
+                            music = muspy.Music(resolution=RESOLUTION)
+                            track = muspy.Track(program=0, is_drum=False)
+
+                            # Convert the Note objects to MusPy notes
+                            notes = []
+                            for note_obj in seq_np.flat:
+                                if (
+                                    hasattr(note_obj, "pitch")
+                                    and hasattr(note_obj, "start")
+                                    and hasattr(note_obj, "duration")
+                                ):
+                                    muspy_note = muspy.Note(
+                                        start=(
+                                            int(note_obj.start)
+                                            if hasattr(note_obj, "start")
+                                            else 0
+                                        ),
+                                        pitch=(
+                                            int(note_obj.pitch)
+                                            if hasattr(note_obj, "pitch")
+                                            else 60
+                                        ),
+                                        duration=(
+                                            int(note_obj.duration)
+                                            if hasattr(note_obj, "duration")
+                                            else 12
+                                        ),
+                                        velocity=(
+                                            int(note_obj.velocity)
+                                            if hasattr(note_obj, "velocity")
+                                            else 80
+                                        ),
+                                    )
+                                    notes.append(muspy_note)
+
+                            track.notes = notes
+                            music.tracks = [track]
+                            return music
+
+                        except Exception as e:
+                            self.logger.error(
+                                f"Failed to convert Note objects to MusPy: {e}"
+                            )
+                            return None
 
                     # If we have non-numeric data, try to convert
                     if not isinstance(
