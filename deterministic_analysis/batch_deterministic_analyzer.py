@@ -23,8 +23,8 @@ from datetime import datetime
 import traceback
 
 # Import our analysis modules
-from midi_feature_extractors import MIDIFeatureExtractor
-from feature_specific_analyzers import (
+from .midi_feature_extractors import MIDIFeatureExtractor
+from .feature_specific_analyzers import (
     FeatureSpecificAnalyzer,
     analyze_intervention_batch,
 )
