@@ -16,15 +16,14 @@ mmt_dir = current_dir / "mmt"
 sys.path.insert(0, str(current_dir))
 sys.path.insert(0, str(mmt_dir))
 
-try:
-    # Import MMT modules
-    from mmt import representation
-    import muspy
+# Import MMT modules
+from mmt import representation
+import muspy
 
-    # Import deterministic analysis modules directly
-    from deterministic_analysis.batch_deterministic_analyzer import (
-        BatchDeterministicAnalyzer,
-    )
+# Import deterministic analysis modules directly
+from deterministic_analysis.batch_deterministic_analyzer import (
+    BatchDeterministicAnalyzer,
+)
 
 
 class MMTBatchAnalyzer(BatchDeterministicAnalyzer):
