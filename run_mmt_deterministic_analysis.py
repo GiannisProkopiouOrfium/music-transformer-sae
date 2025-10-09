@@ -104,6 +104,16 @@ class MMTBatchAnalyzer(BatchDeterministicAnalyzer):
                         try:
                             # Create a MusPy Music object from the Note objects
                             music = muspy.Music(resolution=RESOLUTION)
+                            # Initialize required attributes
+                            music.tempos = []
+                            music.key_signatures = []
+                            music.time_signatures = []
+                            music.barlines = []
+                            music.beats = []
+                            music.lyrics = []
+                            music.annotations = []
+                            music.metadata = {}
+
                             track = muspy.Track(program=0, is_drum=False)
 
                             # Convert the Note objects to MusPy notes

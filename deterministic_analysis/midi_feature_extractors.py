@@ -55,7 +55,7 @@ class MIDIFeatureExtractor:
             else:
                 # Convert to MusPy Music object
                 music = representation.decode(sequence, self.encoding)
-            
+
             if music.resolution:
                 music.trim(music.resolution * 64)  # Trim to reasonable length
 
@@ -97,10 +97,18 @@ class MIDIFeatureExtractor:
                 music.get_end_time() / music.resolution if music.resolution > 0 else 0
             ),
             "resolution": music.resolution,
-            "tempo_changes": len(music.tempo_changes) if music.tempo_changes else 0,
-            "key_signatures": len(music.key_signatures) if music.key_signatures else 0,
+            "tempo_changes": (
+                len(getattr(music, "tempos", [])) if hasattr(music, "tempos") else 0
+            ),
+            "key_signatures": (
+                len(getattr(music, "key_signatures", []))
+                if hasattr(music, "key_signatures")
+                else 0
+            ),
             "time_signatures": (
-                len(music.time_signatures) if music.time_signatures else 0
+                len(getattr(music, "time_signatures", []))
+                if hasattr(music, "time_signatures")
+                else 0
             ),
         }
 
