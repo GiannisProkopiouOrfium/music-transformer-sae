@@ -97,12 +97,12 @@ class FeatureSpecificAnalyzer:
                 "micro_timing",
             ],
             primary_metrics=[
-                "temporal_analysis.timing_precision",
-                "temporal_analysis.groove_consistency",
-                "temporal_analysis.tempo_stability",
+                "rhythmic_analysis.average_ioi",
+                "rhythmic_analysis.ioi_std",
+                "rhythmic_analysis.rhythmic_regularity",
             ],
             secondary_metrics=[
-                "temporal_analysis.rhythmic_swing",
+                "temporal_analysis.groove_consistency",
                 "note_patterns.note_density",
             ],
             quality_thresholds={
@@ -143,7 +143,7 @@ class FeatureSpecificAnalyzer:
             primary_metrics=[
                 "musical_complexity.rhythmic_complexity",
                 "rhythmic_analysis.syncopation_score",
-                "rhythmic_analysis.beat_strength_distribution",
+                "rhythmic_analysis.rhythmic_regularity",
             ],
             secondary_metrics=[
                 "temporal_analysis.groove_consistency",
@@ -730,8 +730,9 @@ class FeatureSpecificAnalyzer:
                 "velocity_dynamics.dynamic_range": 1,
             },  # Dynamic emphasis
             "256": {
-                "temporal_analysis.timing_precision": -1,
-                "temporal_analysis.groove_consistency": -1,
+                "rhythmic_analysis.average_ioi": 1,
+                "rhythmic_analysis.ioi_std": 1,
+                "rhythmic_analysis.rhythmic_regularity": -1,
             },  # Timing variations
             "1323": {
                 "note_patterns.notes_per_beat": 1,
@@ -740,6 +741,7 @@ class FeatureSpecificAnalyzer:
             "182": {
                 "musical_complexity.rhythmic_complexity": 1,
                 "rhythmic_analysis.syncopation_score": 1,
+                "rhythmic_analysis.rhythmic_regularity": -1,
             },  # Rhythmic patterns
             "855": {
                 "phrase_length_avg": 1,
