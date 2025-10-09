@@ -20,10 +20,12 @@ try:
     # Import MMT modules
     from mmt import representation
     import muspy
-    
+
     # Import deterministic analysis modules directly
-    from deterministic_analysis.batch_deterministic_analyzer import BatchDeterministicAnalyzer
-    
+    from deterministic_analysis.batch_deterministic_analyzer import (
+        BatchDeterministicAnalyzer,
+    )
+
     print("✅ All modules imported successfully")
 
 except ImportError as e:
@@ -31,20 +33,14 @@ except ImportError as e:
     print("Make sure you're running from the MMT directory")
     print(f"Current directory: {current_dir}")
     print(f"MMT directory exists: {mmt_dir.exists()}")
-    
-    # Try to diagnose the issue
-    try:
-        import deterministic_analysis
-        print("✅ deterministic_analysis package found")
-    except ImportError:
-        print("❌ deterministic_analysis package not found")
-    
+
     try:
         from mmt import representation
+
         print("✅ mmt.representation found")
     except ImportError:
         print("❌ mmt.representation not found")
-        
+
     sys.exit(1)
 
 
