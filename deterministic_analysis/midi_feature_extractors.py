@@ -14,8 +14,7 @@ Features analyzed:
 """
 
 import numpy as np
-import pandas as pd
-from typing import Dict, List, Any, Tuple, Optional
+from typing import Dict, List, Any
 from pathlib import Path
 import json
 import sys
@@ -25,7 +24,7 @@ import logging
 # Add mmt to path for imports
 sys.path.append(str(Path(__file__).parent.parent / "mmt"))
 import muspy
-import representation
+from mmt import representation
 
 
 class MIDIFeatureExtractor:

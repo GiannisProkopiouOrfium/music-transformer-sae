@@ -10,16 +10,21 @@ import sys
 import torch
 from pathlib import Path
 
-# Add MMT modules
-sys.path.append(str(Path(__file__).parent.parent))
+# Add MMT modules to path
+current_dir = Path(__file__).parent
+mmt_dir = current_dir / "mmt"
+sys.path.insert(0, str(current_dir))
+sys.path.insert(0, str(mmt_dir))
 
 try:
-    import representation
-    from deterministic_analysis import BatchDeterministicAnalyzer
+    # Import MMT modules
+    from mmt import representation
     import muspy
-except ImportError as e:
-    print(f"Import error: {e}")
-    print("Make sure you're running from the MMT directory")
+
+    # Import deterministic analysis modules directly
+    from deterministic_analysis.batch_deterministic_analyzer import (
+        BatchDeterministicAnalyzer,
+    )
 
 
 class MMTBatchAnalyzer(BatchDeterministicAnalyzer):
