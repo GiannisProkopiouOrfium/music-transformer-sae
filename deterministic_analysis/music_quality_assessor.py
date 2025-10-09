@@ -13,6 +13,7 @@ This module implements multiple quality assessment approaches:
 - Aesthetic quality indicators
 """
 
+from dataclasses import dataclass
 from typing import Dict, List, Any
 from enum import Enum
 import logging
