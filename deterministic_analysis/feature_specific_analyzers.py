@@ -74,8 +74,15 @@ class FeatureSpecificAnalyzer:
             layer_type=LayerType.EARLY,
             feature_name="dynamic_emphasis",
             expected_effects=["velocity_changes", "note_emphasis", "dynamic_contrast"],
-            primary_metrics=["average_dynamics", "dynamic_range", "dynamic_variance"],
-            secondary_metrics=["note_density", "forte_notes_ratio"],
+            primary_metrics=[
+                "velocity_dynamics.average_dynamics",
+                "velocity_dynamics.dynamic_range",
+                "velocity_dynamics.dynamic_variance",
+            ],
+            secondary_metrics=[
+                "note_patterns.note_density",
+                "velocity_dynamics.forte_notes_ratio",
+            ],
             quality_thresholds={"min_velocity_range": 20, "max_velocity_std": 50},
         )
 
@@ -89,8 +96,15 @@ class FeatureSpecificAnalyzer:
                 "rhythmic_variations",
                 "micro_timing",
             ],
-            primary_metrics=["timing_precision", "groove_consistency", "tempo_stability"],
-            secondary_metrics=["rhythmic_swing", "note_density"],
+            primary_metrics=[
+                "temporal_analysis.timing_precision",
+                "temporal_analysis.groove_consistency",
+                "temporal_analysis.tempo_stability",
+            ],
+            secondary_metrics=[
+                "temporal_analysis.rhythmic_swing",
+                "note_patterns.note_density",
+            ],
             quality_thresholds={
                 "min_timing_precision": 0.3,
                 "max_rhythmic_deviation": 0.8,
@@ -103,8 +117,15 @@ class FeatureSpecificAnalyzer:
             layer_type=LayerType.EARLY,
             feature_name="note_density_control",
             expected_effects=["note_frequency", "texture_density", "activity_level"],
-            primary_metrics=["notes_per_beat", "note_density", "total_notes"],
-            secondary_metrics=["polyphonic_complexity", "average_note_duration"],
+            primary_metrics=[
+                "note_patterns.notes_per_beat",
+                "note_patterns.note_density",
+                "basic_info.total_notes",
+            ],
+            secondary_metrics=[
+                "musical_complexity.polyphonic_complexity",
+                "note_patterns.average_note_duration",
+            ],
             quality_thresholds={"min_notes_per_beat": 0.5, "max_notes_per_beat": 10.0},
         )
 
@@ -310,11 +331,19 @@ class FeatureSpecificAnalyzer:
         primary_changes = 0
         total_primary = 0
 
+        # Debug logging
+        self.logger.debug(f"Analyzing effectiveness for feature {profile.feature_id}")
+        self.logger.debug(f"Primary metrics to check: {profile.primary_metrics}")
+
         for metric in profile.primary_metrics:
-            if (
-                self._get_nested_value(baseline, metric) is not None
-                and self._get_nested_value(intervention, metric) is not None
-            ):
+            baseline_val = self._get_nested_value(baseline, metric)
+            intervention_val = self._get_nested_value(intervention, metric)
+
+            self.logger.debug(
+                f"Metric {metric}: baseline={baseline_val}, intervention={intervention_val}"
+            )
+
+            if baseline_val is not None and intervention_val is not None:
 
                 baseline_val = self._get_nested_value(baseline, metric)
                 intervention_val = self._get_nested_value(intervention, metric)
@@ -691,19 +720,28 @@ class FeatureSpecificAnalyzer:
     ) -> int:
         """Get expected direction of change for a metric given feature and strength."""
 
-        # Feature-specific expectations (using actual MIDI extractor metric names)
+        # Feature-specific expectations (using actual MIDI extractor metric names with paths)
         expectations = {
-            "325": {"average_dynamics": 1, "dynamic_range": 1},  # Dynamic emphasis
+            "325": {
+                "velocity_dynamics.average_dynamics": 1,
+                "velocity_dynamics.dynamic_range": 1,
+            },  # Dynamic emphasis
             "256": {
-                "timing_precision": -1,
-                "groove_consistency": -1,
+                "temporal_analysis.timing_precision": -1,
+                "temporal_analysis.groove_consistency": -1,
             },  # Timing variations
-            "1323": {"notes_per_beat": 1, "note_density": 1},  # Note density
+            "1323": {
+                "note_patterns.notes_per_beat": 1,
+                "note_patterns.note_density": 1,
+            },  # Note density
             "182": {
                 "rhythmic_complexity": 1,
                 "syncopation_score": 1,
             },  # Rhythmic patterns
-            "855": {"phrase_length_avg": 1, "structural_coherence": 1},  # Phrase structure
+            "855": {
+                "phrase_length_avg": 1,
+                "structural_coherence": 1,
+            },  # Phrase structure
             "997": {
                 "pitch_range": 1,
                 "average_interval_size": 1,
