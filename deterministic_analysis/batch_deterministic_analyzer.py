@@ -24,8 +24,8 @@ from datetime import datetime
 import traceback
 
 # Import our analysis modules
-from midi_feature_extractors import MIDIFeatureExtractor
-from feature_specific_analyzers import (
+from .midi_feature_extractors import MIDIFeatureExtractor
+from .feature_specific_analyzers import (
     FeatureSpecificAnalyzer,
     analyze_intervention_batch,
 )
@@ -35,13 +35,7 @@ import sys
 
 sys.path.append(str(Path(__file__).parent.parent))
 
-try:
-    from mmt.baseline.representation_remi import represent_midi_with_remi
-    from mmt.baseline.representation_mmm import represent_midi_with_mmm
-    import muspy
-except ImportError as e:
-    print(f"Warning: Could not import MMT modules: {e}")
-    print("Continuing with basic functionality...")
+import muspy
 
 
 class BatchDeterministicAnalyzer:
