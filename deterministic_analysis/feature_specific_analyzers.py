@@ -74,8 +74,8 @@ class FeatureSpecificAnalyzer:
             layer_type=LayerType.EARLY,
             feature_name="dynamic_emphasis",
             expected_effects=["velocity_changes", "note_emphasis", "dynamic_contrast"],
-            primary_metrics=["average_velocity", "velocity_range", "dynamic_variance"],
-            secondary_metrics=["note_density", "rhythmic_regularity"],
+            primary_metrics=["average_dynamics", "dynamic_range", "dynamic_variance"],
+            secondary_metrics=["note_density", "forte_notes_ratio"],
             quality_thresholds={"min_velocity_range": 20, "max_velocity_std": 50},
         )
 
@@ -89,8 +89,8 @@ class FeatureSpecificAnalyzer:
                 "rhythmic_variations",
                 "micro_timing",
             ],
-            primary_metrics=["timing_precision", "rhythmic_regularity", "ioi_std"],
-            secondary_metrics=["groove_consistency", "syncopation_score"],
+            primary_metrics=["timing_precision", "groove_consistency", "tempo_stability"],
+            secondary_metrics=["rhythmic_swing", "note_density"],
             quality_thresholds={
                 "min_timing_precision": 0.3,
                 "max_rhythmic_deviation": 0.8,
@@ -691,21 +691,21 @@ class FeatureSpecificAnalyzer:
     ) -> int:
         """Get expected direction of change for a metric given feature and strength."""
 
-        # Feature-specific expectations (simplified)
+        # Feature-specific expectations (using actual MIDI extractor metric names)
         expectations = {
-            "325": {"average_velocity": 1, "velocity_range": 1},  # Dynamic emphasis
+            "325": {"average_dynamics": 1, "dynamic_range": 1},  # Dynamic emphasis
             "256": {
                 "timing_precision": -1,
-                "rhythmic_regularity": -1,
+                "groove_consistency": -1,
             },  # Timing variations
             "1323": {"notes_per_beat": 1, "note_density": 1},  # Note density
             "182": {
                 "rhythmic_complexity": 1,
                 "syncopation_score": 1,
             },  # Rhythmic patterns
-            "855": {"phrase_count": 1, "structural_coherence": 1},  # Phrase structure
+            "855": {"phrase_length_avg": 1, "structural_coherence": 1},  # Phrase structure
             "997": {
-                "melodic_complexity": 1,
+                "pitch_range": 1,
                 "average_interval_size": 1,
             },  # Melodic contour
             "471": {
