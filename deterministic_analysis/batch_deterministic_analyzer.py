@@ -359,6 +359,7 @@ class BatchDeterministicAnalyzer:
         baseline_files: List[str],
         intervention_files: List[str],
         strength: float,
+        intervention_type: str = None,
     ) -> Dict[str, Any]:
         """
         Analyze a single feature intervention condition.
@@ -368,6 +369,7 @@ class BatchDeterministicAnalyzer:
             baseline_files: List of baseline condition files
             intervention_files: List of intervention condition files
             strength: Intervention strength used
+            intervention_type: Type of intervention ('ablation', 'addition', 'subtraction')
 
         Returns:
             Analysis results for this intervention condition
@@ -376,6 +378,7 @@ class BatchDeterministicAnalyzer:
         analysis_results = {
             "feature_id": feature_id,
             "strength": strength,
+            "intervention_type": intervention_type,
             "feature_config": self.features_config[feature_id],
             "baseline_analysis": None,
             "intervention_analysis": None,
@@ -443,13 +446,22 @@ class BatchDeterministicAnalyzer:
                 analysis_results["baseline_analysis"]
                 and analysis_results["intervention_analysis"]
             ):
+                # Determine intervention type if not provided
+                if intervention_type is None:
+                    if strength > 0:
+                        intervention_type = "addition"
+                    elif strength < 0:
+                        intervention_type = "subtraction"
+                    else:
+                        intervention_type = "ablation"
+
                 analysis_results["comparative_analysis"] = (
                     self.feature_analyzer.analyze_feature_intervention(
                         feature_id=feature_id,
                         baseline_features=analysis_results["baseline_analysis"],
                         intervention_features=analysis_results["intervention_analysis"],
                         strength=strength,
-                        intervention_type="addition" if strength > 0 else "ablation",
+                        intervention_type=intervention_type,
                     )
                 )
 
@@ -592,14 +604,30 @@ class BatchDeterministicAnalyzer:
                 if not intervention_files_list:
                     continue
 
-                strength = float(strength_str)
-                self.logger.info(f"  Processing strength {strength}...")
+                # Handle both numeric strengths and 'ablation' type
+                if strength_str == "ablation":
+                    strength = 0.0  # Treat ablation as strength 0 (feature removal)
+                    intervention_type = "ablation"
+                    self.logger.info(f"  Processing ablation...")
+                else:
+                    try:
+                        strength = float(strength_str)
+                        intervention_type = (
+                            "addition" if strength > 0 else "subtraction"
+                        )
+                        self.logger.info(f"  Processing strength {strength}...")
+                    except ValueError:
+                        self.logger.warning(
+                            f"  Skipping unknown intervention type: {strength_str}"
+                        )
+                        continue
 
                 condition_analysis = self.analyze_single_intervention(
                     feature_id=feature_id,
                     baseline_files=baseline_files,
                     intervention_files=intervention_files_list,
                     strength=strength,
+                    intervention_type=intervention_type,
                 )
 
                 feature_results["conditions"][strength_str] = condition_analysis
