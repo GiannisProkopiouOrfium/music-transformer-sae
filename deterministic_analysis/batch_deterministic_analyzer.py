@@ -126,7 +126,14 @@ class BatchDeterministicAnalyzer:
                 filename_lower = filename.lower()
 
                 # Skip non-intervention files (wav, json summaries, etc.)
-                if file_path.suffix.lower() not in ['.pt', '.mid', '.midi', '.json', '.npy', '.csv']:
+                if file_path.suffix.lower() not in [
+                    ".pt",
+                    ".mid",
+                    ".midi",
+                    ".json",
+                    ".npy",
+                    ".csv",
+                ]:
                     continue
 
                 # Check for baseline files - match to SPECIFIC feature only
@@ -138,8 +145,12 @@ class BatchDeterministicAnalyzer:
                             or f"feature_{feature_id}" in filename_lower
                         ):
                             # This baseline belongs to THIS feature specifically
-                            files_by_feature[feature_id]["baseline"].append(str(file_path))
-                            self.logger.debug(f"Found baseline for feature {feature_id}: {filename}")
+                            files_by_feature[feature_id]["baseline"].append(
+                                str(file_path)
+                            )
+                            self.logger.debug(
+                                f"Found baseline for feature {feature_id}: {filename}"
+                            )
                             break
 
                 # Check for intervention files
@@ -150,35 +161,44 @@ class BatchDeterministicAnalyzer:
                         or f"feature_{feature_id}" in filename_lower
                     ):
                         continue
-                    
+
                     # Skip if it's the baseline (already processed above)
                     if "baseline" in filename_lower:
                         continue
-                    
+
                     # Check for "ablation" specifically (your special case)
                     if "ablation" in filename_lower:
                         # Ablation is typically a special intervention (often maps to a specific strength)
                         # Add to a "ablation" strength key
-                        if "ablation" not in files_by_feature[feature_id]["interventions"]:
-                            files_by_feature[feature_id]["interventions"]["ablation"] = []
-                        files_by_feature[feature_id]["interventions"]["ablation"].append(str(file_path))
-                        self.logger.debug(f"Found ablation for feature {feature_id}: {filename}")
+                        if (
+                            "ablation"
+                            not in files_by_feature[feature_id]["interventions"]
+                        ):
+                            files_by_feature[feature_id]["interventions"][
+                                "ablation"
+                            ] = []
+                        files_by_feature[feature_id]["interventions"][
+                            "ablation"
+                        ].append(str(file_path))
+                        self.logger.debug(
+                            f"Found ablation for feature {feature_id}: {filename}"
+                        )
                         continue
-                    
+
                     # Check for add_+X.X or add_-X.X patterns (your actual format)
                     for strength in self.intervention_strengths:
                         # Build patterns for your actual file naming
                         strength_patterns = [
-                            f"add_+{strength}",       # add_+1.0
+                            f"add_+{strength}",  # add_+1.0
                             f"add_-{abs(strength)}",  # add_-1.0
-                            f"add+{strength}",        # add+1.0
-                            f"add-{abs(strength)}",   # add-1.0
-                            f"strength{strength}",    # strength1.0 (old format)
-                            f"strength_{strength}",   # strength_1.0 (old format)
-                            f"_{strength}_",          # _1.0_ 
-                            f"_{strength}.",          # _1.0.pt
+                            f"add+{strength}",  # add+1.0
+                            f"add-{abs(strength)}",  # add-1.0
+                            f"strength{strength}",  # strength1.0 (old format)
+                            f"strength_{strength}",  # strength_1.0 (old format)
+                            f"_{strength}_",  # _1.0_
+                            f"_{strength}.",  # _1.0.pt
                         ]
-                        
+
                         # Check if any pattern matches
                         matched = False
                         for pattern in strength_patterns:
@@ -186,10 +206,12 @@ class BatchDeterministicAnalyzer:
                                 files_by_feature[feature_id]["interventions"][
                                     str(strength)
                                 ].append(str(file_path))
-                                self.logger.debug(f"Found intervention for feature {feature_id}, strength {strength}: {filename}")
+                                self.logger.debug(
+                                    f"Found intervention for feature {feature_id}, strength {strength}: {filename}"
+                                )
                                 matched = True
                                 break
-                        
+
                         if matched:
                             break
 

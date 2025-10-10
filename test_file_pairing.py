@@ -23,13 +23,11 @@ def test_file_pairing(interventions_dir: str):
     print("=" * 80)
     print("TESTING FILE PAIRING LOGIC")
     print("=" * 80)
-
-    # Initialize analyzer
+    
+    # Initialize analyzer (uses default features_config internally)
     analyzer = BatchDeterministicAnalyzer(
-        features_config_path="deterministic_analysis/feature_profiles.json"
-    )
-
-    # Find intervention files
+        output_dir="test_results"
+    )    # Find intervention files
     print(f"\nScanning directory: {interventions_dir}")
     files_by_feature = analyzer.find_intervention_files(interventions_dir)
 
