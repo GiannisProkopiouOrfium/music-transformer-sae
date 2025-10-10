@@ -8,17 +8,31 @@ It can assess the effectiveness and quality of interventions both with and witho
 Features:
 - Layer-specific analysis (Early/Mid/Late processing characteristics)
 - Feature-specific impact assessment (what each feature actually controls)
-- Intervention effectiveness scoring
-- Musical quality preservation assessment
+- Intervention effectiveness scoring (RELATIVE to baseline)
+- Musical quality preservation assessment (using calibrated thresholds for context)
 - Decision-making framework for intervention success
+
+Key Philosophy:
+- PRIMARY FOCUS: Relative changes (baseline vs intervention)
+- SECONDARY CONTEXT: Calibrated thresholds for quality reference
+- GOAL: Measure if intervention achieves intended effect, not if it matches training distribution
 """
 
 import numpy as np
-from typing import Dict, List, Any
+from typing import Dict, List, Any, Optional
 from pathlib import Path
 import logging
 from dataclasses import dataclass
 from enum import Enum
+
+# Import threshold manager for calibrated threshold context
+try:
+    from .threshold_manager import ThresholdManager
+
+    THRESHOLD_MANAGER_AVAILABLE = True
+except ImportError:
+    THRESHOLD_MANAGER_AVAILABLE = False
+    logging.warning("ThresholdManager not available, using fallback quality assessment")
 
 
 class LayerType(Enum):
@@ -56,11 +70,32 @@ class FeatureProfile:
 class FeatureSpecificAnalyzer:
     """Analyze interventions with feature-specific knowledge and decision-making."""
 
-    def __init__(self):
-        """Initialize with feature profiles and analysis configuration."""
+    def __init__(self, use_calibrated_thresholds: bool = True):
+        """
+        Initialize with feature profiles and analysis configuration.
+
+        Args:
+            use_calibrated_thresholds: Whether to use calibrated thresholds for context
+                                      (default: True, falls back if unavailable)
+        """
         self.logger = logging.getLogger(__name__)
         self.feature_profiles = self._initialize_feature_profiles()
         self.quality_weights = self._initialize_quality_weights()
+
+        # Initialize threshold manager if available
+        self.threshold_manager = None
+        if use_calibrated_thresholds and THRESHOLD_MANAGER_AVAILABLE:
+            try:
+                self.threshold_manager = ThresholdManager()
+                self.logger.info("Calibrated thresholds loaded successfully")
+            except Exception as e:
+                self.logger.warning(f"Failed to load calibrated thresholds: {e}")
+                self.logger.warning("Falling back to relative-only analysis")
+        else:
+            if not THRESHOLD_MANAGER_AVAILABLE:
+                self.logger.info(
+                    "ThresholdManager not available, using relative-only analysis"
+                )
 
     def _initialize_feature_profiles(self) -> Dict[str, FeatureProfile]:
         """Initialize profiles for our 9 selected features."""
@@ -330,7 +365,95 @@ class FeatureSpecificAnalyzer:
         # Make overall decision
         analysis["overall_decision"] = self._make_intervention_decision(analysis)
 
+        # Add interpretable summary with threshold context
+        analysis["summary"] = self._generate_intervention_summary(analysis, profile)
+
         return analysis
+
+    def _generate_intervention_summary(
+        self, analysis: Dict[str, Any], profile: FeatureProfile
+    ) -> Dict[str, Any]:
+        """
+        Generate human-readable summary of intervention results.
+        Highlights relative changes and provides threshold context.
+        """
+        effectiveness = analysis.get("effectiveness_analysis", {})
+        quality = analysis.get("quality_assessment", {})
+
+        summary = {
+            "success": analysis.get("overall_decision", {}).get("should_accept", False),
+            "effectiveness": effectiveness.get("effectiveness_score", 0.0),
+            "quality_preservation": quality.get("overall_quality_score", 0.0),
+            "key_changes": [],
+            "quality_context": {},
+        }
+
+        # Extract key metric changes with context
+        primary_changes = effectiveness.get("primary_metric_changes", {})
+        for metric, change_info in primary_changes.items():
+            change_summary = {
+                "metric": metric,
+                "baseline": change_info["baseline"],
+                "intervention": change_info["intervention"],
+                "percent_change": change_info["change_percent"],
+                "absolute_change": change_info["absolute_change"],
+            }
+
+            # Add threshold context if available
+            if "threshold_context" in change_info:
+                ctx = change_info["threshold_context"]
+                change_summary["context"] = {
+                    "baseline_quality": f"P{ctx['baseline_percentile']:.0f}",
+                    "intervention_quality": f"P{ctx['intervention_percentile']:.0f}",
+                    "moved_toward_better": ctx["moved_toward_better"],
+                    "interpretation": self._interpret_percentile_change(
+                        ctx["baseline_percentile"],
+                        ctx["intervention_percentile"],
+                        change_info["change_percent"],
+                    ),
+                }
+
+            if abs(change_info["change_percent"]) > 5:  # Only report meaningful changes
+                summary["key_changes"].append(change_summary)
+
+        # Overall quality context
+        if self.threshold_manager:
+            summary["quality_context"] = {
+                "has_calibrated_thresholds": True,
+                "interpretation": "Quality assessment uses percentile-based context from training data",
+                "note": "Primary evaluation is based on intended changes, not absolute quality",
+            }
+        else:
+            summary["quality_context"] = {
+                "has_calibrated_thresholds": False,
+                "interpretation": "Quality assessment based on relative changes only",
+                "note": "Consider running threshold calibration for additional context",
+            }
+
+        return summary
+
+    def _interpret_percentile_change(
+        self,
+        baseline_percentile: float,
+        intervention_percentile: float,
+        percent_change: float,
+    ) -> str:
+        """Generate human-readable interpretation of metric change."""
+        percentile_diff = intervention_percentile - baseline_percentile
+
+        if abs(percent_change) < 5:
+            return "Minimal change"
+        elif percentile_diff > 25:
+            return f"Large improvement: moved from P{baseline_percentile:.0f} to P{intervention_percentile:.0f} (top {100-intervention_percentile:.0f}%)"
+        elif percentile_diff > 10:
+            return f"Moderate improvement: moved from P{baseline_percentile:.0f} to P{intervention_percentile:.0f}"
+        elif percentile_diff < -25:
+            return f"Large degradation: moved from P{baseline_percentile:.0f} to P{intervention_percentile:.0f}"
+        elif percentile_diff < -10:
+            return f"Moderate degradation: moved from P{baseline_percentile:.0f} to P{intervention_percentile:.0f}"
+        else:
+            direction = "increased" if percent_change > 0 else "decreased"
+            return f"Value {direction} by {abs(percent_change):.1f}% with minimal quality change"
 
     def _analyze_intervention_effectiveness(
         self,
@@ -339,7 +462,19 @@ class FeatureSpecificAnalyzer:
         intervention: Dict[str, Any],
         strength: float,
     ) -> Dict[str, Any]:
-        """Analyze how effectively the intervention achieved its intended effects."""
+        """
+        Analyze how effectively the intervention achieved its intended effects.
+
+        FOCUS: Relative changes (baseline vs intervention)
+        CONTEXT: Calibrated thresholds provide quality reference but don't determine success
+
+        An intervention is effective if:
+        1. It produces INTENDED changes in target metrics (direction matters)
+        2. The magnitude is appropriate for the intervention strength
+        3. Changes are statistically meaningful (>5% relative change)
+
+        Quality thresholds are used ONLY for context, not pass/fail criteria.
+        """
 
         effectiveness = {
             "primary_metric_changes": {},
@@ -347,6 +482,8 @@ class FeatureSpecificAnalyzer:
             "expected_direction_alignment": 0.0,
             "magnitude_appropriateness": 0.0,
             "effectiveness_score": 0.0,
+            "relative_improvement": {},  # NEW: Track if metrics improved relative to baseline
+            "threshold_context": {},  # NEW: Percentile context from calibrated thresholds
         }
 
         # Analyze primary metrics (most important for this feature)
@@ -382,12 +519,55 @@ class FeatureSpecificAnalyzer:
                         intervention_val * 100 if intervention_val != 0 else 0
                     )
 
-                effectiveness["primary_metric_changes"][metric] = {
+                # Calculate relative change
+                change_info = {
                     "baseline": baseline_val,
                     "intervention": intervention_val,
                     "change_percent": change_percent,
                     "absolute_change": intervention_val - baseline_val,
                 }
+
+                # Add threshold context if available (for reference only)
+                if self.threshold_manager:
+                    try:
+                        # Get percentile ranks for both baseline and intervention
+                        baseline_percentile = (
+                            self.threshold_manager.get_metric_percentile_rank(
+                                metric, baseline_val
+                            )
+                        )
+                        intervention_percentile = (
+                            self.threshold_manager.get_metric_percentile_rank(
+                                metric, intervention_val
+                            )
+                        )
+
+                        if (
+                            baseline_percentile is not None
+                            and intervention_percentile is not None
+                        ):
+                            change_info["threshold_context"] = {
+                                "baseline_percentile": baseline_percentile,
+                                "intervention_percentile": intervention_percentile,
+                                "percentile_change": intervention_percentile
+                                - baseline_percentile,
+                                "moved_toward_better": intervention_percentile
+                                > baseline_percentile,
+                            }
+
+                            # Track if intervention moved metric toward better quality
+                            effectiveness["relative_improvement"][metric] = {
+                                "improved": intervention_percentile
+                                > baseline_percentile,
+                                "percentile_gain": intervention_percentile
+                                - baseline_percentile,
+                            }
+                    except Exception as e:
+                        self.logger.debug(
+                            f"Could not get threshold context for {metric}: {e}"
+                        )
+
+                effectiveness["primary_metric_changes"][metric] = change_info
 
                 # Check if ANY meaningful change occurred (not just expected direction)
                 abs_change = abs(change_percent)
@@ -442,19 +622,51 @@ class FeatureSpecificAnalyzer:
             np.mean(primary_change_magnitudes) if primary_change_magnitudes else 0.0
         )
 
-        # Overall effectiveness score - balanced between direction and magnitude
-        # Give credit for ANY meaningful change, not just expected ones
+        # Calculate quality improvement score (from threshold context)
+        quality_improvement_score = 0.0
+        if effectiveness["relative_improvement"]:
+            improvements = [
+                info["percentile_gain"]
+                for info in effectiveness["relative_improvement"].values()
+            ]
+            if improvements:
+                # Average percentile gain, normalized to 0-1
+                avg_gain = np.mean(improvements)
+                quality_improvement_score = min(
+                    1.0, max(0.0, (avg_gain + 50) / 100)
+                )  # Map -50 to +50 percentile gain to 0-1
+
+        # Overall effectiveness score - hybrid approach
+        # PRIMARY: Relative changes (direction + magnitude + detection)
+        # SECONDARY: Quality improvement (from threshold context)
         direction_score = effectiveness["expected_direction_alignment"]
         magnitude_score = effectiveness["magnitude_appropriateness"]
         change_detected_score = min(
             1.0, effectiveness["average_change_magnitude"] / 30.0
         )  # Normalize to 0-1
 
-        effectiveness["effectiveness_score"] = (
-            direction_score * 0.4  # Expected direction (less weight)
+        # Weighted scoring:
+        # - 70% based on RELATIVE changes (primary focus)
+        # - 30% based on quality improvement context (secondary validation)
+        relative_change_score = (
+            direction_score * 0.4  # Expected direction
             + magnitude_score * 0.2  # Appropriate magnitude
-            + change_detected_score * 0.4  # ANY detectable change (more weight)
+            + change_detected_score * 0.4  # ANY detectable change
         )
+
+        effectiveness["effectiveness_score"] = (
+            relative_change_score * 0.7  # 70% from relative changes
+            + quality_improvement_score * 0.3  # 30% from quality improvement
+        )
+
+        # Add breakdown for transparency
+        effectiveness["score_breakdown"] = {
+            "relative_change_score": relative_change_score,
+            "quality_improvement_score": quality_improvement_score,
+            "direction_component": direction_score * 0.4,
+            "magnitude_component": magnitude_score * 0.2,
+            "change_detection_component": change_detected_score * 0.4,
+        }
 
         return effectiveness
 
