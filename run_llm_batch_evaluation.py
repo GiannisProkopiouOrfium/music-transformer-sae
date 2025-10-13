@@ -249,9 +249,8 @@ class BatchLLMEvaluator:
             elif isinstance(tokens, list):
                 tokens = np.array(tokens)
 
-            # Squeeze to 1D if needed (remove batch dimension)
-            if tokens.ndim > 1:
-                tokens = tokens.squeeze()
+            # Flatten to 1D array (remove all extra dimensions)
+            tokens = tokens.flatten()
 
             # Decode tokens to MusPy Music object
             music = representation.decode(tokens, self.encoding, self.vocabulary)

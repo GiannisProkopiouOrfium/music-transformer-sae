@@ -106,9 +106,8 @@ if torch.is_tensor(baseline_tokens):
 elif isinstance(baseline_tokens, list):
     baseline_tokens = np.array(baseline_tokens)
 
-# Squeeze to 1D if needed (remove batch dimension)
-if baseline_tokens.ndim > 1:
-    baseline_tokens = baseline_tokens.squeeze()
+# Flatten to 1D array (remove all extra dimensions)
+baseline_tokens = baseline_tokens.flatten()
 
 # Decode tokens to MusPy Music object
 baseline_midi = representation.decode(baseline_tokens, encoding, vocabulary)
@@ -130,9 +129,8 @@ if torch.is_tensor(intervention_tokens):
 elif isinstance(intervention_tokens, list):
     intervention_tokens = np.array(intervention_tokens)
 
-# Squeeze to 1D if needed (remove batch dimension)
-if intervention_tokens.ndim > 1:
-    intervention_tokens = intervention_tokens.squeeze()
+# Flatten to 1D array (remove all extra dimensions)
+intervention_tokens = intervention_tokens.flatten()
 
 # Decode tokens to MusPy Music object
 intervention_midi = representation.decode(intervention_tokens, encoding, vocabulary)
