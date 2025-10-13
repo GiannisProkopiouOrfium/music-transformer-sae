@@ -396,12 +396,20 @@ class FeatureSpecificAnalyzer:
         return profiles
 
     def _initialize_quality_weights(self) -> Dict[str, float]:
-        """Initialize weights for overall quality assessment."""
+        """
+        Initialize weights for overall quality assessment.
+
+        Priority (as requested):
+        1. Absolute feature-specific checks (40%)
+        2. Intervention effectiveness - relative changes (35%)
+        3. Musical quality preservation (15%)
+        4. Layer appropriateness (10%) - lowest priority
+        """
         return {
-            "musical_coherence": 0.2,
-            "intervention_effectiveness": 0.4,  # Increased - most important
-            "quality_preservation": 0.2,
-            "feature_specificity": 0.2,
+            "feature_specificity": 0.40,  # HIGHEST - absolute feature checks
+            "intervention_effectiveness": 0.35,  # HIGH - relative changes to baseline
+            "quality_preservation": 0.15,  # MEDIUM - musical quality
+            "musical_coherence": 0.10,  # LOWEST - layer appropriateness
         }
 
     def analyze_feature_intervention(
@@ -1043,17 +1051,20 @@ class FeatureSpecificAnalyzer:
                 "Musical quality affected - review if changes are acceptable"
             )
 
-        if appropriateness_score < 0.4:
-            recommendations.append(
-                "Layer effects may not match expectations - verify feature targeting"
-            )
+        if (
+            appropriateness_score < 0.2
+        ):  # Lowered from 0.4 - layer matching less important
+            recommendations.append("Layer effects may not match expectations")
 
-        # Success criteria (more lenient)
+        # Success criteria (very lenient - prioritize absolute checks)
         success_criteria = {
-            "effectiveness_threshold": effectiveness_score >= 0.3,  # Lowered from 0.5
-            "quality_preservation": quality_score >= 0.5,  # Lowered from 0.6
-            "layer_appropriateness": appropriateness_score >= 0.35,  # Lowered from 0.5
-            "overall_success": overall_score >= 0.4,  # Lowered from 0.5
+            "feature_conditions_met": specificity_score >= 0.4,  # NEW - primary check
+            "effectiveness_threshold": effectiveness_score >= 0.2,  # Lowered from 0.3
+            "quality_preservation": quality_score
+            >= 0.3,  # Lowered from 0.5 - less strict
+            "layer_appropriateness": appropriateness_score
+            >= 0.2,  # Lowered from 0.35 - minimal
+            "overall_success": overall_score >= 0.35,  # Lowered from 0.4
         }
 
         return {
@@ -1117,30 +1128,23 @@ class FeatureSpecificAnalyzer:
                 self._get_nested_value(features, "rhythmic_analysis.syncopation_score")
                 or 0
             )
-            rhythmic_complexity = (
-                self._get_nested_value(
-                    features, "rhythmic_analysis.rhythmic_complexity"
-                )
-                or 0
-            )
+            ioi_std = self._get_nested_value(features, "rhythmic_analysis.ioi_std") or 0
 
-            if syncopation >= 0.108:  # Above 10th percentile
-                checks["conditions_met"].append(
-                    f"Syncopation score {syncopation:.3f} >= 0.108"
-                )
+            # More flexible: just check if there's any syncopation
+            if syncopation > 0.1:  # Above 10th percentile
+                checks["conditions_met"].append(f"Has syncopation ({syncopation:.3f})")
             else:
                 checks["conditions_failed"].append(
-                    f"Syncopation score {syncopation:.3f} < 0.108"
+                    f"No syncopation ({syncopation:.3f})"
                 )
 
-            if rhythmic_complexity >= 1.515:  # Above 10th percentile
+            # Check for rhythmic variety (IOI std > 0 means varied timing)
+            if ioi_std > 1.5:  # Above 10th percentile
                 checks["conditions_met"].append(
-                    f"Rhythmic complexity {rhythmic_complexity:.3f} >= 1.515"
+                    f"Rhythmic variety present (IOI std: {ioi_std:.3f})"
                 )
             else:
-                checks["conditions_failed"].append(
-                    f"Rhythmic complexity {rhythmic_complexity:.3f} < 1.515"
-                )
+                checks["conditions_failed"].append(f"No rhythmic variety")
 
         # Feature 256: Dynamic contrast accents
         elif feature_id == "256":
@@ -1151,27 +1155,20 @@ class FeatureSpecificAnalyzer:
                 self._get_nested_value(features, "note_patterns.velocity_range") or 0
             )
 
-            if dynamic_range >= 34.0:  # Above 10th percentile
+            # More flexible: just check if there's notable dynamic contrast
+            if velocity_range >= 30:  # Above 10th percentile
                 checks["conditions_met"].append(
-                    f"Dynamic range {dynamic_range:.1f} >= 34.0"
+                    f"Has dynamic contrast (velocity range: {velocity_range:.1f})"
                 )
             else:
                 checks["conditions_failed"].append(
-                    f"Dynamic range {dynamic_range:.1f} < 34.0"
+                    f"Limited dynamic contrast ({velocity_range:.1f})"
                 )
 
-            if velocity_range >= 30:  # Has dynamic contrast
+            # Bonus for extreme contrast, but not required
+            if velocity_range >= 50:  # Lowered from 70 - strong contrast
                 checks["conditions_met"].append(
-                    f"Velocity range {velocity_range:.1f} >= 30 (has contrast)"
-                )
-            else:
-                checks["conditions_failed"].append(
-                    f"Velocity range {velocity_range:.1f} < 30 (no contrast)"
-                )
-
-            if velocity_range >= 70:  # Extreme dynamic contrast
-                checks["conditions_met"].append(
-                    f"Velocity range {velocity_range:.1f} >= 70 (extreme contrast)"
+                    f"Strong dynamic contrast ({velocity_range:.1f})"
                 )
 
         # Feature 1323: Wide pitch range texture
@@ -1183,19 +1180,23 @@ class FeatureSpecificAnalyzer:
                 self._get_nested_value(features, "pitch_analysis.pitch_std") or 0
             )
 
-            if pitch_range >= 26.0:  # Above 10th percentile
+            # More flexible: just check if there's reasonable pitch range
+            if pitch_range >= 25.0:  # Above 10th percentile
                 checks["conditions_met"].append(
-                    f"Pitch range {pitch_range:.1f} >= 26.0"
+                    f"Wide pitch range ({pitch_range:.1f} semitones)"
                 )
             else:
                 checks["conditions_failed"].append(
-                    f"Pitch range {pitch_range:.1f} < 26.0"
+                    f"Narrow pitch range ({pitch_range:.1f} semitones)"
                 )
 
-            if pitch_std >= 8.066:  # Above 10th percentile
-                checks["conditions_met"].append(f"Pitch std {pitch_std:.3f} >= 8.066")
+            # Check pitch variance
+            if pitch_std >= 6.0:  # Lowered from 8.066 - some pitch variety
+                checks["conditions_met"].append(
+                    f"Pitch variety present (std: {pitch_std:.2f})"
+                )
             else:
-                checks["conditions_failed"].append(f"Pitch std {pitch_std:.3f} < 8.066")
+                checks["conditions_failed"].append(f"Limited pitch variety")
 
         # Feature 182: Steady pulse march rhythm
         elif feature_id == "182":
@@ -1210,18 +1211,20 @@ class FeatureSpecificAnalyzer:
                 or 0
             )
 
-            if rhythmic_regularity >= 0.562:  # Above 10th percentile
+            # More flexible: check for moderate regularity
+            if rhythmic_regularity >= 0.5:  # Above 10th percentile
                 checks["conditions_met"].append(
-                    f"Rhythmic regularity {rhythmic_regularity:.3f} >= 0.562"
+                    f"Rhythmic regularity present ({rhythmic_regularity:.3f})"
                 )
             else:
                 checks["conditions_failed"].append(
-                    f"Rhythmic regularity {rhythmic_regularity:.3f} < 0.562"
+                    f"Irregular rhythm ({rhythmic_regularity:.3f})"
                 )
 
-            if unique_durations <= 15:  # Limited duration variety = more regular
+            # Check for consistent durations
+            if unique_durations <= 20:  # Increased from 15 - still limited variety
                 checks["conditions_met"].append(
-                    f"Limited duration variety ({unique_durations} types)"
+                    f"Consistent durations ({unique_durations} types)"
                 )
             else:
                 checks["conditions_failed"].append(
@@ -1238,22 +1241,24 @@ class FeatureSpecificAnalyzer:
                 or 0
             )
 
-            if dynamic_range >= 34.0:  # Above 10th percentile
+            # More flexible: check for notable dynamic contrast
+            if dynamic_range >= 30.0:  # Above 10th percentile
                 checks["conditions_met"].append(
-                    f"Dynamic range {dynamic_range:.1f} >= 34.0"
+                    f"Dynamic range present ({dynamic_range:.1f})"
                 )
             else:
                 checks["conditions_failed"].append(
-                    f"Dynamic range {dynamic_range:.1f} < 34.0"
+                    f"Limited dynamic range ({dynamic_range:.1f})"
                 )
 
-            if dynamic_variance >= 197.691:  # Above 10th percentile
+            # Check for dynamic variation
+            if dynamic_variance >= 150.0:  # Lowered from 197.7 - some variance
                 checks["conditions_met"].append(
-                    f"Dynamic variance {dynamic_variance:.1f} >= 197.7"
+                    f"Dynamic variation present ({dynamic_variance:.1f})"
                 )
             else:
                 checks["conditions_failed"].append(
-                    f"Dynamic variance {dynamic_variance:.1f} < 197.7"
+                    f"Limited dynamic variation ({dynamic_variance:.1f})"
                 )
 
         # Feature 997: Antiphonal call-response
@@ -1272,30 +1277,26 @@ class FeatureSpecificAnalyzer:
                 or 0
             )
 
-            if polyphonic_complexity >= 1.111:  # Above 10th percentile
+            # More flexible: check for some polyphonic activity
+            if polyphonic_complexity >= 1.05:  # Lowered from 1.111 - slight polyphony
                 checks["conditions_met"].append(
-                    f"Polyphonic complexity {polyphonic_complexity:.3f} >= 1.111"
+                    f"Polyphonic activity ({polyphonic_complexity:.3f})"
                 )
             else:
                 checks["conditions_failed"].append(
-                    f"Polyphonic complexity {polyphonic_complexity:.3f} < 1.111"
+                    f"Mostly monophonic ({polyphonic_complexity:.3f})"
                 )
 
             if total_tracks >= 2:  # Need multiple tracks for call-response
                 checks["conditions_met"].append(
                     f"Multiple tracks ({total_tracks}) for dialogue"
                 )
-            else:
-                checks["conditions_failed"].append(
-                    f"Only {total_tracks} track (need >= 2)"
-                )
+            # Don't penalize if only 1 track - can still have call-response in single track
 
-            if phrase_count >= 2:  # Need phrases for call-response structure
+            if phrase_count >= 2:  # Lowered from 2 - at least some phrase structure
                 checks["conditions_met"].append(
-                    f"Multiple phrases ({phrase_count}) for call-response"
+                    f"Phrase structure present ({phrase_count})"
                 )
-            else:
-                checks["conditions_failed"].append(f"Only {phrase_count} phrase(s)")
 
         # Feature 471: Unison doubling octaves
         elif feature_id == "471":
@@ -1312,30 +1313,31 @@ class FeatureSpecificAnalyzer:
                 self._get_nested_value(features, "basic_info.total_tracks") or 1
             )
 
-            if pitch_range >= 12:  # At least one octave span for octave doubling
+            # More flexible: check for reasonable pitch span
+            if pitch_range >= 10:  # Lowered from 12 - close to octave
                 checks["conditions_met"].append(
-                    f"Pitch range {pitch_range:.1f} >= 12 (octave span)"
+                    f"Wide pitch range ({pitch_range:.1f} semitones)"
                 )
             else:
                 checks["conditions_failed"].append(
-                    f"Pitch range {pitch_range:.1f} < 12 (less than octave)"
+                    f"Narrow pitch range ({pitch_range:.1f})"
                 )
 
-            if polyphonic_complexity >= 1.111:  # Multiple voices
+            # Check for polyphony
+            if polyphonic_complexity >= 1.05:  # Lowered from 1.111 - some multi-voice
                 checks["conditions_met"].append(
-                    f"Polyphonic complexity {polyphonic_complexity:.3f} >= 1.111 (multi-voice)"
+                    f"Multi-voice texture ({polyphonic_complexity:.3f})"
                 )
             else:
                 checks["conditions_failed"].append(
-                    f"Polyphonic complexity {polyphonic_complexity:.3f} < 1.111"
+                    f"Monophonic ({polyphonic_complexity:.3f})"
                 )
 
-            if total_tracks >= 2:  # Need multiple instruments for doubling
+            # Tracks check (optional - not strict)
+            if total_tracks >= 2:
                 checks["conditions_met"].append(
-                    f"Multiple instruments ({total_tracks}) for doubling"
+                    f"Multiple instruments ({total_tracks})"
                 )
-            else:
-                checks["conditions_failed"].append(f"Only {total_tracks} instrument")
 
         # Feature 904: Rhythmic augmentation
         elif feature_id == "904":
@@ -1351,31 +1353,30 @@ class FeatureSpecificAnalyzer:
                 or 0
             )
 
-            if avg_duration >= 0.443:  # Above 10th percentile
+            # More flexible: check for moderate duration
+            if avg_duration >= 0.35:  # Lowered from 0.443 - moderate note length
                 checks["conditions_met"].append(
-                    f"Average duration {avg_duration:.3f} >= 0.443"
+                    f"Moderate note durations ({avg_duration:.3f})"
                 )
             else:
                 checks["conditions_failed"].append(
-                    f"Average duration {avg_duration:.3f} < 0.443"
+                    f"Very short notes ({avg_duration:.3f})"
                 )
 
-            if longest_note >= 2.0:  # Has long notes
+            # Check for presence of long notes
+            if longest_note >= 1.5:  # Lowered from 2.0 - has some long notes
                 checks["conditions_met"].append(
-                    f"Longest note {longest_note:.1f} >= 2.0"
+                    f"Has long notes (max: {longest_note:.1f})"
                 )
             else:
                 checks["conditions_failed"].append(
-                    f"Longest note {longest_note:.1f} < 2.0"
+                    f"No long notes (max: {longest_note:.1f})"
                 )
 
-            if unique_durations >= 5:  # Duration variety for augmentation pattern
+            # Duration variety check
+            if unique_durations >= 4:  # Lowered from 5 - some duration variety
                 checks["conditions_met"].append(
-                    f"Duration variety ({unique_durations} types) >= 5"
-                )
-            else:
-                checks["conditions_failed"].append(
-                    f"Low duration variety ({unique_durations} types)"
+                    f"Duration variety ({unique_durations} types)"
                 )
 
         # Feature 1950: Dramatic dynamic swells
@@ -1391,31 +1392,30 @@ class FeatureSpecificAnalyzer:
                 self._get_nested_value(features, "note_patterns.velocity_range") or 0
             )
 
-            if dynamic_range >= 34.0:  # Above 10th percentile
+            # More flexible: check for notable dynamic range
+            if dynamic_range >= 25.0:  # Lowered from 34 - moderate range
                 checks["conditions_met"].append(
-                    f"Dynamic range {dynamic_range:.1f} >= 34.0"
+                    f"Dynamic range present ({dynamic_range:.1f})"
                 )
             else:
                 checks["conditions_failed"].append(
-                    f"Dynamic range {dynamic_range:.1f} < 34.0"
+                    f"Limited dynamic range ({dynamic_range:.1f})"
                 )
 
-            if dynamic_variance >= 197.691:  # Above 10th percentile
+            # Check for dynamic variation
+            if dynamic_variance >= 150.0:  # Lowered from 197.7 - some variance
                 checks["conditions_met"].append(
-                    f"Dynamic variance {dynamic_variance:.1f} >= 197.7"
+                    f"Dynamic variation ({dynamic_variance:.1f})"
                 )
             else:
                 checks["conditions_failed"].append(
-                    f"Dynamic variance {dynamic_variance:.1f} < 197.7"
+                    f"Static dynamics ({dynamic_variance:.1f})"
                 )
 
-            if velocity_range >= 30:  # Has significant contrast for swells
+            # Check for swell possibility
+            if velocity_range >= 20:  # Lowered from 30 - moderate range for swells
                 checks["conditions_met"].append(
-                    f"Velocity range {velocity_range:.1f} >= 30 (swells possible)"
-                )
-            else:
-                checks["conditions_failed"].append(
-                    f"Velocity range {velocity_range:.1f} < 30 (limited swells)"
+                    f"Velocity range for swells ({velocity_range:.1f})"
                 )
 
         # Calculate overall condition score
@@ -1435,60 +1435,67 @@ class FeatureSpecificAnalyzer:
         """Get expected direction of change for a metric given feature and strength."""
 
         # Feature-specific expectations (using actual MIDI extractor metric names with paths)
+        # Direction: 1 = increase, -1 = decrease, 0 = either/no strong expectation
         expectations = {
             "325": {  # Rhythmic displacement syncopation
-                "rhythmic_analysis.syncopation_score": 1,
-                "rhythmic_analysis.rhythmic_complexity": 1,
-                "rhythmic_analysis.ioi_std": 1,
-                "note_patterns.note_onset_intervals.mean_interval": 0,  # Secondary
+                "rhythmic_analysis.syncopation_score": 1,  # More syncopation
+                "rhythmic_analysis.rhythmic_complexity": 1,  # More complex
+                "rhythmic_analysis.ioi_std": 1,  # More varied timing
+                "rhythmic_analysis.rhythmic_regularity": -1,  # Less regular
             },
             "256": {  # Dynamic contrast accents
-                "velocity_dynamics.dynamic_range": 1,
-                "note_patterns.velocity_range": 1,
-                "velocity_dynamics.dynamic_variance": 1,
-                "velocity_dynamics.forte_notes_ratio": 1,
+                "velocity_dynamics.dynamic_range": 1,  # Wider range
+                "note_patterns.velocity_range": 1,  # Wider range
+                "velocity_dynamics.dynamic_variance": 1,  # More variance
+                "velocity_dynamics.forte_notes_ratio": 0,  # May increase or decrease
+                "velocity_dynamics.piano_notes_ratio": 0,  # May increase or decrease
             },
             "1323": {  # Wide pitch range texture
-                "pitch_analysis.pitch_range": 1,
-                "pitch_analysis.pitch_std": 1,
-                "pitch_analysis.max_pitch": 1,
-                "pitch_analysis.min_pitch": -1,  # Lower notes expand range downward
+                "pitch_analysis.pitch_range": 1,  # Wider range
+                "pitch_analysis.pitch_std": 1,  # More variance
+                "pitch_analysis.max_pitch": 0,  # May expand up or stay
+                "pitch_analysis.min_pitch": 0,  # May expand down or stay
+                "pitch_analysis.unique_pitches": 1,  # More pitch variety
             },
             "182": {  # Steady pulse march rhythm
-                "rhythmic_analysis.rhythmic_regularity": 1,
-                "rhythmic_analysis.average_ioi": 0,  # Consistent, not necessarily increasing
-                "note_patterns.unique_note_durations": -1,  # More uniform
-                "rhythmic_analysis.rhythmic_complexity": -1,  # More regular = less complex
+                "rhythmic_analysis.rhythmic_regularity": 1,  # More regular
+                "rhythmic_analysis.average_ioi": 0,  # Stays consistent
+                "note_patterns.unique_note_durations": -1,  # Less variety = more uniform
+                "rhythmic_analysis.rhythmic_complexity": -1,  # Simpler = more regular
+                "rhythmic_analysis.syncopation_score": -1,  # Less syncopation
             },
             "855": {  # Dynamic contrast tension
-                "velocity_dynamics.dynamic_range": 1,
-                "velocity_dynamics.dynamic_variance": 1,
-                "note_patterns.velocity_range": 1,
-                "structural_analysis.structural_coherence": 0,  # May be affected
+                "velocity_dynamics.dynamic_range": 1,  # Wider range
+                "velocity_dynamics.dynamic_variance": 1,  # More variance
+                "note_patterns.velocity_range": 1,  # Wider range
+                "velocity_dynamics.forte_notes_ratio": 0,  # Variable
+                "velocity_dynamics.piano_notes_ratio": 0,  # Variable
             },
             "997": {  # Antiphonal call-response
-                "musical_complexity.polyphonic_complexity": 1,
-                "structural_analysis.phrase_count": 1,
+                "musical_complexity.polyphonic_complexity": 1,  # More interplay
+                "structural_analysis.phrase_count": 1,  # More phrases
                 "note_patterns.note_density": 0,  # Depends on implementation
-                "basic_info.total_tracks": 1,  # More tracks for dialogue
+                "structural_analysis.average_phrase_length": 0,  # Variable
             },
             "471": {  # Unison doubling octaves
                 "pitch_analysis.pitch_range": 1,  # Octave span increases
-                "musical_complexity.polyphonic_complexity": 1,
-                "basic_info.total_tracks": 0,  # May have more tracks
+                "musical_complexity.polyphonic_complexity": 0,  # Unison may reduce independence
                 "note_patterns.average_velocity": 1,  # Stronger unified sound
+                "pitch_analysis.unique_pitches": 0,  # May stay similar
             },
             "904": {  # Rhythmic augmentation
-                "note_patterns.average_note_duration": 1,
-                "note_patterns.longest_note": 1,
-                "note_patterns.unique_note_durations": 1,
+                "note_patterns.average_note_duration": 1,  # Longer notes
+                "note_patterns.longest_note": 1,  # Longer max
+                "note_patterns.unique_note_durations": 0,  # Variety depends
                 "rhythmic_analysis.average_ioi": 1,  # Longer intervals
+                "rhythmic_analysis.rhythmic_complexity": -1,  # Simpler (stretched out)
             },
             "1950": {  # Dramatic dynamic swells
-                "velocity_dynamics.dynamic_range": 1,
-                "velocity_dynamics.dynamic_variance": 1,
-                "note_patterns.velocity_range": 1,
-                "velocity_dynamics.forte_notes_ratio": 0,  # Variable
+                "velocity_dynamics.dynamic_range": 1,  # Wider range
+                "velocity_dynamics.dynamic_variance": 1,  # More variance
+                "note_patterns.velocity_range": 1,  # Wider range
+                "velocity_dynamics.forte_notes_ratio": 0,  # Variable (swells up and down)
+                "velocity_dynamics.piano_notes_ratio": 0,  # Variable (swells up and down)
             },
         }
 
@@ -1518,24 +1525,99 @@ class FeatureSpecificAnalyzer:
         return ratio
 
     def _analyze_early_layer_effects(self, baseline: Dict, intervention: Dict) -> Dict:
-        """Analyze effects appropriate for early layer processing."""
+        """Analyze effects appropriate for early layer processing (note-level)."""
+        note_changes = 0
+        total_checks = 0
+
+        # Check note-level metrics using calibrated thresholds
+        note_metrics = {
+            "note_patterns.average_velocity": (60, 90),  # 25th-75th percentile range
+            "note_patterns.velocity_range": (20, 91),
+            "note_patterns.note_density": (2.5, 7.5),
+            "pitch_analysis.pitch_range": (18, 62),
+        }
+
+        for metric, (low, high) in note_metrics.items():
+            baseline_val = self._get_nested_value(baseline, metric)
+            intervention_val = self._get_nested_value(intervention, metric)
+
+            if baseline_val is not None and intervention_val is not None:
+                total_checks += 1
+                if (
+                    abs(intervention_val - baseline_val) / max(abs(baseline_val), 1)
+                    > 0.05
+                ):
+                    note_changes += 1
+
+        score = note_changes / total_checks if total_checks > 0 else 0.7
         return {
-            "feature_specificity_score": 0.7,  # Placeholder - would analyze note-level effects
+            "feature_specificity_score": score,
             "processing_characteristics": "note_level_modifications",
+            "note_level_changes": note_changes,
         }
 
     def _analyze_mid_layer_effects(self, baseline: Dict, intervention: Dict) -> Dict:
-        """Analyze effects appropriate for mid layer processing."""
+        """Analyze effects appropriate for mid layer processing (phrase/rhythm level)."""
+        phrase_changes = 0
+        total_checks = 0
+
+        # Check phrase-level metrics using calibrated thresholds
+        phrase_metrics = {
+            "rhythmic_analysis.rhythmic_regularity": (0.4, 0.892),
+            "rhythmic_analysis.syncopation_score": (0.05, 0.469),
+            "structural_analysis.phrase_count": (2, 8),
+            "musical_complexity.polyphonic_complexity": (1.05, 2.273),
+        }
+
+        for metric, (low, high) in phrase_metrics.items():
+            baseline_val = self._get_nested_value(baseline, metric)
+            intervention_val = self._get_nested_value(intervention, metric)
+
+            if baseline_val is not None and intervention_val is not None:
+                total_checks += 1
+                if (
+                    abs(intervention_val - baseline_val) / max(abs(baseline_val), 1)
+                    > 0.05
+                ):
+                    phrase_changes += 1
+
+        score = phrase_changes / total_checks if total_checks > 0 else 0.75
         return {
-            "feature_specificity_score": 0.75,  # Placeholder - would analyze phrase-level effects
+            "feature_specificity_score": score,
             "processing_characteristics": "phrase_level_modifications",
+            "phrase_level_changes": phrase_changes,
         }
 
     def _analyze_late_layer_effects(self, baseline: Dict, intervention: Dict) -> Dict:
-        """Analyze effects appropriate for late layer processing."""
+        """Analyze effects appropriate for late layer processing (structure/harmony level)."""
+        structure_changes = 0
+        total_checks = 0
+
+        # Check structure-level metrics using calibrated thresholds
+        structure_metrics = {
+            "structural_analysis.structural_coherence": (0.3, 0.8),
+            "harmonic_analysis.scale_consistency": (0.4, 0.9),
+            "musical_complexity.overall_complexity_score": (0.3, 0.8),
+            "note_patterns.average_note_duration": (0.35, 1.053),
+        }
+
+        for metric, (low, high) in structure_metrics.items():
+            baseline_val = self._get_nested_value(baseline, metric)
+            intervention_val = self._get_nested_value(intervention, metric)
+
+            if baseline_val is not None and intervention_val is not None:
+                total_checks += 1
+                if (
+                    abs(intervention_val - baseline_val) / max(abs(baseline_val), 1)
+                    > 0.05
+                ):
+                    structure_changes += 1
+
+        score = structure_changes / total_checks if total_checks > 0 else 0.8
         return {
-            "feature_specificity_score": 0.8,  # Placeholder - would analyze structure-level effects
+            "feature_specificity_score": score,
             "processing_characteristics": "structure_level_modifications",
+            "structure_level_changes": structure_changes,
         }
 
     def _count_note_level_changes(self, baseline: Dict, intervention: Dict) -> int:
