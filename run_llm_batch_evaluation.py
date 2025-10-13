@@ -105,7 +105,7 @@ class BatchLLMEvaluator:
 
         # Initialize feature extractor
         self.feature_extractor = MIDIFeatureExtractor()
-        
+
         # Load representation encoding
         self.encoding = representation.get_encoding()
         self.vocabulary = self.encoding["code_event_map"]
@@ -230,7 +230,7 @@ class BatchLLMEvaluator:
 
         try:
             # Load .pt file
-            data = torch.load(pt_file, map_location="cpu")
+            data = torch.load(pt_file, map_location="cpu", weights_only=False)
 
             # Extract generated tokens
             if "generated" in data:
@@ -241,9 +241,13 @@ class BatchLLMEvaluator:
                 self.logger.error(f"Unknown .pt file format: {pt_file}")
                 return {}, None
 
-            # Convert tokens to list if tensor
+            # Convert tokens to numpy array (expected format)
             if torch.is_tensor(tokens):
-                tokens = tokens.tolist()
+                tokens = tokens.cpu().numpy()
+            elif isinstance(tokens, list):
+                import numpy as np
+
+                tokens = np.array(tokens)
 
             # Decode tokens to MusPy Music object
             music = representation.decode(tokens, self.encoding, self.vocabulary)

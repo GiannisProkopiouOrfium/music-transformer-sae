@@ -92,28 +92,40 @@ print("\n2. Extracting baseline metrics...")
 feature_extractor = MIDIFeatureExtractor()
 
 # Load baseline
-baseline_data = torch.load(test_feature["baseline"], map_location="cpu")
+baseline_data = torch.load(
+    test_feature["baseline"], map_location="cpu", weights_only=False
+)
 baseline_tokens = (
     baseline_data["generated"] if "generated" in baseline_data else baseline_data
 )
-# Convert tokens to list if tensor
+# Convert tokens to numpy array (expected format)
 if torch.is_tensor(baseline_tokens):
-    baseline_tokens = baseline_tokens.tolist()
+    baseline_tokens = baseline_tokens.cpu().numpy()
+elif isinstance(baseline_tokens, list):
+    import numpy as np
+
+    baseline_tokens = np.array(baseline_tokens)
 # Decode tokens to MusPy Music object
 baseline_midi = representation.decode(baseline_tokens, encoding, vocabulary)
 baseline_metrics = feature_extractor.extract_all_features(baseline_midi)
 print(f"   ✅ Extracted {len(baseline_metrics)} metric categories")
 
 print("\n3. Extracting intervention metrics...")
-intervention_data = torch.load(test_feature["intervention"], map_location="cpu")
+intervention_data = torch.load(
+    test_feature["intervention"], map_location="cpu", weights_only=False
+)
 intervention_tokens = (
     intervention_data["generated"]
     if "generated" in intervention_data
     else intervention_data
 )
-# Convert tokens to list if tensor
+# Convert tokens to numpy array (expected format)
 if torch.is_tensor(intervention_tokens):
-    intervention_tokens = intervention_tokens.tolist()
+    intervention_tokens = intervention_tokens.cpu().numpy()
+elif isinstance(intervention_tokens, list):
+    import numpy as np
+
+    intervention_tokens = np.array(intervention_tokens)
 # Decode tokens to MusPy Music object
 intervention_midi = representation.decode(intervention_tokens, encoding, vocabulary)
 intervention_metrics = feature_extractor.extract_all_features(intervention_midi)
