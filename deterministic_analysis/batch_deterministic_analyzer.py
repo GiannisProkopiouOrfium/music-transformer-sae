@@ -701,6 +701,7 @@ class BatchDeterministicAnalyzer:
         # Collect all comparative analyses
         all_analyses = {}
         quality_scores = []
+        success_decisions = []  # Track actual success decisions
 
         for feature_id, feature_data in batch_results["individual_analyses"].items():
             feature_config = self.features_config[feature_id]
@@ -719,6 +720,12 @@ class BatchDeterministicAnalyzer:
                         score = decision["overall_score"]
                         quality_scores.append(score)
 
+                        # Track actual success decision (not just score threshold)
+                        is_success = decision.get("success_criteria", {}).get(
+                            "overall_success", False
+                        )
+                        success_decisions.append(is_success)
+
                         summary["layer_analysis"][layer_type].append(
                             {
                                 "feature_id": feature_id,
@@ -732,11 +739,12 @@ class BatchDeterministicAnalyzer:
                         if quality_level in summary["quality_distribution"]:
                             summary["quality_distribution"][quality_level] += 1
 
-        # Calculate overview stats
+        # Calculate overview stats using ACTUAL success decisions
+        if success_decisions:
+            summary["overview"]["success_rate"] = sum(success_decisions) / len(
+                success_decisions
+            )
         if quality_scores:
-            summary["overview"]["success_rate"] = len(
-                [s for s in quality_scores if s >= 0.5]
-            ) / len(quality_scores)
             summary["overview"]["average_quality_score"] = np.mean(quality_scores)
 
         # Use existing batch analysis function
