@@ -242,12 +242,16 @@ class BatchLLMEvaluator:
                 return {}, None
 
             # Convert tokens to numpy array (expected format)
+            import numpy as np
+
             if torch.is_tensor(tokens):
                 tokens = tokens.cpu().numpy()
             elif isinstance(tokens, list):
-                import numpy as np
-
                 tokens = np.array(tokens)
+
+            # Squeeze to 1D if needed (remove batch dimension)
+            if tokens.ndim > 1:
+                tokens = tokens.squeeze()
 
             # Decode tokens to MusPy Music object
             music = representation.decode(tokens, self.encoding, self.vocabulary)

@@ -99,12 +99,17 @@ baseline_tokens = (
     baseline_data["generated"] if "generated" in baseline_data else baseline_data
 )
 # Convert tokens to numpy array (expected format)
+import numpy as np
+
 if torch.is_tensor(baseline_tokens):
     baseline_tokens = baseline_tokens.cpu().numpy()
 elif isinstance(baseline_tokens, list):
-    import numpy as np
-
     baseline_tokens = np.array(baseline_tokens)
+
+# Squeeze to 1D if needed (remove batch dimension)
+if baseline_tokens.ndim > 1:
+    baseline_tokens = baseline_tokens.squeeze()
+
 # Decode tokens to MusPy Music object
 baseline_midi = representation.decode(baseline_tokens, encoding, vocabulary)
 baseline_metrics = feature_extractor.extract_all_features(baseline_midi)
@@ -123,9 +128,12 @@ intervention_tokens = (
 if torch.is_tensor(intervention_tokens):
     intervention_tokens = intervention_tokens.cpu().numpy()
 elif isinstance(intervention_tokens, list):
-    import numpy as np
-
     intervention_tokens = np.array(intervention_tokens)
+
+# Squeeze to 1D if needed (remove batch dimension)
+if intervention_tokens.ndim > 1:
+    intervention_tokens = intervention_tokens.squeeze()
+
 # Decode tokens to MusPy Music object
 intervention_midi = representation.decode(intervention_tokens, encoding, vocabulary)
 intervention_metrics = feature_extractor.extract_all_features(intervention_midi)
