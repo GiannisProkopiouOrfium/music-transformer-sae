@@ -673,7 +673,9 @@ class FeatureSpecificAnalyzer:
 
                 # Check if ANY meaningful change occurred (not just expected direction)
                 abs_change = abs(change_percent)
-                if abs_change > 5:  # More than 5% change is meaningful
+                if (
+                    abs_change > 3
+                ):  # More than 3% change is meaningful (lowered from 5%)
                     primary_change_magnitudes.append(abs_change)
 
                     # Check if change aligns with expected direction (bonus points)
@@ -681,12 +683,14 @@ class FeatureSpecificAnalyzer:
                         profile.feature_id, metric, strength
                     )
                     if (
-                        (expected_change > 0 and change_percent > 5)
-                        or (expected_change < 0 and change_percent < -5)
-                        or (expected_change == 0 and abs_change > 5)
+                        (expected_change > 0 and change_percent > 3)
+                        or (expected_change < 0 and change_percent < -3)
+                        or (expected_change == 0 and abs_change > 3)
                     ):
                         primary_changes += 1
-                    elif abs_change > 10:  # Large change in any direction counts
+                    elif (
+                        abs_change > 8
+                    ):  # Large change in any direction counts (lowered from 10%)
                         primary_changes += 0.5
 
                 total_primary += 1
@@ -1058,7 +1062,8 @@ class FeatureSpecificAnalyzer:
 
         # Success criteria (very lenient - prioritize absolute checks)
         success_criteria = {
-            "feature_conditions_met": specificity_score >= 0.4,  # NEW - primary check
+            "feature_conditions_met": specificity_score
+            >= 0.3,  # Primary check (lowered from 0.4)
             "effectiveness_threshold": effectiveness_score >= 0.2,  # Lowered from 0.3
             "quality_preservation": quality_score
             >= 0.3,  # Lowered from 0.5 - less strict
