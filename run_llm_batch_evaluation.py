@@ -46,7 +46,7 @@ sys.path.insert(0, str(Path(__file__).parent))
 
 from llm_text_evaluation import TextBasedLLMEvaluator, LLMEvaluationResult
 from deterministic_analysis.midi_feature_extractors import MIDIFeatureExtractor
-from baseline.representation_remi import convert_ids_to_midi
+import baseline.representation_remi as representation
 
 # Try to import MusPy
 try:
@@ -105,6 +105,11 @@ class BatchLLMEvaluator:
 
         # Initialize feature extractor
         self.feature_extractor = MIDIFeatureExtractor()
+        
+        # Load representation encoding
+        self.encoding = representation.get_encoding()
+        self.vocabulary = self.encoding["code_event_map"]
+        self.logger.info(f"Loaded encoding with {len(self.vocabulary)} tokens")
 
         # Cache for extracted metrics
         self.metrics_cache: Dict[str, Dict[str, Any]] = {}
@@ -236,17 +241,20 @@ class BatchLLMEvaluator:
                 self.logger.error(f"Unknown .pt file format: {pt_file}")
                 return {}, None
 
-            # Convert to MIDI
-            midi = convert_ids_to_midi(tokens.tolist())
+            # Convert tokens to list if tensor
+            if torch.is_tensor(tokens):
+                tokens = tokens.tolist()
+
+            # Decode tokens to MusPy Music object
+            music = representation.decode(tokens, self.encoding, self.vocabulary)
 
             # Extract metrics using MusPy
-            metrics = self.feature_extractor.extract_all_features(midi)
+            metrics = self.feature_extractor.extract_all_features(music)
 
             # Optionally get MusPy JSON for full representation
             muspy_json = None
             if self.include_json and MUSPY_AVAILABLE:
                 try:
-                    music = muspy.from_mido(midi)
                     muspy_json = muspy.to_object(music)
                 except Exception as e:
                     self.logger.warning(f"Could not convert to MusPy JSON: {e}")

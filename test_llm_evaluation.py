@@ -79,10 +79,16 @@ print("=" * 60)
 # Import and run evaluator
 from llm_text_evaluation import TextBasedLLMEvaluator
 from deterministic_analysis.midi_feature_extractors import MIDIFeatureExtractor
-from baseline.representation_remi import convert_ids_to_midi
+import baseline.representation_remi as representation
 import torch
 
-print("\n1. Extracting baseline metrics...")
+print("\n1. Loading representation...")
+# Load the encoding
+encoding = representation.get_encoding()
+vocabulary = encoding["code_event_map"]
+print(f"   ✅ Loaded encoding with {len(vocabulary)} tokens")
+
+print("\n2. Extracting baseline metrics...")
 feature_extractor = MIDIFeatureExtractor()
 
 # Load baseline
@@ -90,22 +96,30 @@ baseline_data = torch.load(test_feature["baseline"], map_location="cpu")
 baseline_tokens = (
     baseline_data["generated"] if "generated" in baseline_data else baseline_data
 )
-baseline_midi = convert_ids_to_midi(baseline_tokens.tolist())
+# Convert tokens to list if tensor
+if torch.is_tensor(baseline_tokens):
+    baseline_tokens = baseline_tokens.tolist()
+# Decode tokens to MusPy Music object
+baseline_midi = representation.decode(baseline_tokens, encoding, vocabulary)
 baseline_metrics = feature_extractor.extract_all_features(baseline_midi)
 print(f"   ✅ Extracted {len(baseline_metrics)} metric categories")
 
-print("\n2. Extracting intervention metrics...")
+print("\n3. Extracting intervention metrics...")
 intervention_data = torch.load(test_feature["intervention"], map_location="cpu")
 intervention_tokens = (
     intervention_data["generated"]
     if "generated" in intervention_data
     else intervention_data
 )
-intervention_midi = convert_ids_to_midi(intervention_tokens.tolist())
+# Convert tokens to list if tensor
+if torch.is_tensor(intervention_tokens):
+    intervention_tokens = intervention_tokens.tolist()
+# Decode tokens to MusPy Music object
+intervention_midi = representation.decode(intervention_tokens, encoding, vocabulary)
 intervention_metrics = feature_extractor.extract_all_features(intervention_midi)
 print(f"   ✅ Extracted {len(intervention_metrics)} metric categories")
 
-print("\n3. Calling OpenAI API...")
+print("\n4. Calling OpenAI API...")
 evaluator = TextBasedLLMEvaluator(model="gpt-4-turbo-preview", temperature=0.3)
 
 # Extract feature ID from directory name
