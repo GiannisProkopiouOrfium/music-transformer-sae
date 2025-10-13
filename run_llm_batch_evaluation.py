@@ -65,7 +65,7 @@ class BatchLLMEvaluator:
         self,
         interventions_dir: str,
         output_dir: str,
-        model: str = "gpt-4-turbo-preview",
+        model: str = "gpt-4o-mini-2024-07-18",
         temperature: float = 0.3,
         include_json: bool = False,
         deterministic_dir: Optional[str] = None,
@@ -663,8 +663,8 @@ def main():
 
     parser.add_argument(
         "--model",
-        default="gpt-4-turbo-preview",
-        help="OpenAI model to use (default: gpt-4-turbo-preview)",
+        default="gpt-4o-mini-2024-07-18",
+        help="OpenAI model to use (default: gpt-4o-mini-2024-07-18)",
     )
 
     parser.add_argument(

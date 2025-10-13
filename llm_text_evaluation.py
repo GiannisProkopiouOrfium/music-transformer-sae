@@ -90,7 +90,7 @@ class LLMEvaluationResult:
     agreement_level: Optional[str] = None  # "high", "moderate", "low"
 
     # Metadata
-    model_used: str = "gpt-4-turbo-preview"
+    model_used: str = "gpt-4o-mini-2024-07-18"
     timestamp: str = ""
     tokens_used: int = 0
 
@@ -101,7 +101,7 @@ class TextBasedLLMEvaluator:
     def __init__(
         self,
         api_key: Optional[str] = None,
-        model: str = "gpt-4-turbo-preview",
+        model: str = "gpt-4o-mini-2024-07-18",
         temperature: float = 0.3,
         max_tokens: int = 1500,
     ):
@@ -824,7 +824,7 @@ def main():
         "--output", default="llm_evaluation_result.json", help="Output file path"
     )
     parser.add_argument(
-        "--model", default="gpt-4-turbo-preview", help="OpenAI model to use"
+        "--model", default="gpt-4o-mini-2024-07-18", help="OpenAI model to use"
     )
     parser.add_argument(
         "--include-json", action="store_true", help="Include full JSON (more tokens)"

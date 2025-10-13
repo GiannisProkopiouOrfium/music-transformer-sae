@@ -138,7 +138,7 @@ intervention_metrics = feature_extractor.extract_all_features(intervention_midi)
 print(f"   ✅ Extracted {len(intervention_metrics)} metric categories")
 
 print("\n4. Calling OpenAI API...")
-evaluator = TextBasedLLMEvaluator(model="gpt-4-turbo-preview", temperature=0.3)
+evaluator = TextBasedLLMEvaluator(model="gpt-4o-mini-2024-07-18", temperature=0.3)
 
 # Extract feature ID from directory name
 import re
@@ -180,19 +180,19 @@ try:
     print("=" * 60)
     print("Results:")
     print("=" * 60)
-    print(f"Effectiveness Score: {result.effectiveness_score:.3f}")
-    print(f"Quality Score:       {result.quality_score:.3f}")
-    print(f"Coherence Score:     {result.coherence_score:.3f}")
-    print(f"Musicality Score:    {result.musicality_score:.3f}")
-    print(f"Overall Score:       {result.overall_score:.3f}")
-    print(f"\nTokens Used:         {result.tokens_used}")
-    estimated_cost = (result.tokens_used / 1_000_000) * 20
-    print(f"Estimated Cost:      ${estimated_cost:.4f}")
+    print(f"Feature Effectiveness: {result.feature_effectiveness_score:.3f}")
+    print(f"Musical Quality:       {result.musical_quality_score:.3f}")
+    print(f"Coherence Score:       {result.coherence_score:.3f}")
+    print(f"Musicality Score:      {result.musicality_score:.3f}")
+    print(f"Overall Score:         {result.overall_score:.3f}")
+    print(f"\nTokens Used:           {result.tokens_used}")
+    estimated_cost = (result.tokens_used / 1_000_000) * 0.15  # GPT-4o-mini pricing
+    print(f"Estimated Cost:        ${estimated_cost:.4f}")
 
     print("\n" + "=" * 60)
-    print("Effectiveness Reasoning:")
+    print("Feature Effectiveness Reasoning:")
     print("=" * 60)
-    print(result.effectiveness_reasoning)
+    print(result.feature_effectiveness_reasoning)
 
     print("\n" + "=" * 60)
     print("Key Observations:")
