@@ -168,3 +168,6 @@ layer_interpretations/*.json
 
 *.dat 
 *.md
+*.wav
+.gitignore
+wav_comp.py
