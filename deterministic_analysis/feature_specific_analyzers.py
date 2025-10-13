@@ -1070,18 +1070,18 @@ class FeatureSpecificAnalyzer:
         ):  # Lowered from 0.4 - layer matching less important
             recommendations.append("Layer effects may not match expectations")
 
-        # Success criteria (very lenient - prioritize absolute checks)
+        # Success criteria (balanced - filter out minimal-change interventions)
         success_criteria = {
             "feature_conditions_met": specificity_score
-            >= 0.3,  # Primary check (lowered from 0.4)
+            >= 0.35,  # Primary check (raised from 0.3 for credibility)
             "effectiveness_threshold": effectiveness_score
-            >= 0.15,  # Lowered from 0.2 - accept any detection
+            >= 0.20,  # Raised from 0.15 - require meaningful change detection
             "quality_preservation": quality_score
-            >= 0.3,  # Lowered from 0.5 - less strict
+            >= 0.30,  # Kept - reasonable quality preservation
             "layer_appropriateness": appropriateness_score
-            >= 0.2,  # Lowered from 0.35 - minimal
+            >= 0.20,  # Kept - minimal requirement
             "overall_success": overall_score
-            >= 0.30,  # Lowered from 0.35 - more lenient gate
+            >= 0.35,  # Raised from 0.30 - filter borderline cases
         }
 
         return {
