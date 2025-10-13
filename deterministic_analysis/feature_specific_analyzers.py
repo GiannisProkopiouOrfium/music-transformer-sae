@@ -107,42 +107,64 @@ class FeatureSpecificAnalyzer:
             feature_id="325",
             layer=1,
             layer_type=LayerType.EARLY,
-            feature_name="dynamic_emphasis",
-            expected_effects=["velocity_changes", "note_emphasis", "dynamic_contrast"],
+            feature_name="rhythmic_displacement_syncopation",
+            expected_effects=[
+                "sixteenth_note_rhythmic_displacement",
+                "syncopation_effect",
+                "off_beat_emphasis",
+                "rhythmic_motif_shifting",
+            ],
             primary_metrics=[
-                "note_patterns.average_velocity",
-                "note_patterns.velocity_range",
-                "note_patterns.note_density",
+                "rhythmic_analysis.syncopation_score",
+                "rhythmic_analysis.rhythmic_complexity",
+                "rhythmic_analysis.ioi_std",
+                "note_patterns.note_onset_intervals.mean_interval",
             ],
             secondary_metrics=[
-                "note_patterns.average_note_duration",
-                "pitch_analysis.pitch_range",
+                "note_patterns.notes_per_beat",
+                "rhythmic_analysis.rhythmic_regularity",
+                "note_patterns.note_density",
             ],
-            quality_thresholds={"min_velocity_range": 10, "max_velocity_std": 50},
+            quality_thresholds={
+                "syncopation_score_min": 0.108,  # 10th percentile
+                "syncopation_score_max": 0.469,  # 90th percentile
+                "rhythmic_complexity_min": 1.515,
+                "rhythmic_complexity_max": 4.263,
+                "ioi_std_acceptable_range": (0.115, 0.349),
+            },
         )
 
         profiles["256"] = FeatureProfile(
             feature_id="256",
             layer=1,
             layer_type=LayerType.EARLY,
-            feature_name="note_timing",
+            feature_name="dynamic_contrast_accents",
             expected_effects=[
-                "timing_precision",
-                "rhythmic_variations",
-                "micro_timing",
+                "sudden_accent_patterns",
+                "dramatic_dynamic_contrast",
+                "forte_piano_alternation",
+                "extreme_velocity_changes",
             ],
             primary_metrics=[
-                "note_patterns.note_onset_intervals.mean_interval",
-                "rhythmic_analysis.ioi_std",
-                "rhythmic_analysis.rhythmic_regularity",
+                "velocity_dynamics.dynamic_range",
+                "note_patterns.velocity_range",
+                "velocity_dynamics.dynamic_variance",
+                "velocity_dynamics.forte_notes_ratio",
+                "velocity_dynamics.piano_notes_ratio",
             ],
             secondary_metrics=[
-                "temporal_analysis.groove_consistency",
-                "note_patterns.note_density",
+                "note_patterns.average_velocity",
+                "structural_analysis.structural_coherence",
             ],
             quality_thresholds={
-                "min_timing_precision": 0.3,
-                "max_rhythmic_deviation": 0.8,
+                "dynamic_range_min": 34.0,  # 10th percentile
+                "dynamic_range_extreme": 91.0,  # 90th percentile
+                "velocity_range_min": 34.0,
+                "velocity_range_extreme": 91.0,
+                "has_dynamic_contrast": 30,  # velocity difference > 30
+                "extreme_dynamic_contrast": 70,  # velocity difference > 70
+                "loud_threshold": 60,  # minimum velocity > 60
+                "soft_threshold": 60,  # maximum velocity < 60
             },
         )
 
@@ -150,18 +172,32 @@ class FeatureSpecificAnalyzer:
             feature_id="1323",
             layer=1,
             layer_type=LayerType.EARLY,
-            feature_name="note_density_control",
-            expected_effects=["note_count", "notes_per_beat", "texture_density"],
+            feature_name="wide_pitch_range_texture",
+            expected_effects=[
+                "broad_harmonic_spectrum",
+                "multi_register_utilization",
+                "textural_depth",
+                "pitch_range_expansion",
+            ],
             primary_metrics=[
-                "note_patterns.notes_per_beat",
-                "note_patterns.note_density",
-                "basic_info.total_notes",
+                "pitch_analysis.pitch_range",
+                "pitch_analysis.pitch_std",
+                "pitch_analysis.max_pitch",
+                "pitch_analysis.min_pitch",
             ],
             secondary_metrics=[
-                "note_patterns.average_note_duration",
-                "musical_complexity.polyphonic_rate",
+                "musical_complexity.polyphonic_complexity",
+                "pitch_analysis.unique_pitches",
+                "note_patterns.note_density",
             ],
-            quality_thresholds={"min_note_density": 1.0, "max_note_density": 20.0},
+            quality_thresholds={
+                "pitch_range_min": 26.0,  # 10th percentile
+                "pitch_range_max": 62.0,  # 90th percentile
+                "pitch_std_min": 8.066,
+                "pitch_std_max": 16.467,
+                "min_pitch_acceptable": 31.0,  # 10th percentile
+                "max_pitch_acceptable": 95.0,  # 90th percentile
+            },
         )
 
         # Layer 3 Features (Mid Processing - Phrase/Rhythm Level)
@@ -169,46 +205,63 @@ class FeatureSpecificAnalyzer:
             feature_id="182",
             layer=3,
             layer_type=LayerType.MID,
-            feature_name="rhythmic_pattern",
+            feature_name="steady_pulse_march_rhythm",
             expected_effects=[
-                "rhythm_complexity",
-                "beat_patterns",
-                "groove_characteristics",
+                "metronomic_consistency",
+                "march_like_rhythms",
+                "regular_pulse_patterns",
+                "rhythmic_order_and_regularity",
             ],
             primary_metrics=[
-                "musical_complexity.rhythmic_complexity",
-                "rhythmic_analysis.syncopation_score",
                 "rhythmic_analysis.rhythmic_regularity",
+                "rhythmic_analysis.average_ioi",
+                "note_patterns.unique_note_durations",
+                "rhythmic_analysis.rhythmic_complexity",
             ],
             secondary_metrics=[
-                "temporal_analysis.groove_consistency",
-                "rhythmic_analysis.rhythmic_diversity",
+                "note_patterns.note_duration_std",
+                "rhythmic_analysis.ioi_std",
             ],
-            quality_thresholds={"min_rhythmic_complexity": 1.0, "max_syncopation": 0.8},
+            quality_thresholds={
+                "rhythmic_regularity_min": 0.562,  # 10th percentile
+                "rhythmic_regularity_max": 0.892,  # 90th percentile
+                "average_ioi_min": 0.226,
+                "average_ioi_max": 0.552,
+                "rhythmic_complexity_acceptable": (1.515, 4.263),
+                "few_onsets_threshold": 2.0,  # few groups per second
+                "many_onsets_threshold": 8.0,  # many groups per second
+            },
         )
 
         profiles["855"] = FeatureProfile(
             feature_id="855",
             layer=3,
             layer_type=LayerType.MID,
-            feature_name="phrase_structure",
+            feature_name="dynamic_contrast_tension",
             expected_effects=[
-                "phrase_boundaries",
-                "musical_phrases",
-                "structural_units",
+                "sudden_velocity_shifts",
+                "dramatic_tension_release",
+                "high_low_velocity_alternation",
+                "dynamic_range_expansion",
             ],
             primary_metrics=[
-                "structural_analysis.phrase_count",
-                "structural_analysis.average_phrase_length",
-                "structural_analysis.structural_coherence",
+                "velocity_dynamics.dynamic_range",
+                "velocity_dynamics.dynamic_variance",
+                "note_patterns.velocity_range",
+                "velocity_dynamics.forte_notes_ratio",
+                "velocity_dynamics.piano_notes_ratio",
             ],
             secondary_metrics=[
-                "structural_analysis.phrase_length_std",
-                "basic_info.total_notes",
+                "note_patterns.average_velocity",
+                "structural_analysis.structural_coherence",
             ],
             quality_thresholds={
-                "min_phrase_count": 2,
-                "max_phrase_length_variation": 0.7,
+                "dynamic_range_min": 34.0,  # 10th percentile
+                "dynamic_range_max": 91.0,  # 90th percentile
+                "dynamic_variance_min": 197.691,
+                "dynamic_variance_max": 698.055,
+                "has_dynamic_contrast": 30,
+                "extreme_dynamic_contrast": 70,
             },
         )
 
@@ -216,18 +269,31 @@ class FeatureSpecificAnalyzer:
             feature_id="997",
             layer=3,
             layer_type=LayerType.MID,
-            feature_name="melodic_contour",
-            expected_effects=["melodic_shape", "interval_patterns", "pitch_movements"],
+            feature_name="antiphonal_call_response",
+            expected_effects=[
+                "call_response_interactions",
+                "instrumental_dialogue",
+                "antiphonal_texture",
+                "alternating_melodic_lines",
+            ],
             primary_metrics=[
-                "pitch_analysis.average_interval_size",
-                "pitch_analysis.step_motion_ratio",
-                "pitch_analysis.pitch_range",
+                "musical_complexity.polyphonic_complexity",
+                "structural_analysis.phrase_count",
+                "note_patterns.note_density",
+                "basic_info.total_tracks",
             ],
             secondary_metrics=[
-                "pitch_analysis.largest_leap",
-                "pitch_analysis.unique_pitches",
+                "structural_analysis.average_phrase_length",
+                "pitch_analysis.pitch_range",
+                "velocity_dynamics.dynamic_range",
             ],
-            quality_thresholds={"min_step_motion": 0.3, "max_interval_size": 8.0},
+            quality_thresholds={
+                "polyphonic_complexity_min": 1.111,  # 10th percentile
+                "polyphonic_complexity_max": 2.273,  # 90th percentile
+                "phrase_count_min": 2.0,
+                "total_tracks_min": 2,  # Need at least 2 tracks for call-response
+                "only_melody_check": False,  # Should NOT be single note at a time
+            },
         )
 
         # Layer 5 Features (Late Processing - Structure/Harmony Level)
@@ -235,24 +301,30 @@ class FeatureSpecificAnalyzer:
             feature_id="471",
             layer=5,
             layer_type=LayerType.LATE,
-            feature_name="harmonic_progression",
+            feature_name="unison_doubling_octaves",
             expected_effects=[
-                "chord_changes",
-                "harmonic_rhythm",
-                "tonal_structure",
+                "unison_doubling",
+                "octave_reinforcement",
+                "powerful_unified_sound",
+                "multi_instrument_unison",
             ],
             primary_metrics=[
-                "harmonic_analysis.scale_consistency",
-                "harmonic_analysis.pitch_class_entropy",
-                "harmonic_analysis.tonal_strength",
+                "pitch_analysis.pitch_range",
+                "musical_complexity.polyphonic_complexity",
+                "basic_info.total_tracks",
+                "note_patterns.average_velocity",
             ],
             secondary_metrics=[
-                "harmonic_analysis.chord_changes_per_beat",
                 "pitch_analysis.unique_pitches",
+                "note_patterns.note_density",
+                "velocity_dynamics.dynamic_range",
             ],
             quality_thresholds={
-                "min_scale_consistency": 0.5,
-                "min_tonal_strength": 0.3,
+                "polyphonic_complexity_min": 1.111,  # Should have multiple voices
+                "polyphonic_complexity_max": 2.273,
+                "total_tracks_min": 2,  # Need multiple instruments for doubling
+                "pitch_range_octave_span": 12,  # Octave doubling indicator
+                "only_melody_check": False,  # Should NOT be single note
             },
         )
 
@@ -260,42 +332,64 @@ class FeatureSpecificAnalyzer:
             feature_id="904",
             layer=5,
             layer_type=LayerType.LATE,
-            feature_name="musical_structure",
+            feature_name="rhythmic_augmentation",
             expected_effects=[
-                "overall_form",
-                "structural_coherence",
-                "musical_architecture",
+                "systematic_duration_lengthening",
+                "motif_expansion",
+                "tension_building",
+                "temporal_stretching",
             ],
             primary_metrics=[
-                "structural_analysis.structural_coherence",
-                "musical_complexity.overall_complexity_score",
-                "structural_analysis.repetition_ratio",
+                "note_patterns.average_note_duration",
+                "note_patterns.longest_note",
+                "note_patterns.unique_note_durations",
+                "rhythmic_analysis.average_ioi",
             ],
             secondary_metrics=[
-                "structural_analysis.phrase_count",
-                "musical_complexity.polyphonic_rate",
+                "note_patterns.note_duration_std",
+                "rhythmic_analysis.rhythmic_complexity",
+                "structural_analysis.average_phrase_length",
             ],
-            quality_thresholds={"min_structural_coherence": 0.3, "max_complexity": 0.9},
+            quality_thresholds={
+                "average_note_duration_min": 0.443,  # 10th percentile
+                "average_note_duration_max": 1.053,  # 90th percentile
+                "longest_note_min": 2.0,
+                "longest_note_max": 8.0,
+                "unique_durations_min": 5.0,
+            },
         )
 
         profiles["1950"] = FeatureProfile(
             feature_id="1950",
             layer=5,
             layer_type=LayerType.LATE,
-            feature_name="tonal_center",
-            expected_effects=["key_stability", "tonal_relationships", "pitch_center"],
+            feature_name="dramatic_dynamic_swells",
+            expected_effects=[
+                "abrupt_dynamic_shifts",
+                "soft_to_loud_contrasts",
+                "expressive_dynamic_swells",
+                "dramatic_textural_effects",
+            ],
             primary_metrics=[
-                "harmonic_analysis.scale_consistency",
-                "harmonic_analysis.pitch_class_entropy",
-                "pitch_analysis.mean_pitch",
+                "velocity_dynamics.dynamic_range",
+                "velocity_dynamics.dynamic_variance",
+                "note_patterns.velocity_range",
+                "velocity_dynamics.forte_notes_ratio",
+                "velocity_dynamics.piano_notes_ratio",
             ],
             secondary_metrics=[
-                "pitch_analysis.pitch_range",
-                "pitch_analysis.unique_pitches",
+                "note_patterns.average_velocity",
+                "structural_analysis.structural_coherence",
             ],
             quality_thresholds={
-                "min_scale_consistency": 0.5,
-                "pitch_stability_range": 15,
+                "dynamic_range_min": 34.0,  # 10th percentile
+                "dynamic_range_max": 91.0,  # 90th percentile
+                "dynamic_variance_min": 197.691,
+                "dynamic_variance_max": 698.055,
+                "has_dynamic_contrast": 30,
+                "extreme_dynamic_contrast": 70,
+                "loud_threshold": 60,
+                "soft_threshold": 60,
             },
         )
 
@@ -799,6 +893,20 @@ class FeatureSpecificAnalyzer:
             "feature_specificity_score": 0.0,
         }
 
+        # Check feature-specific absolute conditions
+        intervention_conditions = self._check_feature_specific_conditions(
+            profile.feature_id, intervention
+        )
+        baseline_conditions = self._check_feature_specific_conditions(
+            profile.feature_id, baseline
+        )
+
+        specific_analysis["intervention_conditions"] = intervention_conditions
+        specific_analysis["baseline_conditions"] = baseline_conditions
+        specific_analysis["feature_specificity_score"] = intervention_conditions[
+            "overall_condition_score"
+        ]
+
         # Layer-specific analysis
         if profile.layer_type == LayerType.EARLY:
             specific_analysis.update(
@@ -981,6 +1089,346 @@ class FeatureSpecificAnalyzer:
         except (KeyError, TypeError):
             return None
 
+    def _check_feature_specific_conditions(
+        self, feature_id: str, features: Dict[str, Any]
+    ) -> Dict[str, Any]:
+        """
+        Check feature-specific absolute conditions using calibrated thresholds.
+
+        Each feature has specific metric requirements that should be met for
+        the intervention to be considered successful.
+
+        Returns:
+            Dictionary with condition checks and scores for the specific feature
+        """
+        checks = {
+            "conditions_met": [],
+            "conditions_failed": [],
+            "overall_condition_score": 0.0,
+        }
+
+        profile = self.feature_profiles.get(feature_id)
+        if not profile:
+            return checks
+
+        # Feature 325: Rhythmic displacement syncopation
+        if feature_id == "325":
+            syncopation = (
+                self._get_nested_value(features, "rhythmic_analysis.syncopation_score")
+                or 0
+            )
+            rhythmic_complexity = (
+                self._get_nested_value(
+                    features, "rhythmic_analysis.rhythmic_complexity"
+                )
+                or 0
+            )
+
+            if syncopation >= 0.108:  # Above 10th percentile
+                checks["conditions_met"].append(
+                    f"Syncopation score {syncopation:.3f} >= 0.108"
+                )
+            else:
+                checks["conditions_failed"].append(
+                    f"Syncopation score {syncopation:.3f} < 0.108"
+                )
+
+            if rhythmic_complexity >= 1.515:  # Above 10th percentile
+                checks["conditions_met"].append(
+                    f"Rhythmic complexity {rhythmic_complexity:.3f} >= 1.515"
+                )
+            else:
+                checks["conditions_failed"].append(
+                    f"Rhythmic complexity {rhythmic_complexity:.3f} < 1.515"
+                )
+
+        # Feature 256: Dynamic contrast accents
+        elif feature_id == "256":
+            dynamic_range = (
+                self._get_nested_value(features, "velocity_dynamics.dynamic_range") or 0
+            )
+            velocity_range = (
+                self._get_nested_value(features, "note_patterns.velocity_range") or 0
+            )
+
+            if dynamic_range >= 34.0:  # Above 10th percentile
+                checks["conditions_met"].append(
+                    f"Dynamic range {dynamic_range:.1f} >= 34.0"
+                )
+            else:
+                checks["conditions_failed"].append(
+                    f"Dynamic range {dynamic_range:.1f} < 34.0"
+                )
+
+            if velocity_range >= 30:  # Has dynamic contrast
+                checks["conditions_met"].append(
+                    f"Velocity range {velocity_range:.1f} >= 30 (has contrast)"
+                )
+            else:
+                checks["conditions_failed"].append(
+                    f"Velocity range {velocity_range:.1f} < 30 (no contrast)"
+                )
+
+            if velocity_range >= 70:  # Extreme dynamic contrast
+                checks["conditions_met"].append(
+                    f"Velocity range {velocity_range:.1f} >= 70 (extreme contrast)"
+                )
+
+        # Feature 1323: Wide pitch range texture
+        elif feature_id == "1323":
+            pitch_range = (
+                self._get_nested_value(features, "pitch_analysis.pitch_range") or 0
+            )
+            pitch_std = (
+                self._get_nested_value(features, "pitch_analysis.pitch_std") or 0
+            )
+
+            if pitch_range >= 26.0:  # Above 10th percentile
+                checks["conditions_met"].append(
+                    f"Pitch range {pitch_range:.1f} >= 26.0"
+                )
+            else:
+                checks["conditions_failed"].append(
+                    f"Pitch range {pitch_range:.1f} < 26.0"
+                )
+
+            if pitch_std >= 8.066:  # Above 10th percentile
+                checks["conditions_met"].append(f"Pitch std {pitch_std:.3f} >= 8.066")
+            else:
+                checks["conditions_failed"].append(f"Pitch std {pitch_std:.3f} < 8.066")
+
+        # Feature 182: Steady pulse march rhythm
+        elif feature_id == "182":
+            rhythmic_regularity = (
+                self._get_nested_value(
+                    features, "rhythmic_analysis.rhythmic_regularity"
+                )
+                or 0
+            )
+            unique_durations = (
+                self._get_nested_value(features, "note_patterns.unique_note_durations")
+                or 0
+            )
+
+            if rhythmic_regularity >= 0.562:  # Above 10th percentile
+                checks["conditions_met"].append(
+                    f"Rhythmic regularity {rhythmic_regularity:.3f} >= 0.562"
+                )
+            else:
+                checks["conditions_failed"].append(
+                    f"Rhythmic regularity {rhythmic_regularity:.3f} < 0.562"
+                )
+
+            if unique_durations <= 15:  # Limited duration variety = more regular
+                checks["conditions_met"].append(
+                    f"Limited duration variety ({unique_durations} types)"
+                )
+            else:
+                checks["conditions_failed"].append(
+                    f"High duration variety ({unique_durations} types)"
+                )
+
+        # Feature 855: Dynamic contrast tension
+        elif feature_id == "855":
+            dynamic_range = (
+                self._get_nested_value(features, "velocity_dynamics.dynamic_range") or 0
+            )
+            dynamic_variance = (
+                self._get_nested_value(features, "velocity_dynamics.dynamic_variance")
+                or 0
+            )
+
+            if dynamic_range >= 34.0:  # Above 10th percentile
+                checks["conditions_met"].append(
+                    f"Dynamic range {dynamic_range:.1f} >= 34.0"
+                )
+            else:
+                checks["conditions_failed"].append(
+                    f"Dynamic range {dynamic_range:.1f} < 34.0"
+                )
+
+            if dynamic_variance >= 197.691:  # Above 10th percentile
+                checks["conditions_met"].append(
+                    f"Dynamic variance {dynamic_variance:.1f} >= 197.7"
+                )
+            else:
+                checks["conditions_failed"].append(
+                    f"Dynamic variance {dynamic_variance:.1f} < 197.7"
+                )
+
+        # Feature 997: Antiphonal call-response
+        elif feature_id == "997":
+            polyphonic_complexity = (
+                self._get_nested_value(
+                    features, "musical_complexity.polyphonic_complexity"
+                )
+                or 1.0
+            )
+            total_tracks = (
+                self._get_nested_value(features, "basic_info.total_tracks") or 1
+            )
+            phrase_count = (
+                self._get_nested_value(features, "structural_analysis.phrase_count")
+                or 0
+            )
+
+            if polyphonic_complexity >= 1.111:  # Above 10th percentile
+                checks["conditions_met"].append(
+                    f"Polyphonic complexity {polyphonic_complexity:.3f} >= 1.111"
+                )
+            else:
+                checks["conditions_failed"].append(
+                    f"Polyphonic complexity {polyphonic_complexity:.3f} < 1.111"
+                )
+
+            if total_tracks >= 2:  # Need multiple tracks for call-response
+                checks["conditions_met"].append(
+                    f"Multiple tracks ({total_tracks}) for dialogue"
+                )
+            else:
+                checks["conditions_failed"].append(
+                    f"Only {total_tracks} track (need >= 2)"
+                )
+
+            if phrase_count >= 2:  # Need phrases for call-response structure
+                checks["conditions_met"].append(
+                    f"Multiple phrases ({phrase_count}) for call-response"
+                )
+            else:
+                checks["conditions_failed"].append(f"Only {phrase_count} phrase(s)")
+
+        # Feature 471: Unison doubling octaves
+        elif feature_id == "471":
+            pitch_range = (
+                self._get_nested_value(features, "pitch_analysis.pitch_range") or 0
+            )
+            polyphonic_complexity = (
+                self._get_nested_value(
+                    features, "musical_complexity.polyphonic_complexity"
+                )
+                or 1.0
+            )
+            total_tracks = (
+                self._get_nested_value(features, "basic_info.total_tracks") or 1
+            )
+
+            if pitch_range >= 12:  # At least one octave span for octave doubling
+                checks["conditions_met"].append(
+                    f"Pitch range {pitch_range:.1f} >= 12 (octave span)"
+                )
+            else:
+                checks["conditions_failed"].append(
+                    f"Pitch range {pitch_range:.1f} < 12 (less than octave)"
+                )
+
+            if polyphonic_complexity >= 1.111:  # Multiple voices
+                checks["conditions_met"].append(
+                    f"Polyphonic complexity {polyphonic_complexity:.3f} >= 1.111 (multi-voice)"
+                )
+            else:
+                checks["conditions_failed"].append(
+                    f"Polyphonic complexity {polyphonic_complexity:.3f} < 1.111"
+                )
+
+            if total_tracks >= 2:  # Need multiple instruments for doubling
+                checks["conditions_met"].append(
+                    f"Multiple instruments ({total_tracks}) for doubling"
+                )
+            else:
+                checks["conditions_failed"].append(f"Only {total_tracks} instrument")
+
+        # Feature 904: Rhythmic augmentation
+        elif feature_id == "904":
+            avg_duration = (
+                self._get_nested_value(features, "note_patterns.average_note_duration")
+                or 0
+            )
+            longest_note = (
+                self._get_nested_value(features, "note_patterns.longest_note") or 0
+            )
+            unique_durations = (
+                self._get_nested_value(features, "note_patterns.unique_note_durations")
+                or 0
+            )
+
+            if avg_duration >= 0.443:  # Above 10th percentile
+                checks["conditions_met"].append(
+                    f"Average duration {avg_duration:.3f} >= 0.443"
+                )
+            else:
+                checks["conditions_failed"].append(
+                    f"Average duration {avg_duration:.3f} < 0.443"
+                )
+
+            if longest_note >= 2.0:  # Has long notes
+                checks["conditions_met"].append(
+                    f"Longest note {longest_note:.1f} >= 2.0"
+                )
+            else:
+                checks["conditions_failed"].append(
+                    f"Longest note {longest_note:.1f} < 2.0"
+                )
+
+            if unique_durations >= 5:  # Duration variety for augmentation pattern
+                checks["conditions_met"].append(
+                    f"Duration variety ({unique_durations} types) >= 5"
+                )
+            else:
+                checks["conditions_failed"].append(
+                    f"Low duration variety ({unique_durations} types)"
+                )
+
+        # Feature 1950: Dramatic dynamic swells
+        elif feature_id == "1950":
+            dynamic_range = (
+                self._get_nested_value(features, "velocity_dynamics.dynamic_range") or 0
+            )
+            dynamic_variance = (
+                self._get_nested_value(features, "velocity_dynamics.dynamic_variance")
+                or 0
+            )
+            velocity_range = (
+                self._get_nested_value(features, "note_patterns.velocity_range") or 0
+            )
+
+            if dynamic_range >= 34.0:  # Above 10th percentile
+                checks["conditions_met"].append(
+                    f"Dynamic range {dynamic_range:.1f} >= 34.0"
+                )
+            else:
+                checks["conditions_failed"].append(
+                    f"Dynamic range {dynamic_range:.1f} < 34.0"
+                )
+
+            if dynamic_variance >= 197.691:  # Above 10th percentile
+                checks["conditions_met"].append(
+                    f"Dynamic variance {dynamic_variance:.1f} >= 197.7"
+                )
+            else:
+                checks["conditions_failed"].append(
+                    f"Dynamic variance {dynamic_variance:.1f} < 197.7"
+                )
+
+            if velocity_range >= 30:  # Has significant contrast for swells
+                checks["conditions_met"].append(
+                    f"Velocity range {velocity_range:.1f} >= 30 (swells possible)"
+                )
+            else:
+                checks["conditions_failed"].append(
+                    f"Velocity range {velocity_range:.1f} < 30 (limited swells)"
+                )
+
+        # Calculate overall condition score
+        total_conditions = len(checks["conditions_met"]) + len(
+            checks["conditions_failed"]
+        )
+        if total_conditions > 0:
+            checks["overall_condition_score"] = (
+                len(checks["conditions_met"]) / total_conditions
+            )
+
+        return checks
+
     def _get_expected_change_direction(
         self, feature_id: str, metric: str, strength: float
     ) -> int:
@@ -988,51 +1436,60 @@ class FeatureSpecificAnalyzer:
 
         # Feature-specific expectations (using actual MIDI extractor metric names with paths)
         expectations = {
-            "325": {
-                "note_patterns.average_velocity": 1,
-                "note_patterns.velocity_range": 1,
-                "note_patterns.note_density": 0,  # Secondary effect
-            },  # Dynamic emphasis
-            "256": {
-                "note_patterns.note_onset_intervals.mean_interval": 1,
-                "note_patterns.note_onset_intervals.std_interval": 1,
-                "note_patterns.average_note_duration": 0,
-            },  # Timing variations
-            "1323": {
-                "note_patterns.notes_per_beat": 1,
-                "note_patterns.note_density": 1,
-                "basic_info.total_notes": 1,
-            },  # Note density
-            "182": {
-                "rhythmic_analysis.rhythmic_complexity": 1,
+            "325": {  # Rhythmic displacement syncopation
                 "rhythmic_analysis.syncopation_score": 1,
-                "note_patterns.notes_per_beat": 1,
-            },  # Rhythmic patterns
-            "855": {
-                "structural_analysis.phrase_count": 1,
-                "structural_analysis.average_phrase_length": 1,
-                "structural_analysis.structural_coherence": 1,
-            },  # Phrase structure
-            "997": {
+                "rhythmic_analysis.rhythmic_complexity": 1,
+                "rhythmic_analysis.ioi_std": 1,
+                "note_patterns.note_onset_intervals.mean_interval": 0,  # Secondary
+            },
+            "256": {  # Dynamic contrast accents
+                "velocity_dynamics.dynamic_range": 1,
+                "note_patterns.velocity_range": 1,
+                "velocity_dynamics.dynamic_variance": 1,
+                "velocity_dynamics.forte_notes_ratio": 1,
+            },
+            "1323": {  # Wide pitch range texture
                 "pitch_analysis.pitch_range": 1,
-                "pitch_analysis.mean_pitch": 0,
                 "pitch_analysis.pitch_std": 1,
-            },  # Melodic contour
-            "471": {
-                "harmonic_analysis.scale_consistency": 1,
-                "harmonic_analysis.pitch_class_entropy": -1,
-                "harmonic_analysis.tonal_strength": 1,
-            },  # Harmonic progression
-            "904": {
-                "structural_analysis.structural_coherence": 1,
-                "musical_complexity.overall_complexity_score": 1,
-                "structural_analysis.repetition_ratio": 0,
-            },  # Structure
-            "1950": {
-                "harmonic_analysis.scale_consistency": 1,
-                "harmonic_analysis.pitch_class_entropy": -1,
-                "pitch_analysis.mean_pitch": 0,
-            },  # Tonal center
+                "pitch_analysis.max_pitch": 1,
+                "pitch_analysis.min_pitch": -1,  # Lower notes expand range downward
+            },
+            "182": {  # Steady pulse march rhythm
+                "rhythmic_analysis.rhythmic_regularity": 1,
+                "rhythmic_analysis.average_ioi": 0,  # Consistent, not necessarily increasing
+                "note_patterns.unique_note_durations": -1,  # More uniform
+                "rhythmic_analysis.rhythmic_complexity": -1,  # More regular = less complex
+            },
+            "855": {  # Dynamic contrast tension
+                "velocity_dynamics.dynamic_range": 1,
+                "velocity_dynamics.dynamic_variance": 1,
+                "note_patterns.velocity_range": 1,
+                "structural_analysis.structural_coherence": 0,  # May be affected
+            },
+            "997": {  # Antiphonal call-response
+                "musical_complexity.polyphonic_complexity": 1,
+                "structural_analysis.phrase_count": 1,
+                "note_patterns.note_density": 0,  # Depends on implementation
+                "basic_info.total_tracks": 1,  # More tracks for dialogue
+            },
+            "471": {  # Unison doubling octaves
+                "pitch_analysis.pitch_range": 1,  # Octave span increases
+                "musical_complexity.polyphonic_complexity": 1,
+                "basic_info.total_tracks": 0,  # May have more tracks
+                "note_patterns.average_velocity": 1,  # Stronger unified sound
+            },
+            "904": {  # Rhythmic augmentation
+                "note_patterns.average_note_duration": 1,
+                "note_patterns.longest_note": 1,
+                "note_patterns.unique_note_durations": 1,
+                "rhythmic_analysis.average_ioi": 1,  # Longer intervals
+            },
+            "1950": {  # Dramatic dynamic swells
+                "velocity_dynamics.dynamic_range": 1,
+                "velocity_dynamics.dynamic_variance": 1,
+                "note_patterns.velocity_range": 1,
+                "velocity_dynamics.forte_notes_ratio": 0,  # Variable
+            },
         }
 
         if feature_id in expectations and metric in expectations[feature_id]:
