@@ -323,8 +323,6 @@ class TextBasedLLMEvaluator:
         include_deterministic: bool = False,
         deterministic_result: Optional[Dict[str, Any]] = None,
         include_json: bool = False,
-        baseline_json: Optional[Dict] = None,
-        intervention_json: Optional[Dict] = None,
         baseline_tokens: Optional[np.ndarray] = None,
         intervention_tokens: Optional[np.ndarray] = None,
         vocabulary: Optional[Dict] = None,
@@ -368,8 +366,6 @@ class TextBasedLLMEvaluator:
                 deterministic_result if include_deterministic else None
             ),
             include_json=include_json,
-            baseline_json=baseline_json,
-            intervention_json=intervention_json,
             baseline_tokens=baseline_tokens,
             intervention_tokens=intervention_tokens,
             vocabulary=vocabulary,
@@ -451,8 +447,6 @@ Be objective, precise, and grounded in music theory. Your response MUST be valid
         include_deterministic: bool,
         deterministic_result: Optional[Dict[str, Any]],
         include_json: bool,
-        baseline_json: Optional[Dict],
-        intervention_json: Optional[Dict],
         baseline_tokens: Optional[np.ndarray],
         intervention_tokens: Optional[np.ndarray],
         vocabulary: Optional[Dict],
@@ -547,12 +541,6 @@ Be objective, precise, and grounded in music theory. Your response MUST be valid
                 )
                 prompt += "\n```\n"
                 prompt += "\nNote: Skipping first 128 tokens (prefix region) where baseline=intervention. Showing next 400 tokens where intervention effects appear.\n"
-            # Fallback to JSON if tokens not provided (legacy support)
-            elif baseline_json and intervention_json:
-                prompt += "\n## Musical Representation (JSON - Limited Excerpt)\n"
-                prompt += f"### Baseline (excerpt):\n```json\n{json.dumps(self._extract_json_excerpt(baseline_json), indent=2)}\n```\n"
-                prompt += f"### Intervention (excerpt):\n```json\n{json.dumps(self._extract_json_excerpt(intervention_json), indent=2)}\n```\n"
-                prompt += "\nWarning: JSON excerpt only shows first 20 notes (may be prefix region). Prefer using token-based TXT representation.\n"
 
         prompt += """
 

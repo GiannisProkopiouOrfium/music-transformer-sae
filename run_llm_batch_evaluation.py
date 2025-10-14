@@ -330,8 +330,8 @@ class BatchLLMEvaluator:
         try:
             # Extract metrics from baseline
             self.logger.info(f"  Extracting baseline metrics...")
-            baseline_metrics, baseline_json, baseline_tokens = (
-                self.extract_metrics_from_pt_file(baseline_file)
+            baseline_metrics, baseline_tokens = self.extract_metrics_from_pt_file(
+                baseline_file
             )
 
             if not baseline_metrics:
@@ -341,7 +341,7 @@ class BatchLLMEvaluator:
 
             # Extract metrics from intervention
             self.logger.info(f"  Extracting intervention metrics...")
-            intervention_metrics, intervention_json, intervention_tokens = (
+            intervention_metrics, intervention_tokens = (
                 self.extract_metrics_from_pt_file(intervention_file)
             )
 
