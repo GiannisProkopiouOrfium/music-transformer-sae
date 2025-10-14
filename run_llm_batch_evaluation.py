@@ -249,8 +249,16 @@ class BatchLLMEvaluator:
             elif isinstance(tokens, list):
                 tokens = np.array(tokens)
 
+            # Debug: Check shape before flattening
+            self.logger.info(f"Token array shape before flatten: {tokens.shape}, dtype: {tokens.dtype}")
+
             # Flatten to 1D array (remove all extra dimensions)
-            tokens = tokens.flatten()
+            # Note: For sequence data, we want the first dimension only
+            if tokens.ndim > 1:
+                # Take first sequence if batch dimension exists
+                tokens = tokens[0] if tokens.shape[0] == 1 else tokens.flatten()
+            
+            self.logger.info(f"Token array shape after flatten: {tokens.shape}, first 10 values: {tokens[:10]}")
 
             # Decode tokens to MusPy Music object
             music = representation.decode(tokens, self.encoding, self.vocabulary)
