@@ -673,23 +673,25 @@ Provide your analysis in valid JSON format with ALL required fields."""
 
         # Get the encoding
         encoding = representation_remi.get_encoding()
-        
+
         # Decode tokens to notes: (beat, position, pitch, duration, program)
         notes = representation_remi.decode_notes(tokens, encoding, vocabulary)
-        
+
         if not notes:
             return "# No musical notes found in this sequence\n"
-        
+
         # Take first N notes for excerpt
         max_notes = 100  # Show first 100 notes
         excerpt_notes = notes[:max_notes] if len(notes) > max_notes else notes
-        
+
         # Format as human-readable text
         lines = []
-        lines.append(f"# Musical Notes ({len(excerpt_notes)} notes shown, {len(notes)} total)")
+        lines.append(
+            f"# Musical Notes ({len(excerpt_notes)} notes shown, {len(notes)} total)"
+        )
         lines.append("# Format: beat, position, pitch, duration, instrument")
         lines.append("")
-        
+
         # Group by beat for readability
         current_beat = None
         for beat, position, pitch, duration, program in excerpt_notes:
@@ -698,22 +700,39 @@ Provide your analysis in valid JSON format with ALL required fields."""
                     lines.append("")  # Blank line between beats
                 lines.append(f"## Beat {beat}")
                 current_beat = beat
-            
+
             # Get instrument name
-            instrument = encoding["program_instrument_map"].get(program, f"program_{program}")
-            
+            instrument = encoding["program_instrument_map"].get(
+                program, f"program_{program}"
+            )
+
             # Get pitch name (MIDI number to note name)
-            pitch_names = ['C', 'C#', 'D', 'D#', 'E', 'F', 'F#', 'G', 'G#', 'A', 'A#', 'B']
+            pitch_names = [
+                "C",
+                "C#",
+                "D",
+                "D#",
+                "E",
+                "F",
+                "F#",
+                "G",
+                "G#",
+                "A",
+                "A#",
+                "B",
+            ]
             octave = (pitch // 12) - 1
             pitch_name = f"{pitch_names[pitch % 12]}{octave}"
-            
+
             lines.append(
                 f"  pos={position:2d} | {instrument:20s} | pitch={pitch_name:4s} (MIDI {pitch:3d}) | dur={duration:3d}"
             )
-        
+
         txt_representation = "\n".join(lines)
-        self.logger.info(f"TXT representation: {len(notes)} notes, showing first {len(excerpt_notes)}")
-        
+        self.logger.info(
+            f"TXT representation: {len(notes)} notes, showing first {len(excerpt_notes)}"
+        )
+        self.logger.debug(f"TXT representation:\n{txt_representation}")
         return txt_representation
 
     def _parse_llm_response(
