@@ -660,7 +660,7 @@ Provide your analysis in valid JSON format with ALL required fields."""
         Extract TXT representation for LLM showing musical notes.
 
         Args:
-            tokens: Token sequence (numpy array)
+            tokens: Note array (beat, position, pitch, duration, program) or token sequence
             vocabulary: Code-to-event vocabulary mapping
             prefix_len: Kept for compatibility (not used - we take from start)
             excerpt_len: Maximum number of tokens to include (default 600)
@@ -674,18 +674,19 @@ Provide your analysis in valid JSON format with ALL required fields."""
         # Get the encoding
         encoding = representation_remi.get_encoding()
 
-        # Debug: Show first few tokens
-        self.logger.info(f"Token sequence length: {len(tokens)}")
-        if len(tokens) > 0:
-            first_events = [vocabulary.get(t, f"UNKNOWN_{t}") for t in tokens[:20]]
-            self.logger.info(f"First 20 events: {first_events}")
-
-        # Decode tokens to notes: (beat, position, pitch, duration, program)
-        notes = representation_remi.decode_notes(tokens, encoding, vocabulary)
-        self.logger.info(f"Decoded {len(notes)} notes from token sequence")
+        # Check if tokens is already in note format (N, 5) or token format (N,)
+        if tokens.ndim == 2 and tokens.shape[1] == 5:
+            # Already in note format: (beat, position, pitch, duration, program)
+            notes = [tuple(row) for row in tokens]
+            self.logger.info(f"Input is note format: {len(notes)} notes")
+        else:
+            # Token format: decode to notes
+            self.logger.info(f"Input is token format: {len(tokens)} tokens")
+            notes = representation_remi.decode_notes(tokens, encoding, vocabulary)
+            self.logger.info(f"Decoded {len(notes)} notes from tokens")
 
         if not notes:
-            self.logger.warning("No musical notes found in token sequence")
+            self.logger.warning("No musical notes found")
             return "# No musical notes found in this sequence\n"
 
         # Take first N notes for excerpt
