@@ -673,27 +673,23 @@ Provide your analysis in valid JSON format with ALL required fields."""
         import tempfile
         from pathlib import Path
 
-        # Take a larger excerpt from the start to ensure we capture musical content
-        # Note: Prefix contains context, full sequence shows intervention effects
-        if len(tokens) > 600:
-            # Take first 600 tokens (includes prefix + generated content with notes)
-            excerpt_tokens = tokens[:600]
-        else:
-            # If shorter, take all
-            excerpt_tokens = tokens
-
-        # Filter out 'end-of-track' tokens which are not handled by dump()
-        # Keep only tokens that dump() can process
+        # Filter the tokens to remove special markers and get actual musical content
+        # Remove start-of-song, end-of-song, and end-of-track tokens
         filtered_tokens = []
-        for token in excerpt_tokens:
+        for token in tokens:
             event = vocabulary.get(token, "")
-            # Skip end-of-track tokens (not handled by dump function)
-            if event != "end-of-track":
+            # Skip special tokens that don't represent musical content
+            if event not in ["start-of-song", "end-of-song", "end-of-track"]:
                 filtered_tokens.append(token)
-
-        excerpt_tokens = (
-            np.array(filtered_tokens) if filtered_tokens else excerpt_tokens
-        )
+        
+        # Take up to 600 tokens of actual musical content
+        if len(filtered_tokens) > 600:
+            excerpt_tokens = np.array(filtered_tokens[:600])
+        elif filtered_tokens:
+            excerpt_tokens = np.array(filtered_tokens)
+        else:
+            # Fallback: if no musical content, take original tokens
+            excerpt_tokens = tokens[:600] if len(tokens) > 600 else tokens
 
         # Use save_txt which handles REMI format properly
         # Create temporary file to get the TXT representation
@@ -714,8 +710,9 @@ Provide your analysis in valid JSON format with ALL required fields."""
             tmp_path.unlink(missing_ok=True)
 
         # Add context header
-        header = f"# Complete musical sequence (first {len(excerpt_tokens)} tokens)\n"
-        header += f"# This shows the full generated music with all notes, instruments, and timing\n\n"
+        header = f"# Musical content excerpt ({len(excerpt_tokens)} tokens, special markers removed)\n"
+        header += "# Format: beat_X position_Y instrument_Z pitch_A duration_B\n"
+        header += "# Each line represents timing + note events at that position\n\n"
 
         return header + txt_representation
 
