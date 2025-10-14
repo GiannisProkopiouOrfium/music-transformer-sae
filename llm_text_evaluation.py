@@ -676,8 +676,10 @@ Provide your analysis in valid JSON format with ALL required fields."""
 
         # Decode tokens to notes: (beat, position, pitch, duration, program)
         notes = representation_remi.decode_notes(tokens, encoding, vocabulary)
+        logging.info(f"Notes {notes} from token sequence")
 
         if not notes:
+            logging.warning("No musical notes found in token sequence")
             return "# No musical notes found in this sequence\n"
 
         # Take first N notes for excerpt
