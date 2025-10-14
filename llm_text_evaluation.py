@@ -657,7 +657,7 @@ Provide your analysis in valid JSON format with ALL required fields."""
         self, tokens, vocabulary, prefix_len: int = 0, excerpt_len: int = 600
     ) -> str:
         """
-        Extract TXT representation for LLM showing full musical content.
+        Extract TXT representation for LLM showing musical notes.
 
         Args:
             tokens: Token sequence (numpy array)
@@ -666,55 +666,55 @@ Provide your analysis in valid JSON format with ALL required fields."""
             excerpt_len: Maximum number of tokens to include (default 600)
 
         Returns:
-            Human-readable TXT representation with complete musical events
+            Human-readable representation of musical notes
         """
         # Import representation module
         from baseline import representation_remi
-        import tempfile
-        from pathlib import Path
 
-        # Filter the tokens to remove special markers and get actual musical content
-        # Remove start-of-song, end-of-song, and end-of-track tokens
-        filtered_tokens = []
-        for token in tokens:
-            event = vocabulary.get(token, "")
-            # Skip special tokens that don't represent musical content
-            if event not in ["start-of-song", "end-of-song", "end-of-track"]:
-                filtered_tokens.append(token)
+        # Get the encoding
+        encoding = representation_remi.get_encoding()
         
-        # Take up to 600 tokens of actual musical content
-        if len(filtered_tokens) > 600:
-            excerpt_tokens = np.array(filtered_tokens[:600])
-        elif filtered_tokens:
-            excerpt_tokens = np.array(filtered_tokens)
-        else:
-            # Fallback: if no musical content, take original tokens
-            excerpt_tokens = tokens[:600] if len(tokens) > 600 else tokens
-
-        # Use save_txt which handles REMI format properly
-        # Create temporary file to get the TXT representation
-        with tempfile.NamedTemporaryFile(mode="w", suffix=".txt", delete=False) as tmp:
-            tmp_path = Path(tmp.name)
-
-        try:
-            # Save to temp file using the same method as generate.py
-            representation_remi.save_txt(tmp_path, excerpt_tokens, vocabulary)
-
-            # Read back the content
-            with open(tmp_path, "r") as f:
-                txt_representation = f.read()
-
-            self.logger.info(f"TXT representation: {txt_representation}...")
-        finally:
-            # Clean up temp file
-            tmp_path.unlink(missing_ok=True)
-
-        # Add context header
-        header = f"# Musical content excerpt ({len(excerpt_tokens)} tokens, special markers removed)\n"
-        header += "# Format: beat_X position_Y instrument_Z pitch_A duration_B\n"
-        header += "# Each line represents timing + note events at that position\n\n"
-
-        return header + txt_representation
+        # Decode tokens to notes: (beat, position, pitch, duration, program)
+        notes = representation_remi.decode_notes(tokens, encoding, vocabulary)
+        
+        if not notes:
+            return "# No musical notes found in this sequence\n"
+        
+        # Take first N notes for excerpt
+        max_notes = 100  # Show first 100 notes
+        excerpt_notes = notes[:max_notes] if len(notes) > max_notes else notes
+        
+        # Format as human-readable text
+        lines = []
+        lines.append(f"# Musical Notes ({len(excerpt_notes)} notes shown, {len(notes)} total)")
+        lines.append("# Format: beat, position, pitch, duration, instrument")
+        lines.append("")
+        
+        # Group by beat for readability
+        current_beat = None
+        for beat, position, pitch, duration, program in excerpt_notes:
+            if beat != current_beat:
+                if current_beat is not None:
+                    lines.append("")  # Blank line between beats
+                lines.append(f"## Beat {beat}")
+                current_beat = beat
+            
+            # Get instrument name
+            instrument = encoding["program_instrument_map"].get(program, f"program_{program}")
+            
+            # Get pitch name (MIDI number to note name)
+            pitch_names = ['C', 'C#', 'D', 'D#', 'E', 'F', 'F#', 'G', 'G#', 'A', 'A#', 'B']
+            octave = (pitch // 12) - 1
+            pitch_name = f"{pitch_names[pitch % 12]}{octave}"
+            
+            lines.append(
+                f"  pos={position:2d} | {instrument:20s} | pitch={pitch_name:4s} (MIDI {pitch:3d}) | dur={duration:3d}"
+            )
+        
+        txt_representation = "\n".join(lines)
+        self.logger.info(f"TXT representation: {len(notes)} notes, showing first {len(excerpt_notes)}")
+        
+        return txt_representation
 
     def _parse_llm_response(
         self,
