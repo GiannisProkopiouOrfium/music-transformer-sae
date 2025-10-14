@@ -213,7 +213,7 @@ class BatchLLMEvaluator:
 
     def extract_metrics_from_pt_file(
         self, pt_file: Path
-    ) -> Tuple[Dict[str, Any], Optional[Dict]]:
+    ) -> Tuple[Dict[str, Any], Optional[Any]]:
         """
         Extract metrics from .pt file.
 
@@ -221,7 +221,7 @@ class BatchLLMEvaluator:
             pt_file: Path to .pt file containing generated tokens
 
         Returns:
-            Tuple of (metrics_dict, muspy_json_dict or None)
+            Tuple of (metrics_dict, tokens_array or None)
         """
         # Check cache
         cache_key = str(pt_file)
@@ -258,16 +258,9 @@ class BatchLLMEvaluator:
             # Extract metrics using MusPy
             metrics = self.feature_extractor.extract_all_features(music)
 
-            # Optionally get MusPy JSON for full representation
-            muspy_json = None
-            if self.include_json and MUSPY_AVAILABLE:
-                try:
-                    muspy_json = muspy.to_object(music)
-                except Exception as e:
-                    self.logger.warning(f"Could not convert to MusPy JSON: {e}")
-
-            # Cache result
-            result = (metrics, muspy_json)
+            # Optionally get MusPy JSON for full representation (legacy, not needed with tokens)
+            # Cache result (metrics, muspy_json, tokens)
+            result = (metrics, tokens)
             self.metrics_cache[cache_key] = result
 
             return result
@@ -337,8 +330,8 @@ class BatchLLMEvaluator:
         try:
             # Extract metrics from baseline
             self.logger.info(f"  Extracting baseline metrics...")
-            baseline_metrics, baseline_json = self.extract_metrics_from_pt_file(
-                baseline_file
+            baseline_metrics, baseline_json, baseline_tokens = (
+                self.extract_metrics_from_pt_file(baseline_file)
             )
 
             if not baseline_metrics:
@@ -348,8 +341,8 @@ class BatchLLMEvaluator:
 
             # Extract metrics from intervention
             self.logger.info(f"  Extracting intervention metrics...")
-            intervention_metrics, intervention_json = self.extract_metrics_from_pt_file(
-                intervention_file
+            intervention_metrics, intervention_json, intervention_tokens = (
+                self.extract_metrics_from_pt_file(intervention_file)
             )
 
             if not intervention_metrics:
@@ -392,6 +385,9 @@ class BatchLLMEvaluator:
                 include_json=self.include_json,
                 baseline_json=baseline_json,
                 intervention_json=intervention_json,
+                baseline_tokens=baseline_tokens,
+                intervention_tokens=intervention_tokens,
+                vocabulary=self.vocabulary,
             )
 
             # Update statistics
