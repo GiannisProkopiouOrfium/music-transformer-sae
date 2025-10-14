@@ -674,12 +674,18 @@ Provide your analysis in valid JSON format with ALL required fields."""
         # Get the encoding
         encoding = representation_remi.get_encoding()
 
+        # Debug: Show first few tokens
+        self.logger.info(f"Token sequence length: {len(tokens)}")
+        if len(tokens) > 0:
+            first_events = [vocabulary.get(t, f"UNKNOWN_{t}") for t in tokens[:20]]
+            self.logger.info(f"First 20 events: {first_events}")
+
         # Decode tokens to notes: (beat, position, pitch, duration, program)
         notes = representation_remi.decode_notes(tokens, encoding, vocabulary)
-        logging.info(f"Notes {notes} from token sequence")
+        self.logger.info(f"Decoded {len(notes)} notes from token sequence")
 
         if not notes:
-            logging.warning("No musical notes found in token sequence")
+            self.logger.warning("No musical notes found in token sequence")
             return "# No musical notes found in this sequence\n"
 
         # Take first N notes for excerpt
