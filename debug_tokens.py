@@ -2,20 +2,15 @@
 """Debug script to check token contents in intervention files."""
 
 import sys
-import os
 import torch
 import numpy as np
 from pathlib import Path
 
 # Add project root to path
-project_root = Path(__file__).parent
-sys.path.insert(0, str(project_root))
+sys.path.insert(0, str(Path(__file__).parent))
 
-# Change to project directory to ensure relative imports work
-os.chdir(project_root)
-
-# Now import after path is set
-from baseline import representation_remi
+# Now import - use full path like run_llm_batch_evaluation.py does
+import baseline.representation_remi as representation_remi
 
 
 def main():
