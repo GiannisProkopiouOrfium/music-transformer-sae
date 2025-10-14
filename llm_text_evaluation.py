@@ -668,8 +668,10 @@ Provide your analysis in valid JSON format with ALL required fields."""
         Returns:
             Human-readable TXT representation
         """
-        # Import representation module for dump function
+        # Import representation module
         from baseline import representation_remi
+        import tempfile
+        from pathlib import Path
 
         # Skip prefix (where baseline and intervention are identical)
         if len(tokens) > prefix_len:
@@ -679,9 +681,23 @@ Provide your analysis in valid JSON format with ALL required fields."""
             # If shorter than prefix, take all
             excerpt_tokens = tokens
 
-        # Convert to human-readable format using REMI dump function
-        txt_representation = representation_remi.dump(excerpt_tokens, vocabulary)
-        logging.info(f"TXT representation: {txt_representation[:200]}...")
+        # Use save_txt which properly handles all event types (including end-of-track)
+        # Create temporary file to get the TXT representation
+        with tempfile.NamedTemporaryFile(mode='w', suffix='.txt', delete=False) as tmp:
+            tmp_path = Path(tmp.name)
+        
+        try:
+            # Save to temp file using the same method as generate.py
+            representation_remi.save_txt(tmp_path, excerpt_tokens, vocabulary)
+            
+            # Read back the content
+            with open(tmp_path, 'r') as f:
+                txt_representation = f.read()
+            
+            self.logger.info(f"TXT representation: {txt_representation[:200]}...")
+        finally:
+            # Clean up temp file
+            tmp_path.unlink(missing_ok=True)
 
         # Add context header
         header = f"# Token range: {prefix_len}-{prefix_len + len(excerpt_tokens)} (skipping prefix, showing post-generation region)\n"
