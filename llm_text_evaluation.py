@@ -681,19 +681,32 @@ Provide your analysis in valid JSON format with ALL required fields."""
             # If shorter than prefix, take all
             excerpt_tokens = tokens
 
-        # Use save_txt which properly handles all event types (including end-of-track)
+        # Filter out 'end-of-track' tokens which are not handled by dump()
+        # Keep only tokens that dump() can process
+        filtered_tokens = []
+        for token in excerpt_tokens:
+            event = vocabulary.get(token, "")
+            # Skip end-of-track tokens (not handled by dump function)
+            if event != "end-of-track":
+                filtered_tokens.append(token)
+
+        excerpt_tokens = (
+            np.array(filtered_tokens) if filtered_tokens else excerpt_tokens
+        )
+
+        # Use save_txt which handles REMI format properly
         # Create temporary file to get the TXT representation
-        with tempfile.NamedTemporaryFile(mode='w', suffix='.txt', delete=False) as tmp:
+        with tempfile.NamedTemporaryFile(mode="w", suffix=".txt", delete=False) as tmp:
             tmp_path = Path(tmp.name)
-        
+
         try:
             # Save to temp file using the same method as generate.py
             representation_remi.save_txt(tmp_path, excerpt_tokens, vocabulary)
-            
+
             # Read back the content
-            with open(tmp_path, 'r') as f:
+            with open(tmp_path, "r") as f:
                 txt_representation = f.read()
-            
+
             self.logger.info(f"TXT representation: {txt_representation[:200]}...")
         finally:
             # Clean up temp file
