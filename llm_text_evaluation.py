@@ -654,31 +654,32 @@ Provide your analysis in valid JSON format with ALL required fields."""
         return excerpt
 
     def _extract_txt_representation(
-        self, tokens, vocabulary, prefix_len: int = 128, excerpt_len: int = 400
+        self, tokens, vocabulary, prefix_len: int = 0, excerpt_len: int = 600
     ) -> str:
         """
-        Extract TXT representation for LLM, skipping prefix region.
+        Extract TXT representation for LLM showing full musical content.
 
         Args:
             tokens: Token sequence (numpy array)
             vocabulary: Code-to-event vocabulary mapping
-            prefix_len: Number of prefix tokens to skip (baseline=intervention in this region)
-            excerpt_len: Number of tokens to include after prefix
+            prefix_len: Kept for compatibility (not used - we take from start)
+            excerpt_len: Maximum number of tokens to include (default 600)
 
         Returns:
-            Human-readable TXT representation
+            Human-readable TXT representation with complete musical events
         """
         # Import representation module
         from baseline import representation_remi
         import tempfile
         from pathlib import Path
 
-        # Skip prefix (where baseline and intervention are identical)
-        if len(tokens) > prefix_len:
-            # Take excerpt_len tokens after prefix
-            excerpt_tokens = tokens[prefix_len : prefix_len + excerpt_len]
+        # Take a larger excerpt from the start to ensure we capture musical content
+        # Note: Prefix contains context, full sequence shows intervention effects
+        if len(tokens) > 600:
+            # Take first 600 tokens (includes prefix + generated content with notes)
+            excerpt_tokens = tokens[:600]
         else:
-            # If shorter than prefix, take all
+            # If shorter, take all
             excerpt_tokens = tokens
 
         # Filter out 'end-of-track' tokens which are not handled by dump()
@@ -707,14 +708,14 @@ Provide your analysis in valid JSON format with ALL required fields."""
             with open(tmp_path, "r") as f:
                 txt_representation = f.read()
 
-            self.logger.info(f"TXT representation: {txt_representation[:200]}...")
+            self.logger.info(f"TXT representation: {txt_representation}...")
         finally:
             # Clean up temp file
             tmp_path.unlink(missing_ok=True)
 
         # Add context header
-        header = f"# Token range: {prefix_len}-{prefix_len + len(excerpt_tokens)} (skipping prefix, showing post-generation region)\n"
-        header += f"# Total tokens in excerpt: {len(excerpt_tokens)}\n\n"
+        header = f"# Complete musical sequence (first {len(excerpt_tokens)} tokens)\n"
+        header += f"# This shows the full generated music with all notes, instruments, and timing\n\n"
 
         return header + txt_representation
 
