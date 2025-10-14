@@ -28,6 +28,7 @@ import logging
 from dataclasses import dataclass, asdict
 from datetime import datetime
 import sys
+import numpy as np
 
 # OpenAI API
 try:
@@ -324,6 +325,9 @@ class TextBasedLLMEvaluator:
         include_json: bool = False,
         baseline_json: Optional[Dict] = None,
         intervention_json: Optional[Dict] = None,
+        baseline_tokens: Optional[np.ndarray] = None,
+        intervention_tokens: Optional[np.ndarray] = None,
+        vocabulary: Optional[Dict] = None,
     ) -> LLMEvaluationResult:
         """
         Evaluate an intervention using LLM.
@@ -336,9 +340,12 @@ class TextBasedLLMEvaluator:
             intervention_type: Type of intervention ("addition", "ablation")
             include_deterministic: Whether to include deterministic results (can bias LLM)
             deterministic_result: Optional deterministic analysis result for comparison
-            include_json: Whether to include full JSON representation (more tokens)
-            baseline_json: Optional baseline MusPy JSON
-            intervention_json: Optional intervention MusPy JSON
+            include_json: Whether to include symbolic representation (JSON or TXT)
+            baseline_json: Optional baseline MusPy JSON (legacy, prefer tokens)
+            intervention_json: Optional intervention MusPy JSON (legacy, prefer tokens)
+            baseline_tokens: Optional baseline token sequence (for TXT representation - RECOMMENDED)
+            intervention_tokens: Optional intervention token sequence (for TXT representation - RECOMMENDED)
+            vocabulary: Optional code-to-event vocabulary (required if using tokens)
 
         Returns:
             LLMEvaluationResult with scores and reasoning
@@ -363,6 +370,9 @@ class TextBasedLLMEvaluator:
             include_json=include_json,
             baseline_json=baseline_json,
             intervention_json=intervention_json,
+            baseline_tokens=baseline_tokens,
+            intervention_tokens=intervention_tokens,
+            vocabulary=vocabulary,
         )
 
         # Call OpenAI API
@@ -443,6 +453,9 @@ Be objective, precise, and grounded in music theory. Your response MUST be valid
         include_json: bool,
         baseline_json: Optional[Dict],
         intervention_json: Optional[Dict],
+        baseline_tokens: Optional[np.ndarray],
+        intervention_tokens: Optional[np.ndarray],
+        vocabulary: Optional[Dict],
     ) -> str:
         """Build evaluation prompt for LLM."""
 
@@ -506,17 +519,40 @@ Be objective, precise, and grounded in music theory. Your response MUST be valid
 
         # Add deterministic comparison if available (ONLY NUMERIC VALUES - no labels)
         if include_deterministic and deterministic_result:
-            prompt += f"\n## Deterministic Metric Analysis (numeric reference only)\n"
+            prompt += "\n## Deterministic Metric Analysis (numeric reference only)\n"
             prompt += f"- **Effectiveness Score**: {deterministic_result.get('effectiveness_analysis', {}).get('effectiveness_score', 0):.3f}\n"
             prompt += f"- **Quality Score**: {deterministic_result.get('quality_assessment', {}).get('overall_quality_score', 0):.3f}\n"
             prompt += f"- **Overall Score**: {deterministic_result.get('overall_decision', {}).get('overall_score', 0):.3f}\n"
             prompt += "\nNote: These are numeric scores from rule-based analysis. Use only as reference - make your own independent assessment.\n"
 
-        # Add JSON if requested (increases token usage significantly)
-        if include_json and baseline_json and intervention_json:
-            prompt += "\n## Musical Representation (JSON)\n"
-            prompt += f"### Baseline (excerpt):\n```json\n{json.dumps(self._extract_json_excerpt(baseline_json), indent=2)}\n```\n"
-            prompt += f"### Intervention (excerpt):\n```json\n{json.dumps(self._extract_json_excerpt(intervention_json), indent=2)}\n```\n"
+        # Add symbolic representation if requested
+        if include_json:
+            # Prefer TXT representation (token-based) over JSON (more compact and includes full post-prefix region)
+            if (
+                baseline_tokens is not None
+                and intervention_tokens is not None
+                and vocabulary is not None
+            ):
+                prompt += "\n## Musical Representation (TXT - Human-Readable Events)\n"
+                prompt += (
+                    "### Baseline (post-prefix excerpt where differences occur):\n```\n"
+                )
+                prompt += self._extract_txt_representation(
+                    baseline_tokens, vocabulary, prefix_len=128, excerpt_len=400
+                )
+                prompt += "\n```\n"
+                prompt += "### Intervention (post-prefix excerpt):\n```\n"
+                prompt += self._extract_txt_representation(
+                    intervention_tokens, vocabulary, prefix_len=128, excerpt_len=400
+                )
+                prompt += "\n```\n"
+                prompt += "\nNote: Skipping first 128 tokens (prefix region) where baseline=intervention. Showing next 400 tokens where intervention effects appear.\n"
+            # Fallback to JSON if tokens not provided (legacy support)
+            elif baseline_json and intervention_json:
+                prompt += "\n## Musical Representation (JSON - Limited Excerpt)\n"
+                prompt += f"### Baseline (excerpt):\n```json\n{json.dumps(self._extract_json_excerpt(baseline_json), indent=2)}\n```\n"
+                prompt += f"### Intervention (excerpt):\n```json\n{json.dumps(self._extract_json_excerpt(intervention_json), indent=2)}\n```\n"
+                prompt += "\nWarning: JSON excerpt only shows first 20 notes (may be prefix region). Prefer using token-based TXT representation.\n"
 
         prompt += """
 
@@ -628,6 +664,42 @@ Provide your analysis in valid JSON format with ALL required fields."""
             excerpt["tracks_summary"].append(track_summary)
 
         return excerpt
+
+    def _extract_txt_representation(
+        self, tokens, vocabulary, prefix_len: int = 128, excerpt_len: int = 400
+    ) -> str:
+        """
+        Extract TXT representation for LLM, skipping prefix region.
+
+        Args:
+            tokens: Token sequence (numpy array)
+            vocabulary: Code-to-event vocabulary mapping
+            prefix_len: Number of prefix tokens to skip (baseline=intervention in this region)
+            excerpt_len: Number of tokens to include after prefix
+
+        Returns:
+            Human-readable TXT representation
+        """
+        # Import representation module for dump function
+        from baseline import representation_remi
+
+        # Skip prefix (where baseline and intervention are identical)
+        if len(tokens) > prefix_len:
+            # Take excerpt_len tokens after prefix
+            excerpt_tokens = tokens[prefix_len : prefix_len + excerpt_len]
+        else:
+            # If shorter than prefix, take all
+            excerpt_tokens = tokens
+
+        # Convert to human-readable format using REMI dump function
+        txt_representation = representation_remi.dump(excerpt_tokens, vocabulary)
+        logging.info(f"TXT representation: {txt_representation[:200]}...")
+
+        # Add context header
+        header = f"# Token range: {prefix_len}-{prefix_len + len(excerpt_tokens)} (skipping prefix, showing post-generation region)\n"
+        header += f"# Total tokens in excerpt: {len(excerpt_tokens)}\n\n"
+
+        return header + txt_representation
 
     def _parse_llm_response(
         self,
