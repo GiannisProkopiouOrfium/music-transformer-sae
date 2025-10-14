@@ -383,8 +383,6 @@ class BatchLLMEvaluator:
                 include_deterministic=include_deterministic,
                 deterministic_result=deterministic_result,
                 include_json=self.include_json,
-                baseline_json=baseline_json,
-                intervention_json=intervention_json,
                 baseline_tokens=baseline_tokens,
                 intervention_tokens=intervention_tokens,
                 vocabulary=self.vocabulary,
