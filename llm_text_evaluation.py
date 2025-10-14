@@ -585,6 +585,11 @@ CALCULATE overall_score as: (feature_effectiveness_score * 0.7) + (musical_quali
 
 Provide your analysis in valid JSON format with ALL required fields."""
 
+        # Log the full prompt for debugging
+        self.logger.info(
+            f"\n{'='*80}\nFULL PROMPT SENT TO LLM:\n{'='*80}\n{prompt}\n{'='*80}"
+        )
+
         return prompt
 
     def _calculate_metric_changes(

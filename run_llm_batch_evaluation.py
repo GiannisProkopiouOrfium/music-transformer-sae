@@ -258,17 +258,19 @@ class BatchLLMEvaluator:
             if tokens.ndim == 3 and tokens.shape[0] == 1:
                 # Remove batch dimension: (1, seq_len, features) -> (seq_len, features)
                 tokens = tokens[0]
-            
+
             # Check if this is note format (seq_len, 5 or 6) or token format (seq_len,)
             if tokens.ndim == 2 and tokens.shape[1] >= 5:
                 # This is note data: (beat, position, pitch, duration, program[, ...])
                 # Use the first 5 columns as notes
                 notes = tokens[:, :5]
-                self.logger.info(f"Detected note format: {notes.shape}, converting to music directly")
-                
+                self.logger.info(
+                    f"Detected note format: {notes.shape}, converting to music directly"
+                )
+
                 # Reconstruct music directly from notes
                 music = representation.reconstruct(notes, self.encoding["resolution"])
-                
+
                 # For TXT representation, we'll pass the notes directly
                 tokens = notes  # Pass notes for TXT extraction
             elif tokens.ndim == 1 or (tokens.ndim == 2 and tokens.shape[1] == 1):
@@ -276,7 +278,7 @@ class BatchLLMEvaluator:
                 if tokens.ndim == 2:
                     tokens = tokens.flatten()
                 self.logger.info(f"Detected token format: {tokens.shape}")
-                
+
                 # Decode tokens to MusPy Music object
                 music = representation.decode(tokens, self.encoding, self.vocabulary)
             else:
