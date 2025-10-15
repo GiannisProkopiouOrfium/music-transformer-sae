@@ -6,7 +6,8 @@ This script performs feature interventions using actual song prefixes as conditi
 specifically designed for contrasting songs where interventions create dramatic effects.
 
 Key difference from conditioned_controlled_feature_intervention.py:
-- Uses REAL SONG DATA as conditioning prefix (first N beats of contrasting songs)
+- Uses REAL SONG DATA as conditioning prefix (first N tokens of contrasting songs)
+- Automatically includes start-of-notes token for proper generation
 - Ensures musical continuity from existing compositions
 - Creates comparable interventions starting from same musical material
 
@@ -15,8 +16,11 @@ Usage:
         --song-path data/sod/processed/notes/bach_bwv001.pt \
         --feature-limuf-path limufs.pt \
         --output-dir output \
-        --conditioning-length 4 \
+        --conditioning-length 3 \
         --addition-strengths -2.0,-1.0,0.0,1.0,2.0
+
+Note: conditioning-length specifies minimum tokens. The script will automatically
+      extend to include the start-of-notes token if not present in the initial tokens.
 """
 
 import argparse
@@ -80,7 +84,7 @@ def load_song_data(song_path: Path, encoding: dict) -> torch.Tensor:
         tokens = tokens[:1]  # Take first batch item
 
     print(f"✅ Loaded song data: shape {tokens.shape}")
-    
+
     # Debug: Show first few tokens from the original song
     print(f"   🔍 Debug: First 5 tokens from song file:")
     code_type_map = encoding["code_type_map"]
@@ -88,7 +92,7 @@ def load_song_data(song_path: Path, encoding: dict) -> torch.Tensor:
         token = tokens[0, i]
         event_type = code_type_map.get(int(token[0]), f"unknown_{int(token[0])}")
         print(f"      Token {i}: type={event_type}, data={token.tolist()}")
-    
+
     return tokens
 
 
@@ -96,24 +100,61 @@ def extract_conditioning_prefix(
     song_tokens: torch.Tensor, conditioning_length: int, encoding: dict
 ) -> torch.Tensor:
     """
-    Extract first N tokens of song as conditioning prefix.
+    Extract first N tokens of song as conditioning prefix, ensuring we include start-of-notes.
 
     Args:
         song_tokens: Full song tokens (1, seq_len, 6)
-        conditioning_length: Number of TOKENS to use (e.g., 2-3 for short conditioning)
+        conditioning_length: Number of TOKENS to use as minimum
         encoding: Encoding dictionary
 
     Returns:
         Conditioning tokens (1, conditioning_seq_len, 6)
     """
-    print(f"✂️  Extracting first {conditioning_length} tokens as conditioning prefix...")
+    print(
+        f"✂️  Extracting conditioning prefix (minimum {conditioning_length} tokens)..."
+    )
 
-    # Simply take the first N tokens
+    # Get event type codes
+    son_type_code = encoding["type_code_map"]["start-of-notes"]
+
+    # Start with requested length
     conditioning_end_idx = min(conditioning_length, song_tokens.shape[1])
+
+    # Check if we have start-of-notes token in the conditioning
+    has_start_of_notes = False
+    for i in range(conditioning_end_idx):
+        if song_tokens[0, i, 0] == son_type_code:
+            has_start_of_notes = True
+            break
+
+    # If not, extend conditioning to include it
+    if not has_start_of_notes:
+        print(f"   ⚠️  Conditioning doesn't include start-of-notes, extending...")
+        # Search for start-of-notes in next tokens
+        for i in range(
+            conditioning_end_idx, min(song_tokens.shape[1], conditioning_length + 10)
+        ):
+            if song_tokens[0, i, 0] == son_type_code:
+                conditioning_end_idx = i + 1  # Include the start-of-notes token
+                print(
+                    f"   ✓ Found start-of-notes at token {i}, extending to {conditioning_end_idx} tokens"
+                )
+                break
 
     conditioning_tokens = song_tokens[:, :conditioning_end_idx, :]
 
+    # Verify we have proper structure
+    token_types = []
+    for i in range(min(5, conditioning_tokens.shape[1])):
+        token_type = conditioning_tokens[0, i, 0].item()
+        token_type_name = encoding["code_type_map"].get(
+            token_type, f"unknown_{token_type}"
+        )
+        token_types.append(token_type_name)
+
     print(f"✅ Conditioning prefix: {conditioning_tokens.shape[1]} tokens")
+    print(f"   Token sequence: {' → '.join(token_types)}")
+
     return conditioning_tokens
 
 
@@ -193,7 +234,7 @@ def song_conditioned_generate(
     # Check if conditioning already has start-of-song token
     sos = encoding["type_code_map"]["start-of-song"]
     has_start_token = (conditioning_tokens[0, 0, 0] == sos).item()
-    
+
     if has_start_token:
         # Conditioning already includes start-of-song, use as-is
         out = conditioning_tokens.clone()
@@ -206,9 +247,11 @@ def song_conditioned_generate(
         out = torch.cat([start_tokens, conditioning_tokens], dim=1)
         conditioning_length_with_start = conditioning_length + 1
         print(f"   ℹ️  Added start-of-song token to conditioning")
-    
+
     mask = torch.ones((out.shape[0], out.shape[1]), dtype=torch.bool, device=device)
-    intervention_start_step = conditioning_length_with_start  # Intervention starts AFTER conditioning
+    intervention_start_step = (
+        conditioning_length_with_start  # Intervention starts AFTER conditioning
+    )
 
     print(f"🎵 Song-conditioned generation: {intervention_type} (strength={strength})")
     print(f"   Conditioning: {conditioning_tokens.shape[1]} tokens from real song")
@@ -427,11 +470,11 @@ def save_result(filename: str, tokens: torch.Tensor, encoding: dict, output_dir:
         # Debug: Check token shape and first few tokens
         print(f"   🔍 Debug: tokens_np shape = {tokens_np.shape}")
         print(f"   🔍 Debug: first 5 tokens = {tokens_np[:5]}")
-        
+
         # Decode notes first to check if we get any
         notes = representation.decode_notes(tokens_np, encoding)
         print(f"   🔍 Debug: decoded {len(notes)} notes")
-        
+
         if len(notes) == 0:
             print(f"   ⚠️  Warning: No notes were decoded from tokens!")
             print(f"   🔍 Debug: Checking event types in first 10 tokens...")
@@ -440,10 +483,10 @@ def save_result(filename: str, tokens: torch.Tensor, encoding: dict, output_dir:
                 event_type = code_type_map.get(int(row[0]), f"unknown_{int(row[0])}")
                 print(f"      Token {i}: type={event_type}, full={row}")
             return None, None
-        
+
         # Now decode full music
         music = representation.decode(tokens_np, encoding)
-        
+
         print(f"   🔍 Debug: Music object has {len(music.tracks)} tracks")
         for i, track in enumerate(music.tracks):
             print(f"      Track {i}: program={track.program}, {len(track.notes)} notes")
@@ -664,7 +707,7 @@ def main():
         "--conditioning-length",
         type=int,
         default=3,
-        help="Number of TOKENS to use as conditioning prefix (default: 3, use 2-3 for short conditioning)",
+        help="Minimum number of tokens for conditioning prefix (default: 3). Will automatically extend to include start-of-notes token if needed.",
     )
     parser.add_argument(
         "--seq-len",
