@@ -102,24 +102,31 @@ def extract_conditioning_prefix(
     # Resolution: ticks per beat (usually 12)
     resolution = encoding.get("resolution", 12)
 
-    # Calculate how many tokens correspond to N beats
-    # Beat information is in dimension 0 (beat) and dimension 1 (position within beat)
-    beats_tokens = song_tokens[0, :, 0]  # Beat numbers
+    # Get code-to-beat mapping
+    code_beat_map = encoding.get("code_beat_map", {})
 
-    # Find where we reach the target beat count
+    # Tokens are in format: (type, beat, position, pitch, duration, instrument)
+    # Beat codes are: beat_value -> beat_value + 1 (so beat 0 = code 1, beat 1 = code 2, etc.)
+    beat_codes = song_tokens[0, :, 1]  # Beat is dimension 1, not 0 (0 is type)
+
+    # Decode beat codes to actual beat numbers
+    # Target: find where we reach conditioning_length beats
     target_beat = conditioning_length
     conditioning_end_idx = None
 
-    for idx, beat in enumerate(beats_tokens):
-        if beat >= target_beat:
-            conditioning_end_idx = idx
-            break
+    for idx, beat_code in enumerate(beat_codes):
+        beat_code_int = int(beat_code.item())
+        if beat_code_int in code_beat_map:
+            beat_value = code_beat_map[beat_code_int]
+            if beat_value is not None and beat_value >= target_beat:
+                conditioning_end_idx = idx
+                break
 
     if conditioning_end_idx is None:
-        # Song is shorter than requested conditioning length
-        conditioning_end_idx = song_tokens.shape[1]
+        # Song is shorter than requested conditioning length - use first 10%
+        conditioning_end_idx = max(1, song_tokens.shape[1] // 10)
         print(
-            f"⚠️  Song shorter than {conditioning_length} beats, using {conditioning_end_idx} tokens"
+            f"⚠️  Could not find {conditioning_length} beats, using first {conditioning_end_idx} tokens"
         )
 
     conditioning_tokens = song_tokens[:, :conditioning_end_idx, :]
@@ -422,12 +429,9 @@ def save_result(filename: str, tokens: torch.Tensor, encoding: dict, output_dir:
         music.write(str(midi_path))
         print(f"   💾 Saved MIDI: {filename}.mid")
 
-        # Save WAV
+        # Save WAV (using MusPy's audio synthesis)
         wav_path = output_dir / f"{filename}.wav"
-        music.write(
-            str(wav_path),
-            options="-o synth.polyphony=4096",
-        )
+        music.write_audio(str(wav_path))
         print(f"   💾 Saved WAV: {filename}.wav")
 
         return str(wav_path), str(midi_path)
