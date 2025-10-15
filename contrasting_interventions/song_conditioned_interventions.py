@@ -80,6 +80,15 @@ def load_song_data(song_path: Path, encoding: dict) -> torch.Tensor:
         tokens = tokens[:1]  # Take first batch item
 
     print(f"✅ Loaded song data: shape {tokens.shape}")
+    
+    # Debug: Show first few tokens from the original song
+    print(f"   🔍 Debug: First 5 tokens from song file:")
+    code_type_map = encoding["code_type_map"]
+    for i in range(min(5, tokens.shape[1])):
+        token = tokens[0, i]
+        event_type = code_type_map.get(int(token[0]), f"unknown_{int(token[0])}")
+        print(f"      Token {i}: type={event_type}, data={token.tolist()}")
+    
     return tokens
 
 
@@ -181,22 +190,25 @@ def song_conditioned_generate(
     conditioning_tokens = conditioning_tokens.to(device)
     conditioning_length = conditioning_tokens.shape[1]
 
-    # Create start tokens and combine with conditioning
-    # This ensures the model sees proper start-of-song token
+    # Check if conditioning already has start-of-song token
     sos = encoding["type_code_map"]["start-of-song"]
-    start_tokens = torch.zeros((1, 1, 6), dtype=torch.long, device=device)
-    start_tokens[:, 0, 0] = sos
-
-    # Combine start token with conditioning tokens
-    out = torch.cat([start_tokens, conditioning_tokens], dim=1)
+    has_start_token = (conditioning_tokens[0, 0, 0] == sos).item()
+    
+    if has_start_token:
+        # Conditioning already includes start-of-song, use as-is
+        out = conditioning_tokens.clone()
+        conditioning_length_with_start = conditioning_length
+        print(f"   ℹ️  Conditioning already includes start-of-song token")
+    else:
+        # Need to add start-of-song token
+        start_tokens = torch.zeros((1, 1, 6), dtype=torch.long, device=device)
+        start_tokens[:, 0, 0] = sos
+        out = torch.cat([start_tokens, conditioning_tokens], dim=1)
+        conditioning_length_with_start = conditioning_length + 1
+        print(f"   ℹ️  Added start-of-song token to conditioning")
+    
     mask = torch.ones((out.shape[0], out.shape[1]), dtype=torch.bool, device=device)
-
-    conditioning_length_with_start = (
-        conditioning_tokens.shape[1] + 1
-    )  # +1 for start token
-    intervention_start_step = (
-        conditioning_length_with_start  # Intervention starts AFTER conditioning
-    )
+    intervention_start_step = conditioning_length_with_start  # Intervention starts AFTER conditioning
 
     print(f"🎵 Song-conditioned generation: {intervention_type} (strength={strength})")
     print(f"   Conditioning: {conditioning_tokens.shape[1]} tokens from real song")
@@ -393,10 +405,11 @@ def song_conditioned_generate(
     if intervention_handle:
         intervention_handle.remove()
 
-    # Return only generated tokens (excluding start token, keeping conditioning + new tokens)
-    generated_tokens = out[:, 1:]  # Remove start token
+    # Return complete sequence INCLUDING start token (needed for proper decoding)
+    # The sequence should be: [start-of-song] + [conditioning tokens] + [new generated tokens]
+    generated_tokens = out  # Keep everything including start token
     print(
-        f"✅ Generation complete: {generated_tokens.shape[1]} total tokens ({conditioning_tokens.shape[1]} conditioning + {generated_tokens.shape[1] - conditioning_tokens.shape[1]} new)"
+        f"✅ Generation complete: {generated_tokens.shape[1]} total tokens (1 start + {conditioning_tokens.shape[1]} conditioning + {generated_tokens.shape[1] - conditioning_length_with_start} new)"
     )
     return generated_tokens
 
@@ -411,7 +424,29 @@ def save_result(filename: str, tokens: torch.Tensor, encoding: dict, output_dir:
 
     # Decode to MusPy Music object
     try:
+        # Debug: Check token shape and first few tokens
+        print(f"   🔍 Debug: tokens_np shape = {tokens_np.shape}")
+        print(f"   🔍 Debug: first 5 tokens = {tokens_np[:5]}")
+        
+        # Decode notes first to check if we get any
+        notes = representation.decode_notes(tokens_np, encoding)
+        print(f"   🔍 Debug: decoded {len(notes)} notes")
+        
+        if len(notes) == 0:
+            print(f"   ⚠️  Warning: No notes were decoded from tokens!")
+            print(f"   🔍 Debug: Checking event types in first 10 tokens...")
+            code_type_map = encoding["code_type_map"]
+            for i, row in enumerate(tokens_np[:10]):
+                event_type = code_type_map.get(int(row[0]), f"unknown_{int(row[0])}")
+                print(f"      Token {i}: type={event_type}, full={row}")
+            return None, None
+        
+        # Now decode full music
         music = representation.decode(tokens_np, encoding)
+        
+        print(f"   🔍 Debug: Music object has {len(music.tracks)} tracks")
+        for i, track in enumerate(music.tracks):
+            print(f"      Track {i}: program={track.program}, {len(track.notes)} notes")
 
         # Save MIDI
         midi_path = output_dir / f"{filename}.mid"
