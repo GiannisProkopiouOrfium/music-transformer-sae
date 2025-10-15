@@ -40,6 +40,10 @@ from datetime import datetime
 # Add parent directory to path
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
+import torch
+import muspy
+from mmt import representation
+
 
 class ContrastingInterventionRunner:
     """Run interventions on contrasting songs."""
@@ -85,6 +89,59 @@ class ContrastingInterventionRunner:
 
         # Load contrasting songs
         self.contrasting_songs = self._load_contrasting_songs()
+
+        # Load encoding for JSON->PT conversion if needed
+        self.encoding = None
+
+    def _load_encoding(self):
+        """Load encoding for JSON to PT conversion."""
+        if self.encoding is None:
+            encoding_path = Path("data/sod/processed/notes/encoding.json")
+            if not encoding_path.exists():
+                # Try relative to parent directory
+                encoding_path = (
+                    Path(__file__).parent.parent
+                    / "data/sod/processed/notes/encoding.json"
+                )
+
+            if encoding_path.exists():
+                self.encoding = representation.load_encoding(encoding_path)
+                self.logger.info(f"Loaded encoding from: {encoding_path}")
+            else:
+                self.logger.warning(f"Encoding not found at {encoding_path}")
+        return self.encoding
+
+    def _convert_json_to_pt(self, json_path: Path, pt_path: Path) -> bool:
+        """Convert JSON file to PT file on-the-fly."""
+        try:
+            encoding = self._load_encoding()
+            if encoding is None:
+                self.logger.error("Cannot convert JSON to PT: encoding not loaded")
+                return False
+
+            self.logger.info(f"   Converting JSON to PT: {json_path.name}")
+
+            # Load MusPy JSON
+            music = muspy.load(str(json_path))
+
+            # Encode to tokens
+            tokens = representation.encode(music, encoding)
+
+            # Convert to tensor and save
+            tokens_tensor = torch.tensor(tokens, dtype=torch.long)
+
+            # Save as .pt file
+            pt_path.parent.mkdir(parents=True, exist_ok=True)
+            torch.save(tokens_tensor, pt_path)
+
+            self.logger.info(
+                f"   ✅ Converted: {json_path.name} -> {pt_path.name} (shape: {tokens_tensor.shape})"
+            )
+            return True
+
+        except Exception as e:
+            self.logger.error(f"   ❌ Failed to convert {json_path.name}: {e}")
+            return False
 
     def _load_contrasting_songs(self) -> List[str]:
         """Load the list of contrasting song names."""
@@ -180,13 +237,46 @@ class ContrastingInterventionRunner:
             f.write(f"{song_name}\n")
 
         # Build path to song .pt file
+        # Try direct path first, then check Kunstderfuge subfolder
         song_pt_path = self.data_dir / f"{song_name}.pt"
 
         if not song_pt_path.exists():
-            self.logger.error(f"❌ Song file not found: {song_pt_path}")
-            if temp_names_file.exists():
-                temp_names_file.unlink()
-            return False
+            # Try Kunstderfuge subfolder
+            song_pt_path = self.data_dir / "Kunstderfuge" / f"{song_name}.pt"
+
+        # If .pt doesn't exist, try to convert from JSON
+        if not song_pt_path.exists():
+            self.logger.info(f"   .pt file not found, looking for JSON...")
+
+            # Try finding JSON file
+            json_path = (
+                Path("data/sod/processed/json/Kunstderfuge") / f"{song_name}.json"
+            )
+            if not json_path.exists():
+                json_path = (
+                    Path(__file__).parent.parent
+                    / "data/sod/processed/json/Kunstderfuge"
+                    / f"{song_name}.json"
+                )
+
+            if json_path.exists():
+                # Convert JSON to PT
+                song_pt_path = self.data_dir / "Kunstderfuge" / f"{song_name}.pt"
+                if not self._convert_json_to_pt(json_path, song_pt_path):
+                    if temp_names_file.exists():
+                        temp_names_file.unlink()
+                    return False
+            else:
+                self.logger.error(
+                    f"❌ Neither .pt nor .json file found for: {song_name}"
+                )
+                self.logger.error(f"   Tried .pt: {song_pt_path}")
+                self.logger.error(f"   Tried .json: {json_path}")
+                if temp_names_file.exists():
+                    temp_names_file.unlink()
+                return False
+
+        self.logger.info(f"   Using song file: {song_pt_path}")
 
         cmd = [
             "python",
@@ -257,8 +347,8 @@ class ContrastingInterventionRunner:
 
         self.logger.info(f"✅ Summary saved to {summary_file}")
 
-        # Also create a simplified listening guide
-        self._create_listening_guide_html(results)
+        # Skip HTML generation - just need WAV files
+        # self._create_listening_guide_html(results)
 
     def _generate_listening_guide(self) -> str:
         """Generate listening instructions."""
@@ -483,10 +573,11 @@ Compare:
         self.logger.info(f"Total interventions completed: {total_interventions}")
         self.logger.info(f"Output directory: {self.output_dir}")
 
-        # Print listening instructions
-        html_file = self.output_dir / f"listening_guide_layer{self.layer}.html"
-        self.logger.info(f"\n🎧 READY TO LISTEN!")
-        self.logger.info(f"Open the listening guide: file://{html_file.absolute()}")
+        self.logger.info("\n🎧 READY TO LISTEN!")
+        self.logger.info(f"WAV files saved in: {self.output_dir}")
+        self.logger.info(
+            "Find audio files organized by: layer/feature/intervention_name/*.wav"
+        )
 
         return results
 
