@@ -87,56 +87,27 @@ def extract_conditioning_prefix(
     song_tokens: torch.Tensor, conditioning_length: int, encoding: dict
 ) -> torch.Tensor:
     """
-    Extract first N beats of song as conditioning prefix.
+    Extract first N tokens of song as conditioning prefix.
 
     Args:
         song_tokens: Full song tokens (1, seq_len, 6)
-        conditioning_length: Number of beats to use
+        conditioning_length: Number of TOKENS to use (e.g., 2-3 for short conditioning)
         encoding: Encoding dictionary
 
     Returns:
         Conditioning tokens (1, conditioning_seq_len, 6)
     """
-    print(f"✂️  Extracting {conditioning_length} beats as conditioning prefix...")
+    print(f"✂️  Extracting first {conditioning_length} tokens as conditioning prefix...")
 
-    # Resolution: ticks per beat (usually 12)
-    resolution = encoding.get("resolution", 12)
-
-    # Get code-to-beat mapping
-    code_beat_map = encoding.get("code_beat_map", {})
-
-    # Tokens are in format: (type, beat, position, pitch, duration, instrument)
-    # Beat codes are: beat_value -> beat_value + 1 (so beat 0 = code 1, beat 1 = code 2, etc.)
-    beat_codes = song_tokens[0, :, 1]  # Beat is dimension 1, not 0 (0 is type)
-
-    # Decode beat codes to actual beat numbers
-    # Target: find where we reach conditioning_length beats
-    target_beat = conditioning_length
-    conditioning_end_idx = None
-
-    for idx, beat_code in enumerate(beat_codes):
-        beat_code_int = int(beat_code.item())
-        if beat_code_int in code_beat_map:
-            beat_value = code_beat_map[beat_code_int]
-            if beat_value is not None and beat_value >= target_beat:
-                conditioning_end_idx = idx
-                break
-
-    if conditioning_end_idx is None:
-        # Song is shorter than requested conditioning length - use first 10%
-        conditioning_end_idx = max(1, song_tokens.shape[1] // 10)
-        print(
-            f"⚠️  Could not find {conditioning_length} beats, using first {conditioning_end_idx} tokens"
-        )
-
+    # Simply take the first N tokens
+    conditioning_end_idx = min(conditioning_length, song_tokens.shape[1])
+    
     conditioning_tokens = song_tokens[:, :conditioning_end_idx, :]
 
     print(
-        f"✅ Conditioning prefix: {conditioning_tokens.shape[1]} tokens ({conditioning_length} beats)"
+        f"✅ Conditioning prefix: {conditioning_tokens.shape[1]} tokens"
     )
     return conditioning_tokens
-
-
 def load_music_transformer(model_path: str, device: str = "cuda"):
     """Load trained MusicXTransformer."""
     print(f"📦 Loading MusicXTransformer from: {model_path}")
@@ -514,19 +485,18 @@ def run_song_conditioned_interventions(
     results = {}
 
     experimental_conditions = []
+    
+    # Baseline first (only once, even if 0.0 is in addition_strengths)
+    experimental_conditions.append(("baseline", 0.0, "baseline"))
+    
+    # Addition strengths (skip 0.0 if present since we did baseline)
     for strength in addition_strengths:
-        if strength == 0.0:
-            experimental_conditions.append(("baseline", strength, "baseline"))
-        elif strength > 0:
+        if abs(strength) > 0.001:  # Skip 0.0
             experimental_conditions.append(
                 ("addition", strength, f"add_{strength:+.1f}")
             )
-        else:
-            experimental_conditions.append(
-                ("addition", strength, f"add_{strength:+.1f}")
-            )
-
-    # Add ablation
+    
+    # Ablation last (only once)
     experimental_conditions.append(("ablation", 0.0, "ablation"))
 
     for intervention_type, strength, condition_name in experimental_conditions:
@@ -581,11 +551,28 @@ def run_song_conditioned_interventions(
     with open(summary_file, "w") as f:
         json.dump(summary, f, indent=2)
 
+    # Centralize all WAVs in a single folder for easy upload
+    wav_central_dir = output_dir / "all_wavs"
+    wav_central_dir.mkdir(exist_ok=True)
+    
+    print("\n📦 Centralizing WAV files...")
+    import shutil
+    for condition_name, result_data in results.items():
+        if "wav_path" in result_data:
+            wav_src = Path(result_data["wav_path"])
+            if wav_src.exists():
+                wav_dst = wav_central_dir / f"{song_path.stem}_{condition_name}.wav"
+                shutil.copy2(wav_src, wav_dst)
+                print(f"   ✅ Copied: {wav_dst.name}")
+    
+    print(f"✅ All WAVs centralized in: {wav_central_dir}")
+
     print("\n" + "=" * 80)
     print("✅ SONG-CONDITIONED INTERVENTIONS COMPLETE!")
     print("=" * 80)
     print(f"Generated {len(results)} conditions")
     print(f"Summary: {summary_file}")
+    print(f"Central WAV folder: {wav_central_dir}")
     print()
 
     return results, summary
@@ -622,8 +609,8 @@ def main():
     parser.add_argument(
         "--conditioning-length",
         type=int,
-        default=4,
-        help="Number of beats to use as conditioning prefix (default: 4)",
+        default=3,
+        help="Number of TOKENS to use as conditioning prefix (default: 3, use 2-3 for short conditioning)",
     )
     parser.add_argument(
         "--seq-len",
