@@ -287,7 +287,6 @@ class ContrastingInterventionRunner:
 
         # Convert to absolute paths for subprocess
         song_pt_path_abs = song_pt_path.resolve()
-        limuf_path_abs = limuf_path.resolve()
         intervention_output_dir_abs = intervention_output_dir.resolve()
 
         cmd = [
@@ -296,7 +295,7 @@ class ContrastingInterventionRunner:
             "--song-path",
             str(song_pt_path_abs),
             "--feature-limuf-path",
-            str(limuf_path_abs),
+            str(limuf_path),
             "--output-dir",
             str(intervention_output_dir_abs),
             "--intervention-layer",

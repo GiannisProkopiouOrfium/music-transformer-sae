@@ -413,13 +413,14 @@ def save_result(filename: str, tokens: torch.Tensor, encoding: dict, output_dir:
     # Save as numpy
     np.save(output_dir / f"{filename}.npy", tokens_np)
 
-    # Reconstruct to MusPy Music object
+    # Decode to MusPy Music object
     try:
-        music = representation.reconstruct(tokens_np, encoding["resolution"])
+        music = representation.decode(tokens_np, encoding)
 
         # Save MIDI
         midi_path = output_dir / f"{filename}.mid"
         music.write(str(midi_path))
+        print(f"   💾 Saved MIDI: {filename}.mid")
 
         # Save WAV
         wav_path = output_dir / f"{filename}.wav"
@@ -427,12 +428,14 @@ def save_result(filename: str, tokens: torch.Tensor, encoding: dict, output_dir:
             str(wav_path),
             options="-o synth.polyphony=4096",
         )
+        print(f"   💾 Saved WAV: {filename}.wav")
 
-        print(f"   💾 Saved: {filename}.wav, {filename}.mid")
         return str(wav_path), str(midi_path)
 
     except Exception as e:
+        import traceback
         print(f"   ⚠️  Could not save audio: {e}")
+        print(f"   Traceback: {traceback.format_exc()}")
         return None, None
 
 
