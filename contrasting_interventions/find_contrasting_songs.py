@@ -82,7 +82,7 @@ class ContrastingSongFinder:
 
         # Initialize feature extractor for musical analysis
         self.midi_extractor = MIDIFeatureExtractor(
-            encoding_path="../data/sod/processed/encoding.json"
+            encoding_path="../data/sod/processed/notes/encoding.json"
         )
 
         # Feature-specific metric mappings
