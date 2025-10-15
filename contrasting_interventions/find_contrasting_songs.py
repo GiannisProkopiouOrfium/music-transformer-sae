@@ -81,7 +81,9 @@ class ContrastingSongFinder:
             self.high_activation_songs = self._extract_high_activation_songs()
 
         # Initialize feature extractor for musical analysis
-        self.midi_extractor = MIDIFeatureExtractor()
+        self.midi_extractor = MIDIFeatureExtractor(
+            encoding_path="../data/sod/processed/encoding.json"
+        )
 
         # Feature-specific metric mappings
         self.feature_metric_mapping = {

@@ -44,97 +44,99 @@ from baseline import utils
 def load_song_data(song_path: Path, encoding: dict) -> torch.Tensor:
     """
     Load song data from .pt file.
-    
+
     Args:
         song_path: Path to .pt file containing note tokens
         encoding: Encoding dictionary
-        
+
     Returns:
         Tensor of shape (1, seq_len, 6) containing note tokens
     """
     print(f"📁 Loading song from: {song_path}")
-    
+
     data = torch.load(song_path, map_location="cpu")
-    
+
     # Handle different possible formats
     if isinstance(data, dict):
         # Might have keys like 'tokens', 'notes', etc.
-        if 'tokens' in data:
-            tokens = data['tokens']
-        elif 'notes' in data:
-            tokens = data['notes']
+        if "tokens" in data:
+            tokens = data["tokens"]
+        elif "notes" in data:
+            tokens = data["notes"]
         else:
             # Try first key
             tokens = data[list(data.keys())[0]]
     else:
         tokens = data
-    
+
     # Ensure correct shape: (1, seq_len, 6)
     if len(tokens.shape) == 2:
         tokens = tokens.unsqueeze(0)  # Add batch dimension
     elif len(tokens.shape) == 3 and tokens.shape[0] != 1:
         tokens = tokens[:1]  # Take first batch item
-    
+
     print(f"✅ Loaded song data: shape {tokens.shape}")
     return tokens
 
 
 def extract_conditioning_prefix(
-    song_tokens: torch.Tensor,
-    conditioning_length: int,
-    encoding: dict
+    song_tokens: torch.Tensor, conditioning_length: int, encoding: dict
 ) -> torch.Tensor:
     """
     Extract first N beats of song as conditioning prefix.
-    
+
     Args:
         song_tokens: Full song tokens (1, seq_len, 6)
         conditioning_length: Number of beats to use
         encoding: Encoding dictionary
-        
+
     Returns:
         Conditioning tokens (1, conditioning_seq_len, 6)
     """
     print(f"✂️  Extracting {conditioning_length} beats as conditioning prefix...")
-    
+
     # Resolution: ticks per beat (usually 12)
-    resolution = encoding.get('resolution', 12)
-    
+    resolution = encoding.get("resolution", 12)
+
     # Calculate how many tokens correspond to N beats
     # Beat information is in dimension 0 (beat) and dimension 1 (position within beat)
     beats_tokens = song_tokens[0, :, 0]  # Beat numbers
-    
+
     # Find where we reach the target beat count
     target_beat = conditioning_length
     conditioning_end_idx = None
-    
+
     for idx, beat in enumerate(beats_tokens):
         if beat >= target_beat:
             conditioning_end_idx = idx
             break
-    
+
     if conditioning_end_idx is None:
         # Song is shorter than requested conditioning length
         conditioning_end_idx = song_tokens.shape[1]
-        print(f"⚠️  Song shorter than {conditioning_length} beats, using {conditioning_end_idx} tokens")
-    
+        print(
+            f"⚠️  Song shorter than {conditioning_length} beats, using {conditioning_end_idx} tokens"
+        )
+
     conditioning_tokens = song_tokens[:, :conditioning_end_idx, :]
-    
-    print(f"✅ Conditioning prefix: {conditioning_tokens.shape[1]} tokens ({conditioning_length} beats)")
+
+    print(
+        f"✅ Conditioning prefix: {conditioning_tokens.shape[1]} tokens ({conditioning_length} beats)"
+    )
     return conditioning_tokens
 
 
 def load_music_transformer(model_path: str, device: str = "cuda"):
     """Load trained MusicXTransformer."""
     print(f"📦 Loading MusicXTransformer from: {model_path}")
-    
+
     # Load training arguments
     exp_dir = pathlib.Path(model_path).parent.parent
     train_args = utils.load_json(exp_dir / "train-args.json")
-    
+
     # Load encoding
     encoding = representation.load_encoding("data/sod/processed/notes/encoding.json")
-    
+
     # Create model
     model = MusicXTransformer(
         dim=train_args["dim"],
@@ -149,7 +151,7 @@ def load_music_transformer(model_path: str, device: str = "cuda"):
         attn_dropout=train_args["dropout"],
         ff_dropout=train_args["dropout"],
     ).to(device)
-    
+
     # Load checkpoint
     checkpoint = torch.load(model_path, map_location="cpu")
     if "model_state_dict" in checkpoint:
@@ -158,7 +160,7 @@ def load_music_transformer(model_path: str, device: str = "cuda"):
         model.load_state_dict(checkpoint["model"])
     else:
         model.load_state_dict(checkpoint)
-    
+
     model.eval()
     print(f"✅ Model loaded: {sum(p.numel() for p in model.parameters()):,} parameters")
     return model, encoding, train_args
@@ -180,47 +182,47 @@ def song_conditioned_generate(
 ) -> torch.Tensor:
     """
     Generate continuation from song conditioning with optional intervention.
-    
+
     Args:
         conditioning_tokens: Real song tokens to condition on (1, cond_len, 6)
         feature_vector: Feature direction for intervention
         strength: Intervention strength
         intervention_type: "baseline", "addition", or "ablation"
         Other standard generation parameters
-        
+
     Returns:
         Complete sequence including conditioning + generation
     """
     # Set seed for reproducibility
     torch.manual_seed(generation_seed)
-    
+
     conditioning_tokens = conditioning_tokens.to(device)
     conditioning_length = conditioning_tokens.shape[1]
-    
+
     print(f"🎵 Song-conditioned generation: {intervention_type} (strength={strength})")
     print(f"   Conditioning: {conditioning_length} tokens from real song")
     print(f"   Target length: {seq_len} tokens")
     print(f"   Will generate: {seq_len - conditioning_length} new tokens")
-    
+
     # Start with conditioning tokens
     out = conditioning_tokens.clone()
     mask = torch.ones((out.shape[0], out.shape[1]), dtype=torch.bool, device=device)
-    
+
     # Get model components
     decoder_wrapper = model.decoder
     net = decoder_wrapper.net
-    
+
     # Normalize feature vector
     if feature_vector is not None:
         feature_unit = feature_vector / (torch.norm(feature_vector, dim=0) + 1e-8)
     else:
         feature_unit = None
-    
+
     # Intervention hook
     def intervention_hook(module, inputs, output):
         if not hasattr(intervention_hook, "current_step"):
             return output
-            
+
         current_step = intervention_hook.current_step
         should_intervene = (
             hasattr(intervention_hook, "active")
@@ -229,30 +231,33 @@ def song_conditioned_generate(
             and current_step >= conditioning_length  # Only intervene AFTER conditioning
             and feature_unit is not None
         )
-        
+
         if should_intervene:
             if len(output.shape) == 3:
                 batch, seq, dim = output.shape
-                
+
                 # Get current token activation
                 current_activation = output[:, -1:, :]  # (1, 1, dim)
-                
+
                 if intervention_type == "addition":
                     # Add feature direction
                     intervention = strength * feature_unit.unsqueeze(0).unsqueeze(0)
                     output[:, -1:, :] = current_activation + intervention
-                    
+
                 elif intervention_type == "ablation":
                     # Remove feature component
                     projection = torch.sum(
                         current_activation * feature_unit.unsqueeze(0).unsqueeze(0),
                         dim=-1,
-                        keepdim=True
+                        keepdim=True,
                     )
-                    output[:, -1:, :] = current_activation - projection * feature_unit.unsqueeze(0).unsqueeze(0)
-        
+                    output[:, -1:, :] = (
+                        current_activation
+                        - projection * feature_unit.unsqueeze(0).unsqueeze(0)
+                    )
+
         return output
-    
+
     # Register hook
     intervention_handle = None
     if intervention_type != "baseline":
@@ -261,22 +266,24 @@ def song_conditioned_generate(
             f"decoder.net.attn_layers.layers.{intervention_layer}.1.net",
             f"decoder.net.attn_layers.layers.{intervention_layer}.1.to_out",
         ]
-        
+
         for pattern in target_patterns:
             for name, module in model.named_modules():
                 if pattern in name and "to_out" in name:
-                    intervention_handle = module.register_forward_hook(intervention_hook)
+                    intervention_handle = module.register_forward_hook(
+                        intervention_hook
+                    )
                     print(f"   Registered intervention hook at: {name}")
                     break
             if intervention_handle:
                 break
-    
+
     # Sampling parameters
     dim = 6
     temperatures = [temperature] * dim
     filter_fns = ["top_k"] * dim
     filter_thresholds = [0.9] * dim
-    
+
     # Get type codes
     instrument_dim = decoder_wrapper.dimensions["instrument"]
     sos_type_code = decoder_wrapper.sos_type_code
@@ -284,39 +291,39 @@ def song_conditioned_generate(
     son_type_code = decoder_wrapper.son_type_code
     instrument_type_code = decoder_wrapper.instrument_type_code
     note_type_code = decoder_wrapper.note_type_code
-    
+
     # Generate continuation
     total_steps = seq_len - conditioning_length
-    
+
     with torch.no_grad():
         for step in range(total_steps):
             current_step = conditioning_length + step
-            
+
             # Update hook's current step
             if intervention_handle:
                 intervention_hook.current_step = current_step
-            
+
             # Truncate to max sequence length
-            x = out[:, -net.max_seq_len:]
-            mask_truncated = mask[:, -net.max_seq_len:]
-            
+            x = out[:, -net.max_seq_len :]
+            mask_truncated = mask[:, -net.max_seq_len :]
+
             # Activate intervention
             if intervention_handle:
                 intervention_hook.active = True
-            
+
             # Forward pass
             logits = net(x, mask=mask_truncated)
-            
+
             # Deactivate intervention
             if intervention_handle:
                 intervention_hook.active = False
-            
+
             # Extract last token logits
             logits = [logit_tensor[:, -1, :] for logit_tensor in logits]
-            
+
             # Filter start-of-song token
             logits[0][:, sos_type_code] = -float("inf")
-            
+
             # Sample type
             sample_type = sample(
                 logits[0],
@@ -326,7 +333,7 @@ def song_conditioned_generate(
                 noise_scale,
                 0.02,
             )
-            
+
             # Build complete token based on type
             samples = [[s_type] for s_type in sample_type]
             for idx, s_type in enumerate(sample_type):
@@ -372,24 +379,24 @@ def song_conditioned_generate(
                 else:
                     # Other event types
                     samples[idx] += [torch.tensor([0] * (dim - 1), device=device)]
-            
+
             # Stack and append
             stacked = torch.stack([torch.cat(s).expand(1, -1) for s in samples], 0)
             out = torch.cat((out, stacked), dim=1)
             mask = F.pad(mask, (0, 1), value=True)
-            
+
             # Check for end-of-song
             if (stacked[0, 0, 0] == eos_type_code).any():
                 print(f"   Reached end-of-song at step {step + 1}")
                 break
-            
+
             if (step + 1) % 50 == 0:
                 print(f"   Generated {step + 1}/{total_steps} tokens...")
-    
+
     # Clean up
     if intervention_handle:
         intervention_handle.remove()
-    
+
     print(f"✅ Generation complete: {out.shape[1]} total tokens")
     return out
 
@@ -398,28 +405,28 @@ def save_result(filename: str, tokens: torch.Tensor, encoding: dict, output_dir:
     """Save generated tokens as MIDI and WAV."""
     # Convert tokens to numpy
     tokens_np = tokens[0].cpu().numpy()  # Remove batch dimension
-    
+
     # Save as numpy
     np.save(output_dir / f"{filename}.npy", tokens_np)
-    
+
     # Reconstruct to MusPy Music object
     try:
         music = representation.reconstruct(tokens_np, encoding["resolution"])
-        
+
         # Save MIDI
         midi_path = output_dir / f"{filename}.mid"
         music.write(str(midi_path))
-        
+
         # Save WAV
         wav_path = output_dir / f"{filename}.wav"
         music.write(
             str(wav_path),
             options="-o synth.polyphony=4096",
         )
-        
+
         print(f"   💾 Saved: {filename}.wav, {filename}.mid")
         return str(wav_path), str(midi_path)
-        
+
     except Exception as e:
         print(f"   ⚠️  Could not save audio: {e}")
         return None, None
@@ -441,7 +448,7 @@ def run_song_conditioned_interventions(
 ):
     """
     Run full intervention pipeline on one song.
-    
+
     Args:
         song_path: Path to song .pt file
         feature_limuf_path: Path to feature LiMuF
@@ -452,9 +459,9 @@ def run_song_conditioned_interventions(
     """
     if addition_strengths is None:
         addition_strengths = [-2.0, -1.0, 0.0, 1.0, 2.0]
-    
+
     output_dir.mkdir(parents=True, exist_ok=True)
-    
+
     print("=" * 80)
     print("SONG-CONDITIONED FEATURE INTERVENTIONS")
     print("=" * 80)
@@ -464,53 +471,57 @@ def run_song_conditioned_interventions(
     print(f"Strengths: {addition_strengths}")
     print(f"Output: {output_dir}")
     print()
-    
+
     # Default model path if not provided
     if model_path is None:
         model_path = Path("exp/sod/ape/checkpoints/best_model.pt")
-    
+
     # Load model
     model, encoding, train_args = load_music_transformer(str(model_path), device)
-    
+
     # Load song data
     song_tokens = load_song_data(song_path, encoding)
-    
+
     # Extract conditioning prefix
     conditioning_tokens = extract_conditioning_prefix(
         song_tokens, conditioning_length, encoding
     )
-    
+
     # Load feature LiMuF
     print("📁 Loading feature LiMuF...")
     feature_data = torch.load(feature_limuf_path, map_location="cpu")
     feature_name = list(feature_data["limufs"].keys())[0]
     feature_vector = feature_data["limufs"][feature_name].to(device)
     metadata = feature_data["metadata"][feature_name]
-    
+
     feature_id = metadata["feature_id"]
     print(f"✅ Feature: {feature_name} (ID: {feature_id})")
     print()
-    
+
     # Generate interventions
     results = {}
-    
+
     experimental_conditions = []
     for strength in addition_strengths:
         if strength == 0.0:
             experimental_conditions.append(("baseline", strength, "baseline"))
         elif strength > 0:
-            experimental_conditions.append(("addition", strength, f"add_{strength:+.1f}"))
+            experimental_conditions.append(
+                ("addition", strength, f"add_{strength:+.1f}")
+            )
         else:
-            experimental_conditions.append(("addition", strength, f"add_{strength:+.1f}"))
-    
+            experimental_conditions.append(
+                ("addition", strength, f"add_{strength:+.1f}")
+            )
+
     # Add ablation
     experimental_conditions.append(("ablation", 0.0, "ablation"))
-    
+
     for intervention_type, strength, condition_name in experimental_conditions:
         print(f"\n{'='*80}")
         print(f"Generating: {condition_name}")
         print(f"{'='*80}")
-        
+
         sequence = song_conditioned_generate(
             model=model,
             encoding=encoding,
@@ -525,12 +536,12 @@ def run_song_conditioned_interventions(
             generation_seed=generation_seed,
             device=device,
         )
-        
+
         # Save result
         song_name = song_path.stem
         filename = f"{song_name}_{condition_name}"
         wav_path, midi_path = save_result(filename, sequence, encoding, output_dir)
-        
+
         if wav_path:
             results[condition_name] = {
                 "intervention_type": intervention_type,
@@ -540,7 +551,7 @@ def run_song_conditioned_interventions(
                 "sequence_length": sequence.shape[1],
                 "conditioning_length": conditioning_tokens.shape[1],
             }
-    
+
     # Save summary
     summary = {
         "song": str(song_path),
@@ -553,18 +564,18 @@ def run_song_conditioned_interventions(
         "intervention_layer": intervention_layer,
         "results": results,
     }
-    
+
     summary_file = output_dir / f"{song_path.stem}_summary.json"
     with open(summary_file, "w") as f:
         json.dump(summary, f, indent=2)
-    
+
     print("\n" + "=" * 80)
     print("✅ SONG-CONDITIONED INTERVENTIONS COMPLETE!")
     print("=" * 80)
     print(f"Generated {len(results)} conditions")
     print(f"Summary: {summary_file}")
     print()
-    
+
     return results, summary
 
 
@@ -643,12 +654,12 @@ def main():
         default="cuda" if torch.cuda.is_available() else "cpu",
         help="Device to use (default: cuda if available)",
     )
-    
+
     args = parser.parse_args()
-    
+
     # Parse addition strengths
     addition_strengths = [float(s.strip()) for s in args.addition_strengths.split(",")]
-    
+
     # Run interventions
     run_song_conditioned_interventions(
         song_path=args.song_path,
@@ -664,7 +675,7 @@ def main():
         generation_seed=args.generation_seed,
         device=args.device,
     )
-    
+
     print("🎉 Success! Check the output directory for WAV and MIDI files.")
 
 
