@@ -33,12 +33,16 @@ import torch.nn.functional as F
 from tqdm import tqdm
 
 # Add parent directory to path
-sys.path.insert(0, str(Path(__file__).parent.parent))
+# sys.path.insert(0, str(Path(__file__).parent.parent))
+parent_dir = Path(__file__).parent.parent
+sys.path.insert(0, str(parent_dir))
+sys.path.insert(0, str(parent_dir / "mmt"))
+sys.path.insert(0, str(parent_dir / "baseline"))
 
 # Import model components
 from mmt.music_x_transformers import MusicXTransformer, sample
-from baseline import representation_remi as representation
-from baseline import utils
+from mmt import representation
+from mmt import utils
 
 
 def load_song_data(song_path: Path, encoding: dict) -> torch.Tensor:

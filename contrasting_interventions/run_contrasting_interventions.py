@@ -38,7 +38,10 @@ from typing import List, Dict
 from datetime import datetime
 
 # Add parent directory to path
-sys.path.insert(0, str(Path(__file__).parent.parent))
+parent_dir = Path(__file__).parent.parent
+sys.path.insert(0, str(parent_dir))
+sys.path.insert(0, str(parent_dir / "mmt"))
+sys.path.insert(0, str(parent_dir / "baseline"))
 
 import torch
 import muspy
@@ -242,7 +245,9 @@ class ContrastingInterventionRunner:
 
         if not song_pt_path.exists():
             # Try Kunstderfuge subfolder
-            song_pt_path = self.data_dir / "Kunstderfuge" / f"{song_name}.pt"
+            song_pt_path = (
+                self.output_dir / "pt_convert" / "Kunstderfuge" / f"{song_name}.pt"
+            )
 
         # If .pt doesn't exist, try to convert from JSON
         if not song_pt_path.exists():
@@ -261,7 +266,9 @@ class ContrastingInterventionRunner:
 
             if json_path.exists():
                 # Convert JSON to PT
-                song_pt_path = self.data_dir / "Kunstderfuge" / f"{song_name}.pt"
+                song_pt_path = (
+                    self.output_dir / "pt_convert" / "Kunstderfuge" / f"{song_name}.pt"
+                )
                 if not self._convert_json_to_pt(json_path, song_pt_path):
                     if temp_names_file.exists():
                         temp_names_file.unlink()
@@ -278,15 +285,20 @@ class ContrastingInterventionRunner:
 
         self.logger.info(f"   Using song file: {song_pt_path}")
 
+        # Convert to absolute paths for subprocess
+        song_pt_path_abs = song_pt_path.resolve()
+        limuf_path_abs = limuf_path.resolve()
+        intervention_output_dir_abs = intervention_output_dir.resolve()
+
         cmd = [
             "python",
             "contrasting_interventions/song_conditioned_interventions.py",
             "--song-path",
-            str(song_pt_path),
+            str(song_pt_path_abs),
             "--feature-limuf-path",
-            str(limuf_path),
+            str(limuf_path_abs),
             "--output-dir",
-            str(intervention_output_dir),
+            str(intervention_output_dir_abs),
             "--intervention-layer",
             str(self.layer),
             "--addition-strengths",
