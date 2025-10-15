@@ -101,13 +101,13 @@ def extract_conditioning_prefix(
 
     # Simply take the first N tokens
     conditioning_end_idx = min(conditioning_length, song_tokens.shape[1])
-    
+
     conditioning_tokens = song_tokens[:, :conditioning_end_idx, :]
 
-    print(
-        f"✅ Conditioning prefix: {conditioning_tokens.shape[1]} tokens"
-    )
+    print(f"✅ Conditioning prefix: {conditioning_tokens.shape[1]} tokens")
     return conditioning_tokens
+
+
 def load_music_transformer(model_path: str, device: str = "cuda"):
     """Load trained MusicXTransformer."""
     print(f"📦 Loading MusicXTransformer from: {model_path}")
@@ -181,14 +181,28 @@ def song_conditioned_generate(
     conditioning_tokens = conditioning_tokens.to(device)
     conditioning_length = conditioning_tokens.shape[1]
 
-    print(f"🎵 Song-conditioned generation: {intervention_type} (strength={strength})")
-    print(f"   Conditioning: {conditioning_length} tokens from real song")
-    print(f"   Target length: {seq_len} tokens")
-    print(f"   Will generate: {seq_len - conditioning_length} new tokens")
+    # Create start tokens and combine with conditioning
+    # This ensures the model sees proper start-of-song token
+    sos = encoding["type_code_map"]["start-of-song"]
+    start_tokens = torch.zeros((1, 1, 6), dtype=torch.long, device=device)
+    start_tokens[:, 0, 0] = sos
 
-    # Start with conditioning tokens
-    out = conditioning_tokens.clone()
+    # Combine start token with conditioning tokens
+    out = torch.cat([start_tokens, conditioning_tokens], dim=1)
     mask = torch.ones((out.shape[0], out.shape[1]), dtype=torch.bool, device=device)
+
+    conditioning_length_with_start = (
+        conditioning_tokens.shape[1] + 1
+    )  # +1 for start token
+    intervention_start_step = (
+        conditioning_length_with_start  # Intervention starts AFTER conditioning
+    )
+
+    print(f"🎵 Song-conditioned generation: {intervention_type} (strength={strength})")
+    print(f"   Conditioning: {conditioning_tokens.shape[1]} tokens from real song")
+    print(f"   Intervention starts after token: {intervention_start_step}")
+    print(f"   Target length: {seq_len} tokens")
+    print(f"   Will generate: {seq_len - conditioning_length_with_start} new tokens")
 
     # Get model components
     decoder_wrapper = model.decoder
@@ -200,7 +214,7 @@ def song_conditioned_generate(
     else:
         feature_unit = None
 
-    # Intervention hook
+    # Intervention hook - only applies to NEW tokens after conditioning
     def intervention_hook(module, inputs, output):
         if not hasattr(intervention_hook, "current_step"):
             return output
@@ -210,7 +224,7 @@ def song_conditioned_generate(
             hasattr(intervention_hook, "active")
             and intervention_hook.active
             and intervention_type != "baseline"
-            and current_step >= conditioning_length  # Only intervene AFTER conditioning
+            and current_step >= intervention_start_step  # Only intervene to NEW tokens
             and feature_unit is not None
         )
 
@@ -275,11 +289,11 @@ def song_conditioned_generate(
     note_type_code = decoder_wrapper.note_type_code
 
     # Generate continuation
-    total_steps = seq_len - conditioning_length
+    total_steps = seq_len - conditioning_length_with_start
 
     with torch.no_grad():
         for step in range(total_steps):
-            current_step = conditioning_length + step
+            current_step = conditioning_length_with_start + step
 
             # Update hook's current step
             if intervention_handle:
@@ -379,8 +393,12 @@ def song_conditioned_generate(
     if intervention_handle:
         intervention_handle.remove()
 
-    print(f"✅ Generation complete: {out.shape[1]} total tokens")
-    return out
+    # Return only generated tokens (excluding start token, keeping conditioning + new tokens)
+    generated_tokens = out[:, 1:]  # Remove start token
+    print(
+        f"✅ Generation complete: {generated_tokens.shape[1]} total tokens ({conditioning_tokens.shape[1]} conditioning + {generated_tokens.shape[1] - conditioning_tokens.shape[1]} new)"
+    )
+    return generated_tokens
 
 
 def save_result(filename: str, tokens: torch.Tensor, encoding: dict, output_dir: Path):
@@ -485,17 +503,17 @@ def run_song_conditioned_interventions(
     results = {}
 
     experimental_conditions = []
-    
+
     # Baseline first (only once, even if 0.0 is in addition_strengths)
     experimental_conditions.append(("baseline", 0.0, "baseline"))
-    
+
     # Addition strengths (skip 0.0 if present since we did baseline)
     for strength in addition_strengths:
         if abs(strength) > 0.001:  # Skip 0.0
             experimental_conditions.append(
                 ("addition", strength, f"add_{strength:+.1f}")
             )
-    
+
     # Ablation last (only once)
     experimental_conditions.append(("ablation", 0.0, "ablation"))
 
@@ -554,9 +572,10 @@ def run_song_conditioned_interventions(
     # Centralize all WAVs in a single folder for easy upload
     wav_central_dir = output_dir / "all_wavs"
     wav_central_dir.mkdir(exist_ok=True)
-    
+
     print("\n📦 Centralizing WAV files...")
     import shutil
+
     for condition_name, result_data in results.items():
         if "wav_path" in result_data:
             wav_src = Path(result_data["wav_path"])
@@ -564,7 +583,7 @@ def run_song_conditioned_interventions(
                 wav_dst = wav_central_dir / f"{song_path.stem}_{condition_name}.wav"
                 shutil.copy2(wav_src, wav_dst)
                 print(f"   ✅ Copied: {wav_dst.name}")
-    
+
     print(f"✅ All WAVs centralized in: {wav_central_dir}")
 
     print("\n" + "=" * 80)
