@@ -315,9 +315,8 @@ class ContrastingInterventionRunner:
         ]
 
         try:
-            result = subprocess.run(
-                cmd, capture_output=True, text=True, check=True, cwd=Path.cwd().parent
-            )
+            # Run without capturing output so we can see real-time logs
+            subprocess.run(cmd, check=True, cwd=Path.cwd().parent)
             self.logger.info(f"✅ Intervention completed: {intervention_name}")
 
             # Clean up temp file
@@ -327,7 +326,7 @@ class ContrastingInterventionRunner:
 
         except subprocess.CalledProcessError as e:
             self.logger.error(f"❌ Intervention failed for {intervention_name}")
-            self.logger.error(f"Error: {e.stderr}")
+            self.logger.error(f"Return code: {e.returncode}")
 
             # Clean up temp file
             if temp_names_file.exists():
