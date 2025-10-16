@@ -16,7 +16,7 @@ Usage:
         --num-songs 1 \
         --conditioning-length 4
 
-    # Full batch run
+    # Full batch run (baseline and ablation generated automatically)
     python run_contrasting_interventions.py \
         --layer 3 \
         --features 182 855 997 \
@@ -25,7 +25,10 @@ Usage:
         --output-dir contrasting_intervention_results \
         --num-songs 10 \
         --conditioning-length 4 \
-        --addition-strengths -2.0 -1.0 0.0 1.0 2.0
+        --addition-strengths -2.0 -1.0 1.0 2.0
+
+Note: Baseline (0.0) and ablation are ALWAYS generated automatically.
+      Each song/feature produces 6 files: baseline, ablation, +4 strengths.
 """
 
 import argparse
@@ -72,7 +75,12 @@ class ContrastingInterventionRunner:
         self.output_dir = output_dir
         self.conditioning_length = conditioning_length
         self.seq_len = seq_len
-        self.addition_strengths = addition_strengths or [-2.0, -1.0, 0.0, 1.0, 2.0]
+        self.addition_strengths = addition_strengths or [
+            -2.0,
+            -1.0,
+            1.0,
+            2.0,
+        ]  # Baseline and ablation always generated
         self.temperature = temperature
         self.noise_scale = noise_scale
         self.num_songs = num_songs
@@ -646,8 +654,8 @@ def main():
         "--addition-strengths",
         nargs="+",
         type=float,
-        default=[-2.0, -1.0, 0.0, 1.0, 2.0],
-        help="Intervention strengths to test",
+        default=[-2.0, -1.0, 1.0, 2.0],
+        help="Intervention strengths to test (default: -2.0, -1.0, 1.0, 2.0). Baseline and ablation are always generated automatically.",
     )
     parser.add_argument(
         "--temperature", type=float, default=0.1, help="Sampling temperature"

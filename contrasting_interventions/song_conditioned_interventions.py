@@ -17,10 +17,17 @@ Usage:
         --feature-limuf-path limufs.pt \
         --output-dir output \
         --conditioning-length 3 \
-        --addition-strengths -2.0,-1.0,0.0,1.0,2.0
+        --addition-strengths -2.0,-1.0,1.0,2.0
 
-Note: conditioning-length specifies minimum tokens. The script will automatically
-      extend to include the start-of-notes token if not present in the initial tokens.
+Notes:
+    - Baseline (strength 0.0) and ablation are ALWAYS generated automatically
+    - addition-strengths should NOT include 0.0 (it will be skipped if present)
+    - conditioning-length specifies minimum tokens; script extends to include start-of-notes
+    
+Output: all_wavs/ folder containing:
+    - baseline.wav (always)
+    - ablation.wav (always)
+    - add_-2.0.wav, add_-1.0.wav, add_+1.0.wav, add_+2.0.wav (one per strength)
 """
 
 import argparse
@@ -533,11 +540,16 @@ def run_song_conditioned_interventions(
         feature_limuf_path: Path to feature LiMuF
         output_dir: Where to save results
         conditioning_length: Number of beats to use as prefix
-        addition_strengths: List of strengths to test (includes 0.0 for baseline)
+        addition_strengths: List of strengths for additions (baseline and ablation always generated)
         Other generation parameters
     """
     if addition_strengths is None:
-        addition_strengths = [-2.0, -1.0, 0.0, 1.0, 2.0]
+        addition_strengths = [
+            -2.0,
+            -1.0,
+            1.0,
+            2.0,
+        ]  # Baseline and ablation generated automatically
 
     output_dir.mkdir(parents=True, exist_ok=True)
 
@@ -718,8 +730,8 @@ def main():
     parser.add_argument(
         "--addition-strengths",
         type=str,
-        default="-2.0,-1.0,0.0,1.0,2.0",
-        help="Comma-separated intervention strengths (default: -2.0,-1.0,0.0,1.0,2.0)",
+        default="-2.0,-1.0,1.0,2.0",
+        help="Comma-separated intervention strengths (default: -2.0,-1.0,1.0,2.0). Baseline (0.0) and ablation are always generated automatically.",
     )
     parser.add_argument(
         "--intervention-layer",
