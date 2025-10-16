@@ -298,7 +298,9 @@ class ContrastingInterventionRunner:
         strengths_str = ",".join(str(s) for s in addition_strengths)
 
         # Get absolute path to script
-        script_path = (Path(__file__).parent / "song_conditioned_interventions.py").resolve()
+        script_path = (
+            Path(__file__).parent / "song_conditioned_interventions.py"
+        ).resolve()
 
         cmd = [
             "python",
@@ -311,8 +313,6 @@ class ContrastingInterventionRunner:
             str(intervention_output_dir_abs),
             "--intervention-layer",
             str(self.layer),
-            "--addition-strengths",
-            strengths_str,  # All strengths at once
             "--conditioning-length",
             str(self.conditioning_length),
             "--seq-len",
@@ -323,7 +323,12 @@ class ContrastingInterventionRunner:
             str(self.noise_scale),
             "--generation-seed",
             str(42),  # Fixed seed for reproducibility
+            "--addition-strengths",
+            strengths_str,  # All strengths at once - MUST be last positional
         ]
+        
+        # Debug: print the exact command
+        self.logger.info(f"🔍 Debug command: {' '.join(cmd)}")
 
         try:
             # Run without capturing output so we can see real-time logs
