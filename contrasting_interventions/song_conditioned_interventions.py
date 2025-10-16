@@ -248,7 +248,8 @@ def song_conditioned_generate(
     noise_scale: float = 1.2,
     generation_seed: int = 42,
     device: str = "cuda",
-) -> torch.Tensor:
+    stored_noise: Optional[List] = None,  # NEW: Pass stored noise from outside
+) -> Tuple[torch.Tensor, List]:  # NEW: Return noise too
     """
     Generate continuation from song conditioning with optional intervention.
 
@@ -333,33 +334,37 @@ def song_conditioned_generate(
         )
 
         if should_intervene:
-            if len(output.shape) == 3:
-                batch, seq, dim = output.shape
+            if len(output.shape) == 3:  # [batch_size, seq_len, d_model]
+                batch, seq, d_model = output.shape
 
-                # Get current token activation
-                current_activation = output[:, -1:, :]  # (1, 1, dim)
+                # Validate feature dimension matches model dimension
+                if feature_vector.shape[0] != d_model:
+                    return output
+
+                # Get last token activations (use clone to avoid in-place issues)
+                last_token_activations = output[:, -1, :].clone()
 
                 if intervention_type == "addition":
-                    # Add feature direction
-                    intervention = strength * feature_unit.unsqueeze(0).unsqueeze(0)
-                    output[:, -1:, :] = current_activation + intervention
+                    # Standard addition
+                    intervention_vector = strength * feature_unit.unsqueeze(0)
+                    output[:, -1, :] = last_token_activations + intervention_vector
 
                 elif intervention_type == "ablation":
-                    # Remove feature component
-                    projection = torch.sum(
-                        current_activation * feature_unit.unsqueeze(0).unsqueeze(0),
-                        dim=-1,
-                        keepdim=True,
+                    # Ablation: remove feature direction
+                    projection_coeffs = torch.matmul(
+                        last_token_activations, feature_unit
                     )
-                    output[:, -1:, :] = (
-                        current_activation
-                        - projection * feature_unit.unsqueeze(0).unsqueeze(0)
-                    )
+                    projection = feature_unit.unsqueeze(
+                        0
+                    ) * projection_coeffs.unsqueeze(1)
+                    output[:, -1, :] = last_token_activations - projection
 
         return output
 
     # Register hook
     intervention_handle = None
+    target_layer_name = None
+
     if intervention_type != "baseline":
         target_patterns = [
             f"decoder.net.attn_layers.layers.{intervention_layer}.1",
@@ -369,14 +374,19 @@ def song_conditioned_generate(
 
         for pattern in target_patterns:
             for name, module in model.named_modules():
-                if pattern in name and "to_out" in name:
+                if name == pattern:  # Exact match, not substring
                     intervention_handle = module.register_forward_hook(
                         intervention_hook
                     )
-                    print(f"   Registered intervention hook at: {name}")
+                    target_layer_name = name
+                    print(f"   ✅ Registered intervention hook at: {name}")
                     break
             if intervention_handle:
                 break
+
+        if not intervention_handle:
+            print(f"   ⚠️  WARNING: Could not find matching layer for intervention!")
+            print(f"   Searched patterns: {target_patterns}")
 
     # Sampling parameters
     dim = 6
@@ -396,7 +406,9 @@ def song_conditioned_generate(
     total_steps = seq_len - conditioning_length_with_start
 
     # Store noise for reproducibility and comparability across conditions
-    stored_noise = []
+    # Initialize from passed-in noise or create new
+    if stored_noise is None:
+        stored_noise = []
 
     with torch.no_grad():
         for step in range(total_steps):
@@ -522,7 +534,7 @@ def song_conditioned_generate(
     print(
         f"✅ Generation complete: {generated_tokens.shape[1]} total tokens (1 start + {conditioning_tokens.shape[1]} conditioning + {generated_tokens.shape[1] - conditioning_length_with_start} new)"
     )
-    return generated_tokens
+    return generated_tokens, stored_noise  # Return noise for reuse
 
 
 def save_result(filename: str, tokens: torch.Tensor, encoding: dict, output_dir: Path):
@@ -668,12 +680,15 @@ def run_song_conditioned_interventions(
     # Ablation last (only once)
     experimental_conditions.append(("ablation", 0.0, "ablation"))
 
+    # IMPORTANT: Store noise across all conditions for comparability
+    shared_stored_noise = None
+
     for intervention_type, strength, condition_name in experimental_conditions:
         print(f"\n{'='*80}")
         print(f"Generating: {condition_name}")
         print(f"{'='*80}")
 
-        sequence = song_conditioned_generate(
+        sequence, shared_stored_noise = song_conditioned_generate(
             model=model,
             encoding=encoding,
             conditioning_tokens=conditioning_tokens,
@@ -686,6 +701,7 @@ def run_song_conditioned_interventions(
             noise_scale=noise_scale,
             generation_seed=generation_seed,
             device=device,
+            stored_noise=shared_stored_noise,  # Pass shared noise
         )
 
         # Save result
