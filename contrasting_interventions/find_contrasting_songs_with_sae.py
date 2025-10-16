@@ -279,8 +279,10 @@ class ContrastingSongFinder:
                 state_dict = checkpoint
 
             # Get dimensions from state dict
+            # The encoder weight shape is [d_sae, d_model] in the trained SAE
+            # where d_sae is the number of sparse features and d_model is the transformer dimension
             encoder_weight = state_dict["encoder.weight"]
-            d_model, d_sae = encoder_weight.shape
+            d_sae, d_model = encoder_weight.shape
 
             self.logger.info(f"SAE dimensions: d_model={d_model}, d_sae={d_sae}")
             self.logger.info(
@@ -288,8 +290,11 @@ class ContrastingSongFinder:
             )
             self.logger.info(f"   SAE will produce {d_sae} sparse features")
 
-            # Create SAE model
-            sae = SparseAutoencoder(d_model, d_sae)
+            # Create SAE model with correct dimensions
+            # SparseAutoencoder(input_dim, hidden_dim) where:
+            #   input_dim = d_model (transformer activation size)
+            #   hidden_dim = d_sae (number of sparse features)
+            sae = SparseAutoencoder(input_dim=d_model, hidden_dim=d_sae)
             sae.load_state_dict(state_dict)
             sae.to(self.device)
             sae.eval()
