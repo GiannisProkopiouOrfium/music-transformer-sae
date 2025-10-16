@@ -297,14 +297,9 @@ class ContrastingInterventionRunner:
         # Convert strengths list to comma-separated string (no spaces!)
         strengths_str = ",".join(str(s) for s in addition_strengths)
 
-        # Get absolute path to script
-        script_path = (
-            Path(__file__).parent / "song_conditioned_interventions.py"
-        ).resolve()
-
         cmd = [
             "python",
-            str(script_path),
+            "contrasting_interventions/song_conditioned_interventions.py",
             "--song-path",
             str(song_pt_path_abs),
             "--feature-limuf-path",
@@ -332,7 +327,7 @@ class ContrastingInterventionRunner:
         try:
             # Run without capturing output so we can see real-time logs
             # Using absolute paths, so no need to change cwd
-            subprocess.run(cmd, check=True)
+            subprocess.run(cmd, check=True, cwd=Path.cwd().parent)
             self.logger.info(f"✅ Intervention completed: {intervention_name}")
 
             # Clean up temp file
