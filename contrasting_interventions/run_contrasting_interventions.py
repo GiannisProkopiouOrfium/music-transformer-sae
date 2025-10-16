@@ -209,13 +209,11 @@ class ContrastingInterventionRunner:
         feature_id: int,
         limuf_path: Path,
         song_name: str,
-        addition_strength: float,
+        addition_strengths: List[float],
     ) -> bool:
-        """Run a single intervention."""
+        """Run interventions for all strengths at once (generates baseline only once)."""
 
-        intervention_name = (
-            f"feature{feature_id}_song{song_name}_strength{addition_strength:+.1f}"
-        )
+        intervention_name = f"feature{feature_id}_song{song_name}"
         intervention_output_dir = (
             self.output_dir
             / f"layer{self.layer}"
@@ -223,15 +221,14 @@ class ContrastingInterventionRunner:
             / intervention_name
         )
 
-        # Check if already exists
-        if intervention_output_dir.exists() and any(
-            intervention_output_dir.glob("*.wav")
-        ):
+        # Check if already exists (check for all_wavs folder)
+        all_wavs_dir = intervention_output_dir / "all_wavs"
+        if all_wavs_dir.exists() and any(all_wavs_dir.glob("*.wav")):
             self.logger.info(f"⏭️  Skipping {intervention_name} (already exists)")
             return True
 
         self.logger.info(
-            f"🎵 Running intervention: Feature {feature_id}, Song {song_name}, Strength {addition_strength:+.1f}"
+            f"🎵 Running interventions: Feature {feature_id}, Song {song_name}, Strengths {addition_strengths}"
         )
 
         # Create custom names file for this specific song
@@ -289,6 +286,9 @@ class ContrastingInterventionRunner:
         song_pt_path_abs = song_pt_path.resolve()
         intervention_output_dir_abs = intervention_output_dir.resolve()
 
+        # Convert strengths list to comma-separated string
+        strengths_str = ",".join(str(s) for s in addition_strengths)
+
         cmd = [
             "python",
             "contrasting_interventions/song_conditioned_interventions.py",
@@ -301,7 +301,7 @@ class ContrastingInterventionRunner:
             "--intervention-layer",
             str(self.layer),
             "--addition-strengths",
-            str(addition_strength),
+            strengths_str,  # All strengths at once
             "--conditioning-length",
             str(self.conditioning_length),
             "--seq-len",
@@ -311,7 +311,7 @@ class ContrastingInterventionRunner:
             "--noise-scale",
             str(self.noise_scale),
             "--generation-seed",
-            str(24),  # Fixed seed for reproducibility
+            str(42),  # Fixed seed for reproducibility
         ]
 
         try:
@@ -535,35 +535,38 @@ Compare:
 
             feature_results = {}
 
-            # Process each song
+            # Process each song (run all strengths at once)
             for song_name in self.contrasting_songs:
-                song_results = {}
+                # Run intervention with all strengths at once (generates baseline only once!)
+                success = self.run_intervention(
+                    feature_id, limuf_path, song_name, self.addition_strengths
+                )
 
-                # Process each strength
-                for strength in self.addition_strengths:
-                    success = self.run_intervention(
-                        feature_id, limuf_path, song_name, strength
+                if success:
+                    # Find all generated audio files in all_wavs folder
+                    intervention_name = f"feature{feature_id}_song{song_name}"
+                    intervention_dir = (
+                        self.output_dir
+                        / f"layer{self.layer}"
+                        / f"feature{feature_id}"
+                        / intervention_name
                     )
 
-                    if success:
-                        # Find generated audio file
-                        intervention_name = f"feature{feature_id}_song{song_name}_strength{strength:+.1f}"
-                        intervention_dir = (
-                            self.output_dir
-                            / f"layer{self.layer}"
-                            / f"feature{feature_id}"
-                            / intervention_name
-                        )
+                    all_wavs_dir = intervention_dir / "all_wavs"
+                    song_results = {}
 
-                        audio_files = list(intervention_dir.glob("*.wav"))
-                        if audio_files:
-                            song_results[str(strength)] = {
+                    if all_wavs_dir.exists():
+                        # Collect all WAV files
+                        for wav_file in all_wavs_dir.glob("*.wav"):
+                            # Parse filename to get condition (baseline, add_+1.0, etc.)
+                            condition = wav_file.stem.replace(f"{song_name}_", "")
+                            song_results[condition] = {
                                 "success": True,
-                                "audio_path": str(audio_files[0]),
+                                "audio_path": str(wav_file),
                                 "intervention_dir": str(intervention_dir),
                             }
 
-                feature_results[song_name] = song_results
+                    feature_results[song_name] = song_results
 
             results[feature_id] = feature_results
 
