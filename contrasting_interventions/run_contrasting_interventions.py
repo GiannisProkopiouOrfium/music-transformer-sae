@@ -647,8 +647,8 @@ def main():
     parser.add_argument(
         "--conditioning-length",
         type=int,
-        default=3,
-        help="Number of TOKENS to use for conditioning prefix (default: 3, use 2-3 for short conditioning)",
+        default=50,
+        help="Number of TOKENS to use for conditioning prefix (default: 50, use 30-100 to capture actual musical content from the song)",
     )
     parser.add_argument(
         "--seq-len", type=int, default=512, help="Sequence length to generate"

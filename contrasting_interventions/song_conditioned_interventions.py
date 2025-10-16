@@ -150,17 +150,47 @@ def extract_conditioning_prefix(
 
     conditioning_tokens = song_tokens[:, :conditioning_end_idx, :]
 
-    # Verify we have proper structure
+    # Verify we have proper structure and count note events
     token_types = []
-    for i in range(min(5, conditioning_tokens.shape[1])):
+    note_count = 0
+    note_type_code = encoding["type_code_map"]["note"]
+
+    for i in range(min(10, conditioning_tokens.shape[1])):
         token_type = conditioning_tokens[0, i, 0].item()
         token_type_name = encoding["code_type_map"].get(
             token_type, f"unknown_{token_type}"
         )
         token_types.append(token_type_name)
 
+    # Count total notes in conditioning
+    for i in range(conditioning_tokens.shape[1]):
+        if conditioning_tokens[0, i, 0].item() == note_type_code:
+            note_count += 1
+
     print(f"✅ Conditioning prefix: {conditioning_tokens.shape[1]} tokens")
-    print(f"   Token sequence: {' → '.join(token_types)}")
+    print(f"   First 10 tokens: {' → '.join(token_types)}")
+    print(
+        f"   📊 Contains {note_count} note events out of {conditioning_tokens.shape[1]} total tokens"
+    )
+    print(
+        f"   📈 Percentage of notes: {100 * note_count / conditioning_tokens.shape[1]:.1f}%"
+    )
+
+    # Show first few notes for verification
+    if note_count > 0:
+        print(f"   🎼 First few notes from conditioning:")
+        note_samples = 0
+        for i in range(conditioning_tokens.shape[1]):
+            if (
+                conditioning_tokens[0, i, 0].item() == note_type_code
+                and note_samples < 3
+            ):
+                token = conditioning_tokens[0, i]
+                # Note format: [type, pitch, duration, velocity, beat, position]
+                print(
+                    f"      Note {note_samples + 1}: pitch={token[1].item()}, duration={token[2].item()}, velocity={token[3].item()}, beat={token[4].item()}"
+                )
+                note_samples += 1
 
     return conditioning_tokens
 
@@ -265,6 +295,18 @@ def song_conditioned_generate(
     print(f"   Intervention starts after token: {intervention_start_step}")
     print(f"   Target length: {seq_len} tokens")
     print(f"   Will generate: {seq_len - conditioning_length_with_start} new tokens")
+    print(f"   Generation params: temperature={temperature}, noise_scale={noise_scale}")
+
+    # Count and show what's in the conditioning
+    note_type_code = encoding["type_code_map"]["note"]
+    cond_note_count = sum(
+        1
+        for i in range(conditioning_tokens.shape[1])
+        if conditioning_tokens[0, i, 0].item() == note_type_code
+    )
+    print(
+        f"   📝 Conditioning contains {cond_note_count} note events ({100*cond_note_count/conditioning_tokens.shape[1]:.1f}% of conditioning)"
+    )
 
     # Get model components
     decoder_wrapper = model.decoder
@@ -353,6 +395,9 @@ def song_conditioned_generate(
     # Generate continuation
     total_steps = seq_len - conditioning_length_with_start
 
+    # Store noise for reproducibility and comparability across conditions
+    stored_noise = []
+
     with torch.no_grad():
         for step in range(total_steps):
             current_step = conditioning_length_with_start + step
@@ -378,6 +423,22 @@ def song_conditioned_generate(
 
             # Extract last token logits
             logits = [logit_tensor[:, -1, :] for logit_tensor in logits]
+
+            # Apply SAME noise across all conditions for this step (for comparability)
+            if step < len(stored_noise):
+                # Reuse stored noise from previous condition
+                step_noise = stored_noise[step]
+            else:
+                # Generate new noise and store it
+                step_noise = []
+                for i in range(len(logits)):
+                    noise = torch.randn_like(logits[i]) * noise_scale
+                    step_noise.append(noise)
+                stored_noise.append(step_noise)
+
+            # Apply stored noise to logits BEFORE sampling
+            for i, noise in enumerate(step_noise):
+                logits[i] = logits[i] + noise
 
             # Filter start-of-song token
             logits[0][:, sos_type_code] = -float("inf")
@@ -718,8 +779,8 @@ def main():
     parser.add_argument(
         "--conditioning-length",
         type=int,
-        default=3,
-        help="Minimum number of tokens for conditioning prefix (default: 3). Will automatically extend to include start-of-notes token if needed.",
+        default=50,
+        help="Minimum number of tokens for conditioning prefix (default: 50). Will automatically extend to include start-of-notes token if needed. Use 30-100 to capture actual musical content.",
     )
     parser.add_argument(
         "--seq-len",
