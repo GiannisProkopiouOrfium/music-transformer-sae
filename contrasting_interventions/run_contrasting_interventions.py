@@ -323,10 +323,9 @@ class ContrastingInterventionRunner:
             str(self.noise_scale),
             "--generation-seed",
             str(42),  # Fixed seed for reproducibility
-            "--addition-strengths",
-            strengths_str,  # All strengths at once - MUST be last positional
+            f"--addition-strengths={strengths_str}",  # Use = syntax to avoid argparse confusion with negative numbers
         ]
-        
+
         # Debug: print the exact command
         self.logger.info(f"🔍 Debug command: {' '.join(cmd)}")
 
