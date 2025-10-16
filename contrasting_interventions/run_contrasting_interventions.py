@@ -170,9 +170,10 @@ class ContrastingInterventionRunner:
     def extract_limuf_if_needed(self, feature_id: int) -> Path:
         """Extract LiMuF for feature if not already extracted."""
 
-        # Check if LiMuF already exists
+        # Use absolute path in contrasting_interventions folder
+        script_dir = Path(__file__).parent.resolve()
         limuf_dir = (
-            self.output_dir.parent
+            script_dir
             / "extractions"
             / f"layer{self.layer}"
             / f"limufs_layer{self.layer}_sae_columns"
@@ -186,11 +187,10 @@ class ContrastingInterventionRunner:
         # Extract LiMuF
         self.logger.info(f"🔄 Extracting LiMuF for Feature {feature_id}...")
 
-        extraction_output_dir = (
-            self.output_dir.parent / "extractions" / f"layer{self.layer}"
-        )
+        extraction_output_dir = script_dir / "extractions" / f"layer{self.layer}"
         extraction_output_dir.mkdir(parents=True, exist_ok=True)
 
+        # Use absolute path for output directory
         cmd = [
             "python",
             "extract_limuf_sae_column.py",
@@ -199,7 +199,7 @@ class ContrastingInterventionRunner:
             "--feature-id",
             str(feature_id),
             "--output-dir",
-            str(extraction_output_dir),
+            str(extraction_output_dir.resolve()),
         ]
 
         try:
