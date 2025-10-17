@@ -248,8 +248,9 @@ def song_conditioned_generate(
     noise_scale: float = 1.2,
     generation_seed: int = 42,
     device: str = "cuda",
-    stored_noise: Optional[List] = None,  # NEW: Pass stored noise from outside
-) -> Tuple[torch.Tensor, List]:  # NEW: Return noise too
+    stored_noise: Optional[List] = None,
+    controlled_intervention: bool = False,
+) -> Tuple[torch.Tensor, List]:
     """
     Generate continuation from song conditioning with optional intervention.
 
@@ -355,9 +356,25 @@ def song_conditioned_generate(
                 last_token_activations = output[:, -1, :].clone()
 
                 if intervention_type == "addition":
-                    # Standard addition
-                    intervention_vector = strength * feature_unit.unsqueeze(0)
-                    output[:, -1, :] = last_token_activations + intervention_vector
+                    if controlled_intervention:
+                        # Controlled addition: remove existing, add desired
+                        existing_strengths = torch.matmul(
+                            last_token_activations, feature_unit
+                        )
+                        existing_components = feature_unit.unsqueeze(
+                            0
+                        ) * existing_strengths.unsqueeze(1)
+                        cleaned_activations = (
+                            last_token_activations - existing_components
+                        )
+                        desired_components = strength * feature_unit.unsqueeze(
+                            0
+                        ).expand(last_token_activations.shape[0], -1)
+                        output[:, -1, :] = cleaned_activations + desired_components
+                    else:
+                        # Standard addition
+                        intervention_vector = strength * feature_unit.unsqueeze(0)
+                        output[:, -1, :] = last_token_activations + intervention_vector
 
                 elif intervention_type == "ablation":
                     # Ablation: remove feature direction
@@ -685,6 +702,7 @@ def run_song_conditioned_interventions(
     noise_scale: float = 1.2,
     generation_seed: int = 42,
     device: str = "cuda",
+    controlled_intervention: bool = False,
 ):
     """
     Run full intervention pipeline on one song.
@@ -783,6 +801,7 @@ def run_song_conditioned_interventions(
             generation_seed=generation_seed,
             device=device,
             stored_noise=shared_stored_noise,  # Pass shared noise
+            controlled_intervention=controlled_intervention,  # Pass controlled intervention flag
         )
 
         # Save result
@@ -920,6 +939,11 @@ def main():
         default="cuda" if torch.cuda.is_available() else "cpu",
         help="Device to use (default: cuda if available)",
     )
+    parser.add_argument(
+        "--controlled-intervention",
+        action="store_true",
+        help="Use controlled intervention (remove existing feature component before adding). Standard addition is used by default.",
+    )
 
     args = parser.parse_args()
 
@@ -940,6 +964,7 @@ def main():
         noise_scale=args.noise_scale,
         generation_seed=args.generation_seed,
         device=args.device,
+        controlled_intervention=args.controlled_intervention,
     )
 
     print("🎉 Success! Check the output directory for WAV and MIDI files.")

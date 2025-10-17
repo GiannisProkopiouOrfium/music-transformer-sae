@@ -67,6 +67,7 @@ class ContrastingInterventionRunner:
         temperature: float = 0.1,
         noise_scale: float = 1.2,
         num_songs: int = 1,
+        controlled_intervention: bool = False,
     ):
         self.layer = layer
         self.feature_ids = feature_ids
@@ -84,6 +85,7 @@ class ContrastingInterventionRunner:
         self.temperature = temperature
         self.noise_scale = noise_scale
         self.num_songs = num_songs
+        self.controlled_intervention = controlled_intervention
 
         self.output_dir.mkdir(parents=True, exist_ok=True)
 
@@ -320,6 +322,10 @@ class ContrastingInterventionRunner:
             str(42),  # Fixed seed for reproducibility
             f"--addition-strengths={strengths_str}",  # Use = syntax to avoid argparse confusion with negative numbers
         ]
+
+        # Add controlled intervention flag if enabled
+        if self.controlled_intervention:
+            cmd.append("--controlled-intervention")
 
         # Debug: print the exact command
         self.logger.info(f"🔍 Debug command: {' '.join(cmd)}")
@@ -664,6 +670,11 @@ def main():
         "--temperature", type=float, default=0.1, help="Sampling temperature"
     )
     parser.add_argument("--noise-scale", type=float, default=1.2, help="Noise scale")
+    parser.add_argument(
+        "--controlled-intervention",
+        action="store_true",
+        help="Use controlled intervention (remove existing feature component before adding). Standard addition is used by default.",
+    )
 
     args = parser.parse_args()
 
@@ -685,6 +696,7 @@ def main():
         temperature=args.temperature,
         noise_scale=args.noise_scale,
         num_songs=args.num_songs,
+        controlled_intervention=args.controlled_intervention,
     )
 
     # Run
