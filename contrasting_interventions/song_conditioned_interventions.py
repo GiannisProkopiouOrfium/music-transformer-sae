@@ -465,6 +465,11 @@ def song_conditioned_generate(
             # Filter start-of-song token
             logits[0][:, sos_type_code] = -float("inf")
 
+            # IMPORTANT: Filter out index 0 for all non-type dimensions to prevent invalid tokens
+            # Index 0 often represents "no value" or "padding" which causes decoding errors
+            for i in range(1, len(logits)):
+                logits[i][:, 0] = -float("inf")
+
             # Sample type (use fixed noise parameters for sampling function)
             sample_type = sample(
                 logits[0],
@@ -548,7 +553,7 @@ def song_conditioned_generate(
 
 
 def save_result(filename: str, tokens: torch.Tensor, encoding: dict, output_dir: Path):
-    """Save generated tokens as MIDI and WAV."""
+    """Save generated tokens as MIDI and WAV with validation."""
     # Convert tokens to numpy
     tokens_np = tokens[0].cpu().numpy()  # Remove batch dimension
 
@@ -561,13 +566,34 @@ def save_result(filename: str, tokens: torch.Tensor, encoding: dict, output_dir:
         print(f"   🔍 Debug: tokens_np shape = {tokens_np.shape}")
         print(f"   🔍 Debug: first 5 tokens = {tokens_np[:5]}")
 
+        # Validate tokens before decoding
+        print(f"   🔍 Validating tokens...")
+        note_type_code = encoding["type_code_map"]["note"]
+
+        # Check for invalid values in note tokens
+        invalid_count = 0
+        for i, row in enumerate(tokens_np):
+            if row[0] == note_type_code:  # This is a note token
+                # Check for invalid values (0 or negative in certain dimensions)
+                # Dimensions: [type, pitch, duration, velocity, beat, position]
+                if row[2] == 0:  # Duration shouldn't be 0
+                    invalid_count += 1
+                    if invalid_count <= 3:  # Only print first 3
+                        print(f"      ⚠️  Token {i}: Invalid duration=0 in note: {row}")
+
+        if invalid_count > 0:
+            print(f"   ⚠️  Found {invalid_count} tokens with invalid values!")
+            print(
+                f"   ⚠️  This may cause decoding errors. Attempting to decode anyway..."
+            )
+
         # Decode notes first to check if we get any
         notes = representation.decode_notes(tokens_np, encoding)
         print(f"   🔍 Debug: decoded {len(notes)} notes")
 
         if len(notes) == 0:
-            print(f"   ⚠️  Warning: No notes were decoded from tokens!")
-            print(f"   🔍 Debug: Checking event types in first 10 tokens...")
+            print("   ⚠️  Warning: No notes were decoded from tokens!")
+            print("   🔍 Debug: Checking event types in first 10 tokens...")
             code_type_map = encoding["code_type_map"]
             for i, row in enumerate(tokens_np[:10]):
                 event_type = code_type_map.get(int(row[0]), f"unknown_{int(row[0])}")
@@ -592,6 +618,51 @@ def save_result(filename: str, tokens: torch.Tensor, encoding: dict, output_dir:
         print(f"   💾 Saved WAV: {filename}.wav")
 
         return str(wav_path), str(midi_path)
+
+    except KeyError as e:
+        import traceback
+
+        print(f"   ❌ KeyError during decoding: {e}")
+        print(f"   This usually means an invalid token value was generated.")
+        print(f"   Traceback: {traceback.format_exc()}")
+
+        # Try to find the problematic token
+        print(f"   🔍 Searching for problematic tokens...")
+        note_type_code = encoding["type_code_map"]["note"]
+        for i, row in enumerate(tokens_np):
+            if row[0] == note_type_code:
+                # Check each dimension
+                for dim_idx, dim_name in enumerate(
+                    ["type", "pitch", "duration", "velocity", "beat", "position"]
+                ):
+                    if (
+                        row[dim_idx] == 0 and dim_idx > 0
+                    ):  # 0 is invalid for most dimensions (except type)
+                        print(
+                            f"      Token {i}: {dim_name}={row[dim_idx]} (INVALID!), full={row}"
+                        )
+                        break
+
+        return None, None
+
+    except TypeError as e:
+        import traceback
+
+        print(f"   ❌ TypeError during decoding: {e}")
+        print(f"   This usually means None values in beat or position fields.")
+        print(f"   Traceback: {traceback.format_exc()}")
+
+        # Check for None-like issues (though numpy doesn't have None, check for special values)
+        print(f"   🔍 Checking for invalid beat/position values...")
+        note_type_code = encoding["type_code_map"]["note"]
+        for i, row in enumerate(tokens_np[:20]):  # Check first 20
+            if row[0] == note_type_code:
+                if row[4] == 0 or row[5] == 0:  # beat or position = 0 might be issue
+                    print(
+                        f"      Token {i}: beat={row[4]}, position={row[5]}, full={row}"
+                    )
+
+        return None, None
 
     except Exception as e:
         import traceback
