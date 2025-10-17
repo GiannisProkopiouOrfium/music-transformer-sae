@@ -258,10 +258,20 @@ def song_conditioned_generate(
         feature_vector: Feature direction for intervention
         strength: Intervention strength
         intervention_type: "baseline", "addition", or "ablation"
+        noise_scale: Scale of noise to add to LOGITS (not sampling noise).
+                     This noise is stored and reused across conditions for comparability.
+                     Recommended: 0.1-0.5 for stable generation, 1.0+ for more variation.
+        stored_noise: Pre-generated noise from previous condition (for reproducibility)
+        temperature: Sampling temperature (0.1 = conservative, 1.0 = diverse)
         Other standard generation parameters
 
     Returns:
-        Complete sequence including conditioning + generation
+        Tuple of (generated_tokens, stored_noise) for reuse across conditions
+
+    Note:
+        - Logit noise (noise_scale parameter) is applied once to logits for reproducibility
+        - Sampling noise (fixed 2.0, 0.02 in sample() calls) is separate and not configurable
+        - These are TWO DIFFERENT noise applications - don't confuse them!
     """
     # Set seed for reproducibility
     torch.manual_seed(generation_seed)
@@ -455,13 +465,13 @@ def song_conditioned_generate(
             # Filter start-of-song token
             logits[0][:, sos_type_code] = -float("inf")
 
-            # Sample type
+            # Sample type (use fixed noise parameters for sampling function)
             sample_type = sample(
                 logits[0],
                 filter_fns[0],
                 filter_thresholds[0],
                 temperatures[0],
-                noise_scale,
+                2.0,  # Fixed noise_scale for sampling (not the logit noise)
                 0.02,
             )
 
@@ -478,7 +488,7 @@ def song_conditioned_generate(
                         filter_fns[instrument_dim],
                         filter_thresholds[instrument_dim],
                         temperatures[instrument_dim],
-                        noise_scale,
+                        2.0,  # Fixed noise_scale for sampling
                         0.02,
                     )
                     samples[idx].append(instrument[0])
@@ -490,7 +500,7 @@ def song_conditioned_generate(
                         filter_fns[1],
                         filter_thresholds[1],
                         temperatures[1],
-                        noise_scale,
+                        2.0,  # Fixed noise_scale for sampling
                         0.02,
                     )
                     samples[idx].append(instrument[0])
@@ -503,7 +513,7 @@ def song_conditioned_generate(
                             filter_fns[i],
                             filter_thresholds[i],
                             temperatures[i],
-                            noise_scale,
+                            2.0,  # Fixed noise_scale for sampling
                             0.02,
                         )
                         samples[idx].append(value[0])
