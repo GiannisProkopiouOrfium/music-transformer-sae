@@ -167,16 +167,16 @@ class MIDIMetricsAnalyzer:
         pitches = [note.pitch for note in notes]
 
         # Pitch range (in semitones)
-        metrics["pitch_range"] = max(pitches) - min(pitches)
-        metrics["pitch_mean"] = np.mean(pitches)
-        metrics["pitch_std"] = np.std(pitches)
+        metrics["pitch_range"] = int(max(pitches) - min(pitches))
+        metrics["pitch_mean"] = float(np.mean(pitches))
+        metrics["pitch_std"] = float(np.std(pitches))
 
         # Pitch class entropy (12-tone distribution)
         pitch_classes = [p % 12 for p in pitches]
         pc_counts = np.bincount(pitch_classes, minlength=12)
         pc_probs = pc_counts / pc_counts.sum()
         pc_probs = pc_probs[pc_probs > 0]  # Remove zeros
-        metrics["pitch_class_entropy"] = -np.sum(pc_probs * np.log2(pc_probs))
+        metrics["pitch_class_entropy"] = float(-np.sum(pc_probs * np.log2(pc_probs)))
 
         return metrics
 
@@ -197,37 +197,37 @@ class MIDIMetricsAnalyzer:
 
         # Note durations
         durations = [note.duration for note in notes]
-        metrics["average_note_duration"] = np.mean(durations)
-        metrics["duration_variance"] = np.var(durations)
+        metrics["average_note_duration"] = float(np.mean(durations))
+        metrics["duration_variance"] = float(np.var(durations))
 
         # Unique duration types (rhythmic complexity)
         unique_durations = len(set(durations))
-        metrics["rhythmic_complexity"] = unique_durations
+        metrics["rhythmic_complexity"] = int(unique_durations)
 
         # Inter-onset intervals
         onsets = sorted([note.time for note in notes])
         if len(onsets) > 1:
             iois = np.diff(onsets)
-            metrics["ioi_mean"] = np.mean(iois)
-            metrics["ioi_std"] = np.std(iois)
+            metrics["ioi_mean"] = float(np.mean(iois))
+            metrics["ioi_std"] = float(np.std(iois))
 
             # Rhythmic regularity (inverse of IOI coefficient of variation)
             if metrics["ioi_mean"] > 0:
                 cv = metrics["ioi_std"] / metrics["ioi_mean"]
-                metrics["rhythmic_regularity"] = 1.0 / (1.0 + cv)
+                metrics["rhythmic_regularity"] = float(1.0 / (1.0 + cv))
             else:
-                metrics["rhythmic_regularity"] = 0
+                metrics["rhythmic_regularity"] = 0.0
 
             # Syncopation score (simplified: variance of onset positions within beat grid)
             beat_positions = [onset % music_muspy.resolution for onset in onsets]
-            metrics["syncopation_score"] = (
+            metrics["syncopation_score"] = float(
                 np.std(beat_positions) if len(beat_positions) > 1 else 0
             )
         else:
-            metrics["ioi_mean"] = 0
-            metrics["ioi_std"] = 0
-            metrics["rhythmic_regularity"] = 0
-            metrics["syncopation_score"] = 0
+            metrics["ioi_mean"] = 0.0
+            metrics["ioi_std"] = 0.0
+            metrics["rhythmic_regularity"] = 0.0
+            metrics["syncopation_score"] = 0.0
 
         # Metric strength (using music21)
         try:
@@ -281,15 +281,15 @@ class MIDIMetricsAnalyzer:
 
         velocities = [note.velocity for note in notes]
 
-        metrics["velocity_mean"] = np.mean(velocities)
-        metrics["velocity_std"] = np.std(velocities)
-        metrics["velocity_range"] = max(velocities) - min(velocities)
-        metrics["velocity_variance"] = np.var(velocities)
+        metrics["velocity_mean"] = float(np.mean(velocities))
+        metrics["velocity_std"] = float(np.std(velocities))
+        metrics["velocity_range"] = int(max(velocities) - min(velocities))
+        metrics["velocity_variance"] = float(np.var(velocities))
 
         # Count significant dynamic transitions (velocity changes > 20)
         if len(velocities) > 1:
             vel_diffs = np.abs(np.diff(velocities))
-            metrics["dynamic_transitions"] = np.sum(vel_diffs > 20)
+            metrics["dynamic_transitions"] = int(np.sum(vel_diffs > 20))
         else:
             metrics["dynamic_transitions"] = 0
 
@@ -303,10 +303,10 @@ class MIDIMetricsAnalyzer:
         if len(notes) > 1:
             onsets = [note.time for note in notes]
             unique_onsets = len(set(onsets))
-            metrics["part_independence"] = unique_onsets / len(onsets)
+            metrics["part_independence"] = float(unique_onsets / len(onsets))
 
             # Simultaneity density (average notes per unique onset time)
-            metrics["simultaneity_density"] = len(onsets) / unique_onsets
+            metrics["simultaneity_density"] = float(len(onsets) / unique_onsets)
         else:
             metrics["part_independence"] = 1.0
             metrics["simultaneity_density"] = 1.0
@@ -334,13 +334,13 @@ class MIDIMetricsAnalyzer:
                                 octave_doublings += 1
                                 break
 
-            metrics["octave_doubling_ratio"] = (
+            metrics["octave_doubling_ratio"] = float(
                 octave_doublings / total_simultaneities
                 if total_simultaneities > 0
                 else 0
             )
         except:
-            metrics["octave_doubling_ratio"] = 0
+            metrics["octave_doubling_ratio"] = 0.0
 
         # Rhythmic offset between parts (measure of call-and-response)
         try:
@@ -368,15 +368,15 @@ class MIDIMetricsAnalyzer:
                             )
                             offsets_diff.append(min_dist)
 
-                    metrics["rhythmic_offset_between_parts"] = (
+                    metrics["rhythmic_offset_between_parts"] = float(
                         np.mean(offsets_diff) if offsets_diff else 0
                     )
                 else:
-                    metrics["rhythmic_offset_between_parts"] = 0
+                    metrics["rhythmic_offset_between_parts"] = 0.0
             else:
-                metrics["rhythmic_offset_between_parts"] = 0
+                metrics["rhythmic_offset_between_parts"] = 0.0
         except:
-            metrics["rhythmic_offset_between_parts"] = 0
+            metrics["rhythmic_offset_between_parts"] = 0.0
 
         return metrics
 
