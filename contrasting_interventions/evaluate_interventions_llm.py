@@ -92,7 +92,12 @@ FEATURE_DESCRIPTIONS = {
 class InterventionEvaluator:
     """Evaluate interventions using LLM-based MIDI comparison."""
 
-    def __init__(self, api_key: Optional[str] = None, model: str = "gpt-4o-mini"):
+    def __init__(
+        self,
+        api_key: Optional[str] = None,
+        model: str = "gpt-4o",
+        max_events: int = 500,
+    ):
         """Initialize evaluator with OpenAI API key."""
         self.api_key = api_key or os.environ.get("OPENAI_API_KEY")
         if not self.api_key:
@@ -102,6 +107,7 @@ class InterventionEvaluator:
 
         self.client = OpenAI(api_key=self.api_key)
         self.model = model
+        self.max_events = max_events
 
         # Setup logging
         logging.basicConfig(
@@ -110,61 +116,103 @@ class InterventionEvaluator:
         self.logger = logging.getLogger(__name__)
 
     def midi_to_text(self, midi_path: Path) -> str:
-        """Convert MIDI file to textual representation for LLM analysis."""
+        """Convert MIDI file to full textual representation for LLM analysis."""
         try:
             score = music21.converter.parse(str(midi_path))
 
-            # Extract key musical features
             text_parts = []
 
-            # Duration
-            duration = score.quarterLength
-            text_parts.append(f"Total duration: {duration:.1f} quarter notes")
-
-            # Time signature
+            # Header info
             time_sigs = score.flat.getTimeSignatures()
             if time_sigs:
-                text_parts.append(f"Time signature: {time_sigs[0].ratioString}")
+                text_parts.append(f"Time Signature: {time_sigs[0].ratioString}")
 
-            # Tempo
             tempos = score.flat.getElementsByClass("MetronomeMark")
             if tempos:
                 text_parts.append(f"Tempo: {tempos[0].number} BPM")
 
-            # Parts/instruments
-            text_parts.append(f"Number of parts: {len(score.parts)}")
+            text_parts.append(f"\nMUSICAL EVENTS (in chronological order):\n")
 
-            # Note analysis for each part
-            for i, part in enumerate(score.parts):
-                notes = part.flat.notes
-                if len(notes) == 0:
-                    continue
+            # Collect all events from all parts with timing
+            all_events = []
+            for part_idx, part in enumerate(score.parts):
+                for element in part.flatten():
+                    if hasattr(element, "offset"):
+                        offset = element.offset
 
-                text_parts.append(f"\nPart {i+1}:")
-                text_parts.append(f"  - Total notes: {len(notes)}")
+                        if isinstance(element, music21.note.Note):
+                            all_events.append(
+                                {
+                                    "offset": offset,
+                                    "part": part_idx + 1,
+                                    "type": "Note",
+                                    "pitch": element.pitch.nameWithOctave,
+                                    "midi": element.pitch.midi,
+                                    "duration": element.quarterLength,
+                                    "velocity": (
+                                        element.volume.velocity
+                                        if element.volume.velocity
+                                        else 64
+                                    ),
+                                }
+                            )
+                        elif isinstance(element, music21.chord.Chord):
+                            pitches = [p.nameWithOctave for p in element.pitches]
+                            midis = [p.midi for p in element.pitches]
+                            all_events.append(
+                                {
+                                    "offset": offset,
+                                    "part": part_idx + 1,
+                                    "type": "Chord",
+                                    "pitches": pitches,
+                                    "midis": midis,
+                                    "duration": element.quarterLength,
+                                    "velocity": (
+                                        element.volume.velocity
+                                        if element.volume.velocity
+                                        else 64
+                                    ),
+                                }
+                            )
+                        elif isinstance(element, music21.note.Rest):
+                            all_events.append(
+                                {
+                                    "offset": offset,
+                                    "part": part_idx + 1,
+                                    "type": "Rest",
+                                    "duration": element.quarterLength,
+                                }
+                            )
 
-                # Pitch range
-                pitches = [n.pitch.midi for n in notes if hasattr(n, "pitch")]
-                if pitches:
+            # Sort by offset (chronological order)
+            all_events.sort(key=lambda x: (x["offset"], x["part"]))
+
+            # Limit to max_events to avoid token limits
+            if len(all_events) > self.max_events:
+                all_events = all_events[: self.max_events]
+                text_parts.append(
+                    f"[Showing first {self.max_events} events of {len(all_events)} total]\n"
+                )
+
+            # Format events
+            for i, event in enumerate(all_events):
+                if event["type"] == "Note":
                     text_parts.append(
-                        f"  - Pitch range: {min(pitches)} to {max(pitches)} (span: {max(pitches) - min(pitches)} semitones)"
+                        f"[{event['offset']:.2f}] Part {event['part']}: "
+                        f"Note {event['pitch']} (MIDI {event['midi']}), "
+                        f"duration={event['duration']:.3f}, velocity={event['velocity']}"
                     )
-
-                # Rhythmic diversity (duration types)
-                durations = [n.quarterLength for n in notes]
-                unique_durations = len(set(durations))
-                text_parts.append(f"  - Unique note durations: {unique_durations}")
-
-                # Velocity dynamics
-                velocities = [
-                    n.volume.velocity for n in notes if n.volume.velocity is not None
-                ]
-                if velocities:
+                elif event["type"] == "Chord":
+                    pitches_str = ", ".join(event["pitches"])
                     text_parts.append(
-                        f"  - Velocity range: {min(velocities)} to {max(velocities)}"
+                        f"[{event['offset']:.2f}] Part {event['part']}: "
+                        f"Chord [{pitches_str}], "
+                        f"duration={event['duration']:.3f}, velocity={event['velocity']}"
                     )
+                elif event["type"] == "Rest":
                     text_parts.append(
-                        f"  - Velocity variation: {max(velocities) - min(velocities)}"
+                        f"[{event['offset']:.2f}] Part {event['part']}: "
+                        f"Rest, duration={event['duration']:.3f}"
                     )
 
             return "\n".join(text_parts)
@@ -522,8 +570,14 @@ def main():
     parser.add_argument(
         "--model",
         type=str,
-        default="gpt-4o-mini",
-        help="OpenAI model to use (default: gpt-4o-mini)",
+        default="gpt-4o",
+        help="OpenAI model to use (default: gpt-4o, or use gpt-4o-mini for lower cost)",
+    )
+    parser.add_argument(
+        "--max-events",
+        type=int,
+        default=500,
+        help="Maximum number of MIDI events to send per file (default: 500)",
     )
 
     args = parser.parse_args()
@@ -547,7 +601,9 @@ def main():
 
     # Create evaluator
     try:
-        evaluator = InterventionEvaluator(api_key=args.api_key, model=args.model)
+        evaluator = InterventionEvaluator(
+            api_key=args.api_key, model=args.model, max_events=args.max_events
+        )
     except ValueError as e:
         print(f"Error: {e}")
         sys.exit(1)
