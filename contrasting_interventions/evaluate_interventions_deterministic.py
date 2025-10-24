@@ -53,7 +53,11 @@ FEATURE_METRICS = {
     },
     "1_256": {  # dynamic_contrast_accents
         "name": "dynamic_contrast_accents",
-        "primary_metrics": ["velocity_variance", "velocity_range", "dynamic_transitions"],
+        "primary_metrics": [
+            "velocity_variance",
+            "velocity_range",
+            "dynamic_transitions",
+        ],
         "expected_direction": "increase",
     },
     "1_1323": {  # wide_pitch_range_texture
@@ -63,12 +67,20 @@ FEATURE_METRICS = {
     },
     "3_182": {  # steady_pulse_march_rhythm
         "name": "steady_pulse_march_rhythm",
-        "primary_metrics": ["rhythmic_regularity", "tempo_stability", "metric_strength"],
+        "primary_metrics": [
+            "rhythmic_regularity",
+            "tempo_stability",
+            "metric_strength",
+        ],
         "expected_direction": "increase",
     },
     "3_855": {  # dynamic_contrast_tension
         "name": "dynamic_contrast_tension",
-        "primary_metrics": ["velocity_variance", "velocity_range", "dynamic_transitions"],
+        "primary_metrics": [
+            "velocity_variance",
+            "velocity_range",
+            "dynamic_transitions",
+        ],
         "expected_direction": "increase",
     },
     "3_997": {  # antiphonal_call_response
@@ -88,7 +100,11 @@ FEATURE_METRICS = {
     },
     "5_1950": {  # dramatic_dynamic_swells
         "name": "dramatic_dynamic_swells",
-        "primary_metrics": ["velocity_variance", "velocity_range", "dynamic_transitions"],
+        "primary_metrics": [
+            "velocity_variance",
+            "velocity_range",
+            "dynamic_transitions",
+        ],
         "expected_direction": "increase",
     },
 }
@@ -107,23 +123,28 @@ class MIDIMetricsAnalyzer:
             music_muspy = muspy.read_midi(str(midi_path))
             music_m21 = music21.converter.parse(str(midi_path))
 
+            # Collect all notes from all tracks
+            all_notes = []
+            for track in music_muspy.tracks:
+                all_notes.extend(track.notes)
+
             metrics = {}
 
             # Basic statistics
-            metrics["n_notes"] = len(music_muspy.notes)
+            metrics["n_notes"] = len(all_notes)
             metrics["duration"] = music_muspy.get_end_time()
 
             # Pitch-based metrics
-            metrics.update(self._analyze_pitch(music_muspy, music_m21))
+            metrics.update(self._analyze_pitch(all_notes, music_m21))
 
             # Rhythm-based metrics
-            metrics.update(self._analyze_rhythm(music_muspy, music_m21))
+            metrics.update(self._analyze_rhythm(all_notes, music_muspy, music_m21))
 
             # Dynamics-based metrics
-            metrics.update(self._analyze_dynamics(music_muspy))
+            metrics.update(self._analyze_dynamics(all_notes))
 
             # Multi-part metrics
-            metrics.update(self._analyze_parts(music_muspy, music_m21))
+            metrics.update(self._analyze_parts(all_notes, music_m21))
 
             return metrics
 
@@ -131,11 +152,11 @@ class MIDIMetricsAnalyzer:
             self.logger.error(f"Failed to analyze MIDI {midi_path}: {e}")
             return {"error": str(e)}
 
-    def _analyze_pitch(self, music_muspy, music_m21) -> Dict:
+    def _analyze_pitch(self, notes, music_m21) -> Dict:
         """Analyze pitch-related metrics."""
         metrics = {}
 
-        if len(music_muspy.notes) == 0:
+        if len(notes) == 0:
             return {
                 "pitch_range": 0,
                 "pitch_mean": 0,
@@ -143,7 +164,7 @@ class MIDIMetricsAnalyzer:
                 "pitch_class_entropy": 0,
             }
 
-        pitches = [note.pitch for note in music_muspy.notes]
+        pitches = [note.pitch for note in notes]
 
         # Pitch range (in semitones)
         metrics["pitch_range"] = max(pitches) - min(pitches)
@@ -159,11 +180,11 @@ class MIDIMetricsAnalyzer:
 
         return metrics
 
-    def _analyze_rhythm(self, music_muspy, music_m21) -> Dict:
+    def _analyze_rhythm(self, notes, music_muspy, music_m21) -> Dict:
         """Analyze rhythm-related metrics."""
         metrics = {}
 
-        if len(music_muspy.notes) == 0:
+        if len(notes) == 0:
             return {
                 "average_note_duration": 0,
                 "duration_variance": 0,
@@ -175,7 +196,7 @@ class MIDIMetricsAnalyzer:
             }
 
         # Note durations
-        durations = [note.duration for note in music_muspy.notes]
+        durations = [note.duration for note in notes]
         metrics["average_note_duration"] = np.mean(durations)
         metrics["duration_variance"] = np.var(durations)
 
@@ -184,7 +205,7 @@ class MIDIMetricsAnalyzer:
         metrics["rhythmic_complexity"] = unique_durations
 
         # Inter-onset intervals
-        onsets = sorted([note.time for note in music_muspy.notes])
+        onsets = sorted([note.time for note in notes])
         if len(onsets) > 1:
             iois = np.diff(onsets)
             metrics["ioi_mean"] = np.mean(iois)
@@ -199,7 +220,9 @@ class MIDIMetricsAnalyzer:
 
             # Syncopation score (simplified: variance of onset positions within beat grid)
             beat_positions = [onset % music_muspy.resolution for onset in onsets]
-            metrics["syncopation_score"] = np.std(beat_positions) if len(beat_positions) > 1 else 0
+            metrics["syncopation_score"] = (
+                np.std(beat_positions) if len(beat_positions) > 1 else 0
+            )
         else:
             metrics["ioi_mean"] = 0
             metrics["ioi_std"] = 0
@@ -214,13 +237,15 @@ class MIDIMetricsAnalyzer:
                 strong_beat_count = 0
                 total_count = 0
                 for note in score:
-                    if hasattr(note, 'beat'):
+                    if hasattr(note, "beat"):
                         total_count += 1
                         # Beat 1 is typically strong
                         if note.beat == 1.0:
                             strong_beat_count += 1
-                
-                metrics["metric_strength"] = strong_beat_count / total_count if total_count > 0 else 0
+
+                metrics["metric_strength"] = (
+                    strong_beat_count / total_count if total_count > 0 else 0
+                )
             else:
                 metrics["metric_strength"] = 0
         except:
@@ -228,10 +253,12 @@ class MIDIMetricsAnalyzer:
 
         # Tempo stability (check for tempo changes)
         try:
-            tempos = music_m21.flat.getElementsByClass('MetronomeMark')
+            tempos = music_m21.flat.getElementsByClass("MetronomeMark")
             if len(tempos) > 1:
                 tempo_values = [t.number for t in tempos]
-                metrics["tempo_stability"] = 1.0 - (np.std(tempo_values) / np.mean(tempo_values))
+                metrics["tempo_stability"] = 1.0 - (
+                    np.std(tempo_values) / np.mean(tempo_values)
+                )
             else:
                 metrics["tempo_stability"] = 1.0
         except:
@@ -239,11 +266,11 @@ class MIDIMetricsAnalyzer:
 
         return metrics
 
-    def _analyze_dynamics(self, music_muspy) -> Dict:
+    def _analyze_dynamics(self, notes) -> Dict:
         """Analyze dynamics-related metrics."""
         metrics = {}
 
-        if len(music_muspy.notes) == 0:
+        if len(notes) == 0:
             return {
                 "velocity_mean": 0,
                 "velocity_std": 0,
@@ -252,7 +279,7 @@ class MIDIMetricsAnalyzer:
                 "dynamic_transitions": 0,
             }
 
-        velocities = [note.velocity for note in music_muspy.notes]
+        velocities = [note.velocity for note in notes]
 
         metrics["velocity_mean"] = np.mean(velocities)
         metrics["velocity_std"] = np.std(velocities)
@@ -268,16 +295,16 @@ class MIDIMetricsAnalyzer:
 
         return metrics
 
-    def _analyze_parts(self, music_muspy, music_m21) -> Dict:
+    def _analyze_parts(self, notes, music_m21) -> Dict:
         """Analyze multi-part interaction metrics."""
         metrics = {}
 
         # Part independence (simplified: ratio of non-simultaneous to total notes)
-        if len(music_muspy.notes) > 1:
-            onsets = [note.time for note in music_muspy.notes]
+        if len(notes) > 1:
+            onsets = [note.time for note in notes]
             unique_onsets = len(set(onsets))
             metrics["part_independence"] = unique_onsets / len(onsets)
-            
+
             # Simultaneity density (average notes per unique onset time)
             metrics["simultaneity_density"] = len(onsets) / unique_onsets
         else:
@@ -288,12 +315,12 @@ class MIDIMetricsAnalyzer:
         try:
             # Group notes by onset time
             onset_groups = {}
-            for note in music_muspy.notes:
+            for note in notes:
                 onset = note.time
                 if onset not in onset_groups:
                     onset_groups[onset] = []
                 onset_groups[onset].append(note.pitch)
-            
+
             # Check for octave relationships
             octave_doublings = 0
             total_simultaneities = 0
@@ -302,13 +329,15 @@ class MIDIMetricsAnalyzer:
                     total_simultaneities += 1
                     # Check if any pitches are octaves apart
                     for i, p1 in enumerate(pitches):
-                        for p2 in pitches[i+1:]:
+                        for p2 in pitches[i + 1 :]:
                             if abs(p1 - p2) % 12 == 0:  # Same pitch class
                                 octave_doublings += 1
                                 break
-            
+
             metrics["octave_doubling_ratio"] = (
-                octave_doublings / total_simultaneities if total_simultaneities > 0 else 0
+                octave_doublings / total_simultaneities
+                if total_simultaneities > 0
+                else 0
             )
         except:
             metrics["octave_doubling_ratio"] = 0
@@ -322,20 +351,26 @@ class MIDIMetricsAnalyzer:
                     onsets = [float(n.offset) for n in part.flat.notes]
                     if onsets:
                         part_onsets.append(onsets)
-                
+
                 # Calculate offset correlation between parts
                 if len(part_onsets) >= 2:
                     # Simplified: check if onset patterns are shifted
                     offsets_diff = []
                     for i in range(len(part_onsets) - 1):
-                        if len(part_onsets[i]) > 0 and len(part_onsets[i+1]) > 0:
+                        if len(part_onsets[i]) > 0 and len(part_onsets[i + 1]) > 0:
                             # Measure minimum time distance between parts
-                            min_dist = min([abs(o1 - o2) 
-                                          for o1 in part_onsets[i][:10] 
-                                          for o2 in part_onsets[i+1][:10]])
+                            min_dist = min(
+                                [
+                                    abs(o1 - o2)
+                                    for o1 in part_onsets[i][:10]
+                                    for o2 in part_onsets[i + 1][:10]
+                                ]
+                            )
                             offsets_diff.append(min_dist)
-                    
-                    metrics["rhythmic_offset_between_parts"] = np.mean(offsets_diff) if offsets_diff else 0
+
+                    metrics["rhythmic_offset_between_parts"] = (
+                        np.mean(offsets_diff) if offsets_diff else 0
+                    )
                 else:
                     metrics["rhythmic_offset_between_parts"] = 0
             else:
@@ -380,7 +415,7 @@ class DeterministicEvaluator:
         self, baseline_metrics: Dict, intervention_metrics: Dict, feature_key: str
     ) -> Dict:
         """Compare intervention metrics against baseline."""
-        
+
         if "error" in baseline_metrics or "error" in intervention_metrics:
             return {"error": "Failed to extract metrics"}
 
@@ -401,7 +436,9 @@ class DeterministicEvaluator:
 
         # Calculate changes for all metrics
         for metric_name in baseline_metrics:
-            if metric_name == "error" or not isinstance(baseline_metrics[metric_name], (int, float)):
+            if metric_name == "error" or not isinstance(
+                baseline_metrics[metric_name], (int, float)
+            ):
                 continue
 
             baseline_val = baseline_metrics[metric_name]
@@ -510,7 +547,7 @@ class DeterministicEvaluator:
             # Determine success based on expected direction and strength sign
             if "primary_metric_avg_change" in comparison:
                 change = comparison["primary_metric_avg_change"]
-                
+
                 # Positive strength should increase metrics
                 # Negative strength should decrease metrics
                 if strength > 0:
