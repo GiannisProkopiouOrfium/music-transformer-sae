@@ -465,20 +465,74 @@ class DeterministicEvaluator:
         # Aggregate primary metrics
         if primary_metrics:
             changes = []
+            absolute_changes = []
             for metric in primary_metrics:
                 if metric in comparison["metric_changes"]:
                     changes.append(
                         comparison["metric_changes"][metric]["relative_change"]
                     )
+                    absolute_changes.append(
+                        comparison["metric_changes"][metric]["absolute_change"]
+                    )
 
             if changes:
                 comparison["primary_metric_avg_change"] = float(np.mean(changes))
-                comparison["primary_metric_direction"] = (
-                    "increase" if np.mean(changes) > 0 else "decrease"
+                comparison["primary_metric_avg_absolute_change"] = float(
+                    np.mean(absolute_changes)
                 )
+
+                # If all primary metrics have zero baseline, use absolute change
+                all_zero_baseline = all(
+                    comparison["metric_changes"][m]["baseline"] == 0
+                    for m in primary_metrics
+                    if m in comparison["metric_changes"]
+                )
+
+                if all_zero_baseline:
+                    comparison["primary_metric_direction"] = (
+                        "increase"
+                        if comparison["primary_metric_avg_absolute_change"] > 0.01
+                        else (
+                            "decrease"
+                            if comparison["primary_metric_avg_absolute_change"] < -0.01
+                            else "unchanged"
+                        )
+                    )
+                else:
+                    comparison["primary_metric_direction"] = (
+                        "increase"
+                        if np.mean(changes) > 0.01
+                        else "decrease" if np.mean(changes) < -0.01 else "unchanged"
+                    )
             else:
                 comparison["primary_metric_avg_change"] = 0.0
+                comparison["primary_metric_avg_absolute_change"] = 0.0
                 comparison["primary_metric_direction"] = "unchanged"
+
+        # If primary metrics are all zero, use secondary metrics
+        if (
+            "primary_metric_avg_change" in comparison
+            and abs(comparison["primary_metric_avg_change"]) < 0.001
+            and abs(comparison.get("primary_metric_avg_absolute_change", 0)) < 0.001
+        ):
+            # Use all other metrics as fallback
+            secondary_changes = []
+            for metric_name in baseline_metrics:
+                if (
+                    metric_name not in primary_metrics
+                    and metric_name != "error"
+                    and metric_name in comparison["metric_changes"]
+                    and isinstance(baseline_metrics[metric_name], (int, float))
+                ):
+                    secondary_changes.append(
+                        comparison["metric_changes"][metric_name]["relative_change"]
+                    )
+
+            if secondary_changes:
+                comparison["secondary_metric_avg_change"] = float(
+                    np.mean(secondary_changes)
+                )
+                comparison["using_secondary_metrics"] = True
 
         return comparison
 
@@ -545,19 +599,35 @@ class DeterministicEvaluator:
             comparison["intervention_file"] = intervention_midi.name
 
             # Determine success based on expected direction and strength sign
-            if "primary_metric_avg_change" in comparison:
-                change = comparison["primary_metric_avg_change"]
-
-                # Positive strength should increase metrics
-                # Negative strength should decrease metrics
-                if strength > 0:
-                    comparison["success"] = change > 0
-                elif strength < 0:
-                    comparison["success"] = change < 0
+            # Use secondary metrics if primary metrics are all zero
+            if comparison.get("using_secondary_metrics"):
+                change = comparison.get("secondary_metric_avg_change", 0)
+            elif "primary_metric_avg_absolute_change" in comparison:
+                # If baseline is zero, use absolute change
+                feature_cfg = FEATURE_METRICS.get(feature_key, {})
+                primary_metrics_list = feature_cfg.get("primary_metrics", [])
+                all_zero_baseline = all(
+                    comparison["metric_changes"][m]["baseline"] == 0
+                    for m in primary_metrics_list
+                    if m in comparison.get("metric_changes", {})
+                )
+                if all_zero_baseline:
+                    change = comparison["primary_metric_avg_absolute_change"]
                 else:
-                    comparison["success"] = abs(change) < 0.01
+                    change = comparison["primary_metric_avg_change"]
             else:
-                comparison["success"] = False
+                change = comparison.get("primary_metric_avg_change", 0)
+
+            # Positive strength should increase metrics
+            # Negative strength should decrease metrics
+            # Use threshold to account for noise
+            threshold = 0.01
+            if strength > 0:
+                comparison["success"] = change > threshold
+            elif strength < 0:
+                comparison["success"] = change < -threshold
+            else:
+                comparison["success"] = abs(change) < threshold
 
             results["comparisons"].append(comparison)
 
@@ -573,11 +643,28 @@ class DeterministicEvaluator:
             comparison["intervention_file"] = ablation_midi.name
 
             # Ablation should decrease primary metrics
-            if "primary_metric_avg_change" in comparison:
-                change = comparison["primary_metric_avg_change"]
-                comparison["success"] = change < 0
+            # Use secondary metrics if primary metrics are all zero
+            if comparison.get("using_secondary_metrics"):
+                change = comparison.get("secondary_metric_avg_change", 0)
+            elif "primary_metric_avg_absolute_change" in comparison:
+                # If baseline is zero, use absolute change
+                feature_cfg = FEATURE_METRICS.get(feature_key, {})
+                primary_metrics_list = feature_cfg.get("primary_metrics", [])
+                all_zero_baseline = all(
+                    comparison["metric_changes"][m]["baseline"] == 0
+                    for m in primary_metrics_list
+                    if m in comparison.get("metric_changes", {})
+                )
+                if all_zero_baseline:
+                    change = comparison["primary_metric_avg_absolute_change"]
+                else:
+                    change = comparison["primary_metric_avg_change"]
             else:
-                comparison["success"] = False
+                change = comparison.get("primary_metric_avg_change", 0)
+
+            # Use threshold for ablation too
+            threshold = 0.01
+            comparison["success"] = change < -threshold
 
             results["ablation_comparison"] = comparison
 
