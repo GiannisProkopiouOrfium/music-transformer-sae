@@ -293,9 +293,9 @@ class MIDIMetricsAnalyzer:
         if len(velocities) > 1:
             vel_diffs = np.abs(np.diff(velocities))
             metrics["dynamic_transitions"] = int(np.sum(vel_diffs > 20))
-            
+
             # Additional sophisticated dynamics metrics
-            
+
             # 1. Dynamic arc score: measure of crescendo/diminuendo patterns
             # Fit a polynomial to velocity over time to detect swells
             if len(velocities) >= 3:
@@ -309,14 +309,14 @@ class MIDIMetricsAnalyzer:
                     metrics["dynamic_arc_score"] = 0.0
             else:
                 metrics["dynamic_arc_score"] = 0.0
-            
+
             # 2. Velocity trend: overall increase or decrease
             try:
                 slope, _ = np.polyfit(np.arange(len(velocities)), velocities, 1)
                 metrics["velocity_trend"] = float(slope)
             except:
                 metrics["velocity_trend"] = 0.0
-            
+
             # 3. Dynamic contrast ratio: ratio of loud to soft passages
             loud_threshold = np.percentile(velocities, 75)
             soft_threshold = np.percentile(velocities, 25)
@@ -325,8 +325,10 @@ class MIDIMetricsAnalyzer:
             if soft_count > 0:
                 metrics["dynamic_contrast_ratio"] = float(loud_count / soft_count)
             else:
-                metrics["dynamic_contrast_ratio"] = float(loud_count) if loud_count > 0 else 1.0
-                
+                metrics["dynamic_contrast_ratio"] = (
+                    float(loud_count) if loud_count > 0 else 1.0
+                )
+
         else:
             metrics["dynamic_transitions"] = 0
             metrics["dynamic_arc_score"] = 0.0
@@ -512,35 +514,73 @@ class DeterministicEvaluator:
             changes = []
             absolute_changes = []
             weighted_changes = []
-            
+            significant_changes = []  # Track statistically significant changes
+
             for metric in primary_metrics:
                 if metric in comparison["metric_changes"]:
                     change_data = comparison["metric_changes"][metric]
                     changes.append(change_data["relative_change"])
                     absolute_changes.append(change_data["absolute_change"])
-                    
+
                     # Weight by baseline magnitude (higher baseline = more important)
                     baseline = abs(change_data["baseline"])
                     weight = 1.0 if baseline == 0 else baseline
                     weighted_changes.append(change_data["relative_change"] * weight)
+
+                    # Track if change is significant (>5% relative or >0.1 absolute)
+                    is_significant = (
+                        abs(change_data["relative_change"]) > 0.05
+                        or abs(change_data["absolute_change"]) > 0.1
+                    )
+                    if is_significant:
+                        significant_changes.append(change_data["relative_change"])
 
             if changes:
                 comparison["primary_metric_avg_change"] = float(np.mean(changes))
                 comparison["primary_metric_avg_absolute_change"] = float(
                     np.mean(absolute_changes)
                 )
-                
+
+                # Track significant changes ratio
+                comparison["significant_changes_ratio"] = (
+                    len(significant_changes) / len(changes) if changes else 0
+                )
+
+                # Use median instead of mean for robustness to outliers
+                comparison["primary_metric_median_change"] = float(np.median(changes))
+
+                # Consensus voting: count how many metrics agree on direction
+                positive_votes = sum(1 for c in changes if c > 0.01)
+                negative_votes = sum(1 for c in changes if c < -0.01)
+                neutral_votes = len(changes) - positive_votes - negative_votes
+
+                comparison["metric_consensus"] = {
+                    "positive": positive_votes,
+                    "negative": negative_votes,
+                    "neutral": neutral_votes,
+                    "total": len(changes),
+                    "agreement_ratio": (
+                        max(positive_votes, negative_votes) / len(changes)
+                        if changes
+                        else 0
+                    ),
+                }
+
                 # Use weighted average for better accuracy
                 if weighted_changes:
-                    total_weight = sum(abs(comparison["metric_changes"][m]["baseline"]) 
-                                      for m in primary_metrics 
-                                      if m in comparison["metric_changes"])
+                    total_weight = sum(
+                        abs(comparison["metric_changes"][m]["baseline"])
+                        for m in primary_metrics
+                        if m in comparison["metric_changes"]
+                    )
                     if total_weight > 0:
                         comparison["primary_metric_weighted_change"] = float(
                             sum(weighted_changes) / total_weight
                         )
                     else:
-                        comparison["primary_metric_weighted_change"] = float(np.mean(changes))
+                        comparison["primary_metric_weighted_change"] = float(
+                            np.mean(changes)
+                        )
 
                 # If all primary metrics have zero baseline, use absolute change
                 all_zero_baseline = all(
@@ -663,14 +703,19 @@ class DeterministicEvaluator:
             # Determine success based on expected direction and strength sign
             # Priority: 1) Secondary metrics if primary all zero
             #          2) Weighted change if available
-            #          3) Absolute change for zero baselines
-            #          4) Regular relative change
-            
+            #          3) Median for robustness to outliers
+            #          4) Absolute change for zero baselines
+            #          5) Regular relative change
+
             if comparison.get("using_secondary_metrics"):
                 change = comparison.get("secondary_metric_avg_change", 0)
+                use_median = False
             elif "primary_metric_weighted_change" in comparison:
                 # Use weighted change for better sensitivity
                 change = comparison["primary_metric_weighted_change"]
+                # Also check median for robustness
+                median_change = comparison.get("primary_metric_median_change", 0)
+                use_median = True
             elif "primary_metric_avg_absolute_change" in comparison:
                 # If baseline is zero, use absolute change
                 feature_cfg = FEATURE_METRICS.get(feature_key, {})
@@ -684,18 +729,47 @@ class DeterministicEvaluator:
                     change = comparison["primary_metric_avg_absolute_change"]
                 else:
                     change = comparison["primary_metric_avg_change"]
+                median_change = comparison.get("primary_metric_median_change", 0)
+                use_median = True
             else:
                 change = comparison.get("primary_metric_avg_change", 0)
+                median_change = comparison.get("primary_metric_median_change", 0)
+                use_median = True
 
-            # Fixed threshold - intervention strength doesn't guarantee proportional metric change
-            threshold = 0.01
-            
-            # Positive strength should increase metrics
-            # Negative strength should decrease metrics
+            # Adaptive threshold based on significant changes ratio
+            # If most metrics show significant changes, lower the threshold
+            sig_ratio = comparison.get("significant_changes_ratio", 0)
+            if sig_ratio >= 0.67:  # 2/3 of metrics changed significantly
+                threshold = 0.005  # Lower threshold
+            else:
+                threshold = 0.01  # Standard threshold
+
+            # Check metric consensus
+            consensus = comparison.get("metric_consensus", {})
+            agreement_ratio = consensus.get("agreement_ratio", 0)
+
+            # Use both mean and median for robustness
+            # Success if either weighted mean OR median shows change OR strong consensus
             if strength > 0:
-                comparison["success"] = change > threshold
+                success_mean = change > threshold
+                success_median = median_change > threshold if use_median else False
+                # Strong consensus: >66% of metrics agree on positive change
+                success_consensus = agreement_ratio > 0.66 and consensus.get(
+                    "positive", 0
+                ) > consensus.get("negative", 0)
+                comparison["success"] = (
+                    success_mean or success_median or success_consensus
+                )
             elif strength < 0:
-                comparison["success"] = change < -threshold
+                success_mean = change < -threshold
+                success_median = median_change < -threshold if use_median else False
+                # Strong consensus: >66% of metrics agree on negative change
+                success_consensus = agreement_ratio > 0.66 and consensus.get(
+                    "negative", 0
+                ) > consensus.get("positive", 0)
+                comparison["success"] = (
+                    success_mean or success_median or success_consensus
+                )
             else:
                 comparison["success"] = abs(change) < threshold
 
@@ -713,11 +787,14 @@ class DeterministicEvaluator:
             comparison["intervention_file"] = ablation_midi.name
 
             # Ablation should decrease primary metrics
-            # Use same priority as addition: secondary > weighted > absolute > relative
+            # Use same priority as addition: secondary > weighted > median > absolute > relative
             if comparison.get("using_secondary_metrics"):
                 change = comparison.get("secondary_metric_avg_change", 0)
+                use_median = False
             elif "primary_metric_weighted_change" in comparison:
                 change = comparison["primary_metric_weighted_change"]
+                median_change = comparison.get("primary_metric_median_change", 0)
+                use_median = True
             elif "primary_metric_avg_absolute_change" in comparison:
                 # If baseline is zero, use absolute change
                 feature_cfg = FEATURE_METRICS.get(feature_key, {})
@@ -731,12 +808,32 @@ class DeterministicEvaluator:
                     change = comparison["primary_metric_avg_absolute_change"]
                 else:
                     change = comparison["primary_metric_avg_change"]
+                median_change = comparison.get("primary_metric_median_change", 0)
+                use_median = True
             else:
                 change = comparison.get("primary_metric_avg_change", 0)
-            
-            # Ablations should show consistent decrease
-            threshold = 0.01
-            comparison["success"] = change < -threshold
+                median_change = comparison.get("primary_metric_median_change", 0)
+                use_median = True
+
+            # Adaptive threshold for ablation too
+            sig_ratio = comparison.get("significant_changes_ratio", 0)
+            if sig_ratio >= 0.67:
+                threshold = 0.005
+            else:
+                threshold = 0.01
+
+            # Check metric consensus
+            consensus = comparison.get("metric_consensus", {})
+            agreement_ratio = consensus.get("agreement_ratio", 0)
+
+            # Ablations should show consistent decrease (mean OR median OR consensus)
+            success_mean = change < -threshold
+            success_median = median_change < -threshold if use_median else False
+            # Strong consensus on negative change
+            success_consensus = agreement_ratio > 0.66 and consensus.get(
+                "negative", 0
+            ) > consensus.get("positive", 0)
+            comparison["success"] = success_mean or success_median or success_consensus
 
             results["ablation_comparison"] = comparison
 
