@@ -54,7 +54,7 @@ FEATURE_METRICS = {
     "1_256": {  # dynamic_contrast_accents
         "name": "dynamic_contrast_accents",
         "primary_metrics": [
-            "velocity_variance",
+            "dynamic_contrast_ratio",  # Better than variance for accents
             "velocity_range",
             "dynamic_transitions",
         ],
@@ -77,9 +77,9 @@ FEATURE_METRICS = {
     "3_855": {  # dynamic_contrast_tension
         "name": "dynamic_contrast_tension",
         "primary_metrics": [
-            "velocity_variance",
+            "dynamic_arc_score",  # Tension often has arc patterns
             "velocity_range",
-            "dynamic_transitions",
+            "dynamic_contrast_ratio",
         ],
         "expected_direction": "increase",
     },
@@ -101,9 +101,9 @@ FEATURE_METRICS = {
     "5_1950": {  # dramatic_dynamic_swells
         "name": "dramatic_dynamic_swells",
         "primary_metrics": [
-            "velocity_variance",
+            "dynamic_arc_score",  # NEW: captures swell patterns
             "velocity_range",
-            "dynamic_transitions",
+            "dynamic_contrast_ratio",  # NEW: loud vs soft ratio
         ],
         "expected_direction": "increase",
     },
@@ -277,6 +277,9 @@ class MIDIMetricsAnalyzer:
                 "velocity_range": 0,
                 "velocity_variance": 0,
                 "dynamic_transitions": 0,
+                "dynamic_arc_score": 0,
+                "velocity_trend": 0,
+                "dynamic_contrast_ratio": 0,
             }
 
         velocities = [note.velocity for note in notes]
@@ -290,8 +293,45 @@ class MIDIMetricsAnalyzer:
         if len(velocities) > 1:
             vel_diffs = np.abs(np.diff(velocities))
             metrics["dynamic_transitions"] = int(np.sum(vel_diffs > 20))
+            
+            # Additional sophisticated dynamics metrics
+            
+            # 1. Dynamic arc score: measure of crescendo/diminuendo patterns
+            # Fit a polynomial to velocity over time to detect swells
+            if len(velocities) >= 3:
+                time_points = np.arange(len(velocities))
+                try:
+                    # Fit quadratic curve (captures single arc)
+                    coeffs = np.polyfit(time_points, velocities, 2)
+                    # Second derivative indicates curvature (swell shape)
+                    metrics["dynamic_arc_score"] = float(abs(coeffs[0]))
+                except:
+                    metrics["dynamic_arc_score"] = 0.0
+            else:
+                metrics["dynamic_arc_score"] = 0.0
+            
+            # 2. Velocity trend: overall increase or decrease
+            try:
+                slope, _ = np.polyfit(np.arange(len(velocities)), velocities, 1)
+                metrics["velocity_trend"] = float(slope)
+            except:
+                metrics["velocity_trend"] = 0.0
+            
+            # 3. Dynamic contrast ratio: ratio of loud to soft passages
+            loud_threshold = np.percentile(velocities, 75)
+            soft_threshold = np.percentile(velocities, 25)
+            loud_count = np.sum(np.array(velocities) > loud_threshold)
+            soft_count = np.sum(np.array(velocities) < soft_threshold)
+            if soft_count > 0:
+                metrics["dynamic_contrast_ratio"] = float(loud_count / soft_count)
+            else:
+                metrics["dynamic_contrast_ratio"] = float(loud_count) if loud_count > 0 else 1.0
+                
         else:
             metrics["dynamic_transitions"] = 0
+            metrics["dynamic_arc_score"] = 0.0
+            metrics["velocity_trend"] = 0.0
+            metrics["dynamic_contrast_ratio"] = 1.0
 
         return metrics
 
@@ -444,17 +484,22 @@ class DeterministicEvaluator:
             baseline_val = baseline_metrics[metric_name]
             intervention_val = intervention_metrics.get(metric_name, 0)
 
-            # Calculate relative change
+            # Calculate relative change (with improved handling)
             if baseline_val != 0:
                 relative_change = (intervention_val - baseline_val) / abs(baseline_val)
             else:
-                relative_change = 1.0 if intervention_val > 0 else 0.0
+                # For zero baseline, use normalized absolute change
+                relative_change = intervention_val  # Will be normalized later
+
+            # Calculate percentage change for better interpretability
+            percentage_change = relative_change * 100 if baseline_val != 0 else 0
 
             comparison["metric_changes"][metric_name] = {
                 "baseline": float(baseline_val),
                 "intervention": float(intervention_val),
                 "absolute_change": float(intervention_val - baseline_val),
                 "relative_change": float(relative_change),
+                "percentage_change": float(percentage_change),
             }
 
             comparison["metric_values"]["baseline"][metric_name] = float(baseline_val)
@@ -462,24 +507,40 @@ class DeterministicEvaluator:
                 intervention_val
             )
 
-        # Aggregate primary metrics
+        # Aggregate primary metrics with weighted importance
         if primary_metrics:
             changes = []
             absolute_changes = []
+            weighted_changes = []
+            
             for metric in primary_metrics:
                 if metric in comparison["metric_changes"]:
-                    changes.append(
-                        comparison["metric_changes"][metric]["relative_change"]
-                    )
-                    absolute_changes.append(
-                        comparison["metric_changes"][metric]["absolute_change"]
-                    )
+                    change_data = comparison["metric_changes"][metric]
+                    changes.append(change_data["relative_change"])
+                    absolute_changes.append(change_data["absolute_change"])
+                    
+                    # Weight by baseline magnitude (higher baseline = more important)
+                    baseline = abs(change_data["baseline"])
+                    weight = 1.0 if baseline == 0 else baseline
+                    weighted_changes.append(change_data["relative_change"] * weight)
 
             if changes:
                 comparison["primary_metric_avg_change"] = float(np.mean(changes))
                 comparison["primary_metric_avg_absolute_change"] = float(
                     np.mean(absolute_changes)
                 )
+                
+                # Use weighted average for better accuracy
+                if weighted_changes:
+                    total_weight = sum(abs(comparison["metric_changes"][m]["baseline"]) 
+                                      for m in primary_metrics 
+                                      if m in comparison["metric_changes"])
+                    if total_weight > 0:
+                        comparison["primary_metric_weighted_change"] = float(
+                            sum(weighted_changes) / total_weight
+                        )
+                    else:
+                        comparison["primary_metric_weighted_change"] = float(np.mean(changes))
 
                 # If all primary metrics have zero baseline, use absolute change
                 all_zero_baseline = all(
@@ -507,9 +568,10 @@ class DeterministicEvaluator:
             else:
                 comparison["primary_metric_avg_change"] = 0.0
                 comparison["primary_metric_avg_absolute_change"] = 0.0
+                comparison["primary_metric_weighted_change"] = 0.0
                 comparison["primary_metric_direction"] = "unchanged"
 
-        # If primary metrics are all zero, use secondary metrics
+        # If primary metrics are all zero or very small, use secondary metrics
         if (
             "primary_metric_avg_change" in comparison
             and abs(comparison["primary_metric_avg_change"]) < 0.001
@@ -599,9 +661,16 @@ class DeterministicEvaluator:
             comparison["intervention_file"] = intervention_midi.name
 
             # Determine success based on expected direction and strength sign
-            # Use secondary metrics if primary metrics are all zero
+            # Priority: 1) Secondary metrics if primary all zero
+            #          2) Weighted change if available
+            #          3) Absolute change for zero baselines
+            #          4) Regular relative change
+            
             if comparison.get("using_secondary_metrics"):
                 change = comparison.get("secondary_metric_avg_change", 0)
+            elif "primary_metric_weighted_change" in comparison:
+                # Use weighted change for better sensitivity
+                change = comparison["primary_metric_weighted_change"]
             elif "primary_metric_avg_absolute_change" in comparison:
                 # If baseline is zero, use absolute change
                 feature_cfg = FEATURE_METRICS.get(feature_key, {})
@@ -618,10 +687,11 @@ class DeterministicEvaluator:
             else:
                 change = comparison.get("primary_metric_avg_change", 0)
 
+            # Fixed threshold - intervention strength doesn't guarantee proportional metric change
+            threshold = 0.01
+            
             # Positive strength should increase metrics
             # Negative strength should decrease metrics
-            # Use threshold to account for noise
-            threshold = 0.01
             if strength > 0:
                 comparison["success"] = change > threshold
             elif strength < 0:
@@ -643,9 +713,11 @@ class DeterministicEvaluator:
             comparison["intervention_file"] = ablation_midi.name
 
             # Ablation should decrease primary metrics
-            # Use secondary metrics if primary metrics are all zero
+            # Use same priority as addition: secondary > weighted > absolute > relative
             if comparison.get("using_secondary_metrics"):
                 change = comparison.get("secondary_metric_avg_change", 0)
+            elif "primary_metric_weighted_change" in comparison:
+                change = comparison["primary_metric_weighted_change"]
             elif "primary_metric_avg_absolute_change" in comparison:
                 # If baseline is zero, use absolute change
                 feature_cfg = FEATURE_METRICS.get(feature_key, {})
@@ -661,8 +733,8 @@ class DeterministicEvaluator:
                     change = comparison["primary_metric_avg_change"]
             else:
                 change = comparison.get("primary_metric_avg_change", 0)
-
-            # Use threshold for ablation too
+            
+            # Ablations should show consistent decrease
             threshold = 0.01
             comparison["success"] = change < -threshold
 
