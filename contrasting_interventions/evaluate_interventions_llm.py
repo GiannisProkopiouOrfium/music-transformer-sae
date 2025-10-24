@@ -388,7 +388,7 @@ Be objective and focus on the specific musical characteristic described. Do not 
     def evaluate_directory(self, input_dir: Path) -> Dict:
         """Evaluate all intervention sets in a directory."""
 
-        self.logger.info(f"🔍 Scanning directory: {input_dir}")
+        self.logger.info(f"Scanning directory: {input_dir}")
 
         # Find all feature directories
         feature_dirs = []
@@ -430,7 +430,17 @@ Be objective and focus on the specific musical characteristic described. Do not 
         total_additions = 0
         total_ablations = 0
 
-        for evaluation in results.get("evaluations", []):
+        # Handle both single directory and multiple directories
+        evaluations_list = []
+        if "directories" in results:
+            # Multiple directories case
+            for directory_result in results["directories"]:
+                evaluations_list.extend(directory_result.get("evaluations", []))
+        else:
+            # Single directory case
+            evaluations_list = results.get("evaluations", [])
+
+        for evaluation in evaluations_list:
             # Check addition interventions
             for comparison in evaluation.get("comparisons", []):
                 if "feature_more_present_in" not in comparison:
@@ -474,7 +484,7 @@ Be objective and focus on the specific musical characteristic described. Do not 
                 correct_ablations / total_ablations if total_ablations > 0 else 0
             ),
             "overall_accuracy": (
-                correct_additions + correct_ablations / total_comparisons
+                (correct_additions + correct_ablations) / total_comparisons
                 if total_comparisons > 0
                 else 0
             ),
