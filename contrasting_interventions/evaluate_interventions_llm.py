@@ -138,7 +138,7 @@ class InterventionEvaluator:
             for part_idx, part in enumerate(score.parts):
                 for element in part.flatten():
                     if hasattr(element, "offset"):
-                        offset = element.offset
+                        offset = float(element.offset)
 
                         if isinstance(element, music21.note.Note):
                             all_events.append(
@@ -148,7 +148,7 @@ class InterventionEvaluator:
                                     "type": "Note",
                                     "pitch": element.pitch.nameWithOctave,
                                     "midi": element.pitch.midi,
-                                    "duration": element.quarterLength,
+                                    "duration": float(element.quarterLength),
                                     "velocity": (
                                         element.volume.velocity
                                         if element.volume.velocity
@@ -166,7 +166,7 @@ class InterventionEvaluator:
                                     "type": "Chord",
                                     "pitches": pitches,
                                     "midis": midis,
-                                    "duration": element.quarterLength,
+                                    "duration": float(element.quarterLength),
                                     "velocity": (
                                         element.volume.velocity
                                         if element.volume.velocity
@@ -180,7 +180,7 @@ class InterventionEvaluator:
                                     "offset": offset,
                                     "part": part_idx + 1,
                                     "type": "Rest",
-                                    "duration": element.quarterLength,
+                                    "duration": float(element.quarterLength),
                                 }
                             )
 
