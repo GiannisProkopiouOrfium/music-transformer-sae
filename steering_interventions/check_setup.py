@@ -108,9 +108,9 @@ def main():
             print(f"  {check_mark(False)} {name}: {path} (not found)")
             all_passed = False
 
-    # Check 5: Model checkpoint
+    # Check 5: Model checkpoint exp/sod/ape/checkpoints/best_model.pt
     print("\nChecking model checkpoint...")
-    model_dir = project_root / "exp" / "test_sod"
+    model_dir = project_root / "exp" / "sod" / "ape"
 
     if model_dir.exists():
         print(f"  {check_mark(True)} Model directory: {model_dir}")

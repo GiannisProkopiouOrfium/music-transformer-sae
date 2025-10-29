@@ -10,7 +10,7 @@ NOTES_DIR = DATA_DIR / "notes"
 OUTPUT_DIR = pathlib.Path(__file__).parent / "outputs"
 
 # Model paths
-MODEL_DIR = PROJECT_ROOT / "exp" / "test_sod"
+MODEL_DIR = PROJECT_ROOT / "exp" / "sod" / "ape"
 CHECKPOINT_DIR = MODEL_DIR / "checkpoints"
 
 # Concept definitions
