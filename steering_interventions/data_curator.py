@@ -114,7 +114,10 @@ def segment_track_by_beats(
 
 
 def load_and_segment_json(
-    json_path: pathlib.Path, n_beats: int = None, resolution: int = 12
+    json_path: pathlib.Path,
+    n_beats: int = None,
+    resolution: int = 12,
+    first_segment_only: bool = False,
 ) -> List[Dict]:
     """Load a JSON file and optionally segment it.
 
@@ -122,6 +125,7 @@ def load_and_segment_json(
         json_path: Path to JSON file
         n_beats: Number of beats per segment (None = no segmentation)
         resolution: Time resolution (ticks per beat)
+        first_segment_only: If True, only return the first segment (ignores rest of song)
 
     Returns:
         List of segments (each segment is a dict with metadata and tracks)
@@ -162,7 +166,10 @@ def load_and_segment_json(
         n_segments = max(1, total_beats // n_beats)
 
         segments = []
-        for seg_idx in range(n_segments):
+        # If first_segment_only is True, only process the first segment
+        segment_range = range(1) if first_segment_only else range(n_segments)
+
+        for seg_idx in segment_range:
             start_beat = seg_idx * n_beats
 
             # Segment each track
@@ -220,6 +227,7 @@ def curate_datasets(
     n_beats: int = None,
     resolution: int = 12,
     use_train_split: bool = True,
+    first_segment_only: bool = False,
 ) -> Tuple[List[Dict], List[Dict], Dict]:
     """Main function to curate high/low datasets.
 
@@ -228,6 +236,7 @@ def curate_datasets(
         n_beats: Segment length in beats (None = no segmentation)
         resolution: Time resolution
         use_train_split: Whether to use train split (True) or all data (False)
+        first_segment_only: If True, only use the first N-beat segment from each file
 
     Returns:
         (high_segments, low_segments, metadata)
@@ -238,7 +247,13 @@ def curate_datasets(
 
     logging.info(f"Curating datasets for concept: {concept}")
     logging.info(f"High threshold: {high_threshold}, Low threshold: {low_threshold}")
-    logging.info(f"Segmentation: {n_beats} beats" if n_beats else "No segmentation")
+    if n_beats:
+        seg_info = f"{n_beats} beats" + (
+            " (first segment only)" if first_segment_only else " (all segments)"
+        )
+        logging.info(f"Segmentation: {seg_info}")
+    else:
+        logging.info("No segmentation")
 
     # Get list of JSON files
     json_files = sorted(config.JSON_DIR.rglob("*.json"))
@@ -269,7 +284,9 @@ def curate_datasets(
 
     for json_path in tqdm(json_files, desc="Processing files"):
         try:
-            segments = load_and_segment_json(json_path, n_beats, resolution)
+            segments = load_and_segment_json(
+                json_path, n_beats, resolution, first_segment_only
+            )
 
             for segment in segments:
                 metric_value = calculate_metric(segment, concept)
@@ -382,6 +399,11 @@ def main():
         help="Use all data instead of just train split",
     )
     parser.add_argument(
+        "--first_segment_only",
+        action="store_true",
+        help="Only use the first N-beat segment from each file (ignore rest of song)",
+    )
+    parser.add_argument(
         "--output_dir", type=pathlib.Path, default=None, help="Output directory"
     )
 
@@ -398,6 +420,7 @@ def main():
         n_beats=n_beats,
         resolution=12,
         use_train_split=not args.use_all_data,
+        first_segment_only=args.first_segment_only,
     )
 
     save_datasets(high_segments, low_segments, metadata, args.output_dir)
