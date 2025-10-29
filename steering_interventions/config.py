@@ -17,8 +17,8 @@ CHECKPOINT_DIR = MODEL_DIR / "checkpoints"
 CONCEPTS = {
     "velocity": {
         "metric_name": "average_velocity",
-        "high_threshold": 90,
-        "low_threshold": 40,
+        "high_threshold": 105,  # High velocity (louder music)
+        "low_threshold": 85,  # Low velocity (quieter music)
         "json_field": "velocity",  # Field in note objects
     },
     "pitch_range": {
