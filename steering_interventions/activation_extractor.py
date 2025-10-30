@@ -190,37 +190,53 @@ def load_segment_as_tokens(
         return None, 0
 
     try:
-        # Load the full tokenized sequence
-        tokens = np.load(npy_path)
+        # Load the full note sequence (5D format: beat, position, pitch, duration, program)
+        notes = np.load(npy_path)
 
-        # If we need to segment, extract the relevant beat range
+        # Validate shape
+        if len(notes.shape) != 2:
+            logging.error(f"Invalid shape {notes.shape} for {npy_path}, expected 2D array")
+            return None, 0
+        
+        if notes.shape[1] != 5:
+            logging.error(f"Invalid note format {notes.shape} for {npy_path}, expected (seq_len, 5)")
+            return None, 0
+        
+        # Notes format: [beat, position, pitch, duration, program]
+        # If we need to segment, extract the relevant beat range FIRST (before encoding)
         if segment_idx > 0 or n_beats is not None:
-            # Tokens have shape (seq_len, 5) with dimensions:
-            # [beat, position, pitch, duration, instrument]
-            beat_dim = 0  # First dimension is beat
-
-            # Find tokens in the beat range
-            beat_values = tokens[:, beat_dim]
+            beat_values = notes[:, 0]  # Beat is always first dimension in notes
             end_beat = start_beat + n_beats if n_beats else max_beat
 
             mask = (beat_values >= start_beat) & (beat_values < end_beat)
-            tokens = tokens[mask]
+            notes = notes[mask]
 
             # Adjust beat values to start from 0
-            if len(tokens) > 0:
-                tokens[:, beat_dim] -= start_beat
+            if len(notes) > 0:
+                notes[:, 0] -= start_beat
+        
+        if len(notes) == 0:
+            logging.warning(f"No notes in segment for {npy_path}")
+            return None, 0
 
+        # Now convert notes (5D) to codes (6D) using representation.encode_notes
+        # This properly handles the instrument dimension
+        codes = representation.encode_notes(notes, encoding)
+        
+        # codes shape: (seq_len, 6) with format [type, beat, position, pitch, duration, instrument]
+        
         # Truncate to max_seq_len
-        if len(tokens) > max_seq_len:
-            tokens = tokens[:max_seq_len]
+        if len(codes) > max_seq_len:
+            codes = codes[:max_seq_len]
 
-        actual_length = len(tokens)
+        actual_length = len(codes)
 
-        # Pad if necessary (will be handled by collate function)
-        return tokens, actual_length
+        return codes, actual_length
 
     except Exception as e:
         logging.error(f"Error loading {npy_path}: {e}")
+        import traceback
+        logging.error(traceback.format_exc())
         return None, 0
 
 
