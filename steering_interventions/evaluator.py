@@ -368,7 +368,7 @@ def analyze_results(
                 "difference": float(np.mean(pos_velocities) - np.mean(zero_velocities)),
                 "t_statistic": float(t_stat),
                 "p_value": float(p_val),
-                "significant": p_val < 0.05,
+                "significant": bool(p_val < 0.05),
             }
 
     if negative_alphas and zero_alpha:
@@ -388,7 +388,7 @@ def analyze_results(
                 "difference": float(np.mean(neg_velocities) - np.mean(zero_velocities)),
                 "t_statistic": float(t_stat),
                 "p_value": float(p_val),
-                "significant": p_val < 0.05,
+                "significant": bool(p_val < 0.05),
             }
 
     return analysis
