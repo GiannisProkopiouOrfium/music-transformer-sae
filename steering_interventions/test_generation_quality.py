@@ -89,14 +89,15 @@ def main():
         start_tokens[:, 0, 0] = sos
 
         # Generate WITHOUT steering (baseline model behavior)
+        # Use model.generate DIRECTLY without any hooks
         with torch.no_grad():
             generated = model.generate(
                 start_tokens,
                 args.seq_len,
                 eos_token=eos,
-                temperature=config.GENERATION_TEMPERATURE,
-                filter_logits_fn=config.GENERATION_FILTER,
-                filter_thres=config.GENERATION_FILTER_THRESHOLD,
+                temperature=1.0,  # Standard temperature
+                filter_logits_fn="top_k",
+                filter_thres=0.9,
                 monotonicity_dim=("type", "beat"),
             )
 
@@ -128,11 +129,13 @@ def main():
         logging.info(f"Min pitch: {np.min(all_pitches)}")
         logging.info(f"Max pitch: {np.max(all_pitches)}")
         logging.info(f"Unique pitches: {len(set(all_pitches))}")
-        
+
         if np.std(all_pitches) < 1.0:
             logging.error("\n⚠️  WARNING: Very low pitch diversity!")
             logging.error("The model is generating mostly the same pitch.")
-            logging.error("This suggests a problem with the model or generation parameters.")
+            logging.error(
+                "This suggests a problem with the model or generation parameters."
+            )
         else:
             logging.info("\n✓ Model generates diverse pitches")
     else:

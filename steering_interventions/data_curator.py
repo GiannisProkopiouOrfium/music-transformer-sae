@@ -49,6 +49,21 @@ def calculate_pitch_range_metric(notes: List[Dict]) -> float:
     return max(pitches) - min(pitches)
 
 
+def calculate_average_pitch_metric(notes: List[Dict]) -> float:
+    """Calculate average pitch from a list of notes.
+
+    Args:
+        notes: List of note dictionaries with 'pitch' field
+
+    Returns:
+        Average pitch (MIDI note number)
+    """
+    if not notes:
+        return 0.0
+    pitches = [note.get("pitch", 0) for note in notes]
+    return sum(pitches) / len(pitches)
+
+
 def calculate_note_density_metric(
     notes: List[Dict], n_beats: int, resolution: int = 12
 ) -> float:
@@ -209,13 +224,14 @@ def calculate_metric(segment: Dict, concept: str) -> float:
     Returns:
         Metric value
     """
-    concept_config = config.CONCEPTS[concept]
     notes = segment["all_notes"]
 
     if concept == "velocity":
         return calculate_velocity_metric(notes)
     elif concept == "pitch_range":
         return calculate_pitch_range_metric(notes)
+    elif concept == "average_pitch":
+        return calculate_average_pitch_metric(notes)
     elif concept == "note_density":
         return calculate_note_density_metric(notes, segment["n_beats"])
     else:
