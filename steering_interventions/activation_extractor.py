@@ -57,10 +57,24 @@ class ActivationExtractor:
         """
 
         def hook_fn(module, input, output):
-            # output shape: (batch, seq_len, dim)
+            # Handle different output types
+            # Some modules return tuples (output, attention_weights, etc.)
+            if isinstance(output, tuple):
+                # Take the first element which is usually the actual output tensor
+                actual_output = output[0]
+            else:
+                actual_output = output
+
+            # output shape should be: (batch, seq_len, dim)
             # We want the last token's hidden state
             # Store detached copy to avoid memory issues
-            self.activations[layer_idx].append(output.detach().cpu())
+            if isinstance(actual_output, torch.Tensor):
+                self.activations[layer_idx].append(actual_output.detach().cpu())
+            else:
+                logging.warning(
+                    f"Layer {layer_idx}: Unexpected output type {type(actual_output)}, "
+                    f"output type is {type(output)}"
+                )
 
         return hook_fn
 
@@ -529,7 +543,17 @@ def main():
     model.load_state_dict(torch.load(checkpoint_path, map_location=device))
     logging.info(f"Loaded checkpoint from: {checkpoint_path}")
 
-    num_layers = train_args["layers"]
+    # Get the actual number of layer modules (not transformer blocks)
+    # Each transformer block has 2 modules: Attention + FeedForward
+    # So actual layer count = len(model.decoder.net.attn_layers.layers)
+    decoder_wrapper = model.decoder
+    transformer = decoder_wrapper.net
+    attn_layers = transformer.attn_layers
+    num_layers = len(attn_layers.layers)
+
+    logging.info(
+        f"Model has {train_args['layers']} transformer blocks = {num_layers} layer modules"
+    )
 
     # Extract activations for high segments
     logging.info("=" * 50)
