@@ -198,7 +198,7 @@ def main():
     parser.add_argument(
         "--alphas",
         type=str,
-        default="-1.0,0.0,1.0",
+        default="-1.0,-0.5,0.0,0.5,1.0",
         help="Comma-separated alpha values to test",
     )
     parser.add_argument(
@@ -323,10 +323,10 @@ def main():
         )
 
     # Verify steering effect
-    if 0.0 in results and -2.0 in results and 2.0 in results:
+    if 0.0 in results and -1.0 in results and 1.0 in results:
         baseline_mean = results[0.0]["pitch_mean"]
-        low_mean = results[-2.0]["pitch_mean"]
-        high_mean = results[2.0]["pitch_mean"]
+        low_mean = results[-1.0]["pitch_mean"]
+        high_mean = results[1.0]["pitch_mean"]
 
         logging.info("\n" + "=" * 60)
         logging.info("STEERING EFFECT VERIFICATION - PITCH")

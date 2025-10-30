@@ -35,8 +35,8 @@ CONCEPTS = {
     },
     "average_pitch": {
         "metric_name": "average_pitch",
-        "high_threshold": 72,  # High pitch notes (above middle C)
-        "low_threshold": 55,  # Low pitch notes (below middle C)
+        "high_threshold": 67.6,  # High pitch notes (above middle C)
+        "low_threshold": 60,  # Low pitch notes (below middle C)
         "json_field": "pitch",
     },
 }
