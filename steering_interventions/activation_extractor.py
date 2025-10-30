@@ -66,20 +66,30 @@ class ActivationExtractor:
 
     def register_hooks(self):
         """Register forward hooks on all transformer layers."""
-        # The model structure is: MusicXTransformer -> MusicAutoregressiveWrapper -> MusicTransformerWrapper -> attn_layers
+        # The model structure is: MusicXTransformer -> .decoder (MusicAutoregressiveWrapper) -> .net (MusicTransformerWrapper) -> .attn_layers
         # attn_layers.layers is a ModuleList of transformer layers
 
-        # Get the actual model (unwrap the autoregressive wrapper)
-        if hasattr(self.model, "net"):
+        # Navigate through the model structure
+        # MusicXTransformer has a 'decoder' attribute (MusicAutoregressiveWrapper)
+        if hasattr(self.model, "decoder"):
+            decoder_wrapper = self.model.decoder
+            if hasattr(decoder_wrapper, "net"):
+                transformer = decoder_wrapper.net
+            else:
+                raise ValueError("Cannot find 'net' in model.decoder")
+        elif hasattr(self.model, "net"):
+            # Fallback: direct access to net
             transformer = self.model.net
         else:
-            transformer = self.model
+            raise ValueError(
+                "Cannot navigate model structure - no 'decoder' or 'net' attribute"
+            )
 
         # Get the attention layers
         if hasattr(transformer, "attn_layers"):
             attn_layers = transformer.attn_layers
         else:
-            raise ValueError("Cannot find attn_layers in model")
+            raise ValueError("Cannot find attn_layers in transformer")
 
         # Register hooks on each layer
         if hasattr(attn_layers, "layers"):
@@ -90,7 +100,9 @@ class ActivationExtractor:
         else:
             raise ValueError("Cannot find layers in attn_layers")
 
-        logging.info(f"Registered {len(self.hooks)} hooks")
+        logging.info(
+            f"Registered {len(self.hooks)} hooks on {len(attn_layers.layers)} layers"
+        )
 
     def remove_hooks(self):
         """Remove all registered hooks."""
