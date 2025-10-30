@@ -51,7 +51,7 @@ MAX_SEQ_LEN = 1024
 MAX_BEAT = 256
 
 # Steering parameters
-ALPHA_VALUES = [-2.0, -1.5, -1.0, -0.5, 0.0, 0.5, 1.0, 1.5, 2.0]
+ALPHA_VALUES = [-1.0, -0.5, 0.0, 0.5, 1.0]
 TARGET_LAYERS = None  # None means all layers, or specify list like [6, 7, 8, 9, 10, 11]
 
 # Generation parameters
