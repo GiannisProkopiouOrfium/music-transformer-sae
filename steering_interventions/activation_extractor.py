@@ -171,13 +171,20 @@ class ActivationExtractor:
 
             for batch_tensor in layer_activations:
                 # batch_tensor shape: (batch_size, seq_len, dim)
+                # Note: Due to causal masking, output seq_len = input seq_len - 1
                 batch_size = batch_tensor.shape[0]
+                actual_seq_len = batch_tensor.shape[1]
 
                 for i in range(batch_size):
                     if batch_offset + i < len(seq_lengths):
                         seq_len = seq_lengths[batch_offset + i]
-                        # Get the hidden state at position seq_len - 1
-                        summary = batch_tensor[i, seq_len - 1, :].numpy()
+                        # The output sequence is shorter than input by 1 (causal masking)
+                        # Get the last available hidden state
+                        # Use min to handle cases where seq_len - 1 might exceed actual_seq_len
+                        last_idx = min(seq_len - 2, actual_seq_len - 1)
+                        if last_idx < 0:
+                            last_idx = 0
+                        summary = batch_tensor[i, last_idx, :].numpy()
                         summaries.append(summary)
 
                 batch_offset += batch_size
