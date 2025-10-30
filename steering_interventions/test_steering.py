@@ -78,6 +78,7 @@ def test_steering(
     encoding,
     device,
     alphas=None,
+    target_layers=None,
     seq_len=512,
     n_samples=3,
 ):
@@ -89,6 +90,7 @@ def test_steering(
         encoding: Encoding dictionary
         device: Device to use
         alphas: List of alpha values to test
+        target_layers: List of layer indices to apply steering (None = all)
         seq_len: Generation length
         n_samples: Number of samples per alpha
 
@@ -121,7 +123,7 @@ def test_steering(
                 start_tokens,
                 seq_len,
                 alpha=alpha,
-                target_layers=None,
+                target_layers=target_layers,
                 eos_token=eos,
                 temperature=config.GENERATION_TEMPERATURE,
                 filter_logits_fn=config.GENERATION_FILTER,
@@ -200,6 +202,12 @@ def main():
         help="Comma-separated alpha values to test",
     )
     parser.add_argument(
+        "--target_layers",
+        type=str,
+        default=None,
+        help="Comma-separated layer indices to apply steering (default: all layers). Example: '3,4,5' for middle layers only",
+    )
+    parser.add_argument(
         "--n_samples", type=int, default=3, help="Number of samples per alpha"
     )
     parser.add_argument("--seq_len", type=int, default=512, help="Generation length")
@@ -275,6 +283,14 @@ def main():
     # Parse alphas
     alphas = [float(a.strip()) for a in args.alphas.split(",")]
 
+    # Parse target layers if specified
+    target_layers = None
+    if args.target_layers is not None:
+        target_layers = [int(l.strip()) for l in args.target_layers.split(",")]
+        logging.info(f"Will apply steering to layers: {target_layers}")
+    else:
+        logging.info("Will apply steering to all layers")
+
     # Run test
     logging.info("=" * 60)
     logging.info("Testing steering interventions")
@@ -286,6 +302,7 @@ def main():
         encoding,
         device,
         alphas=alphas,
+        target_layers=target_layers,
         seq_len=args.seq_len,
         n_samples=args.n_samples,
     )

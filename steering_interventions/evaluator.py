@@ -82,6 +82,81 @@ def measure_velocity_from_tokens(tokens: np.ndarray, encoding: Dict) -> Dict:
         }
 
 
+def measure_pitch_from_tokens(tokens: np.ndarray, encoding: Dict) -> Dict:
+    """Measure pitch statistics from token sequence.
+
+    Args:
+        tokens: Token sequence (shape: seq_len, 6)
+        encoding: Encoding dictionary
+
+    Returns:
+        Dictionary with pitch statistics
+    """
+    try:
+        music = representation.decode(tokens, encoding)
+
+        # Extract all pitches
+        pitches = []
+        for track in music.tracks:
+            for note in track.notes:
+                pitches.append(note.pitch)
+
+        if not pitches:
+            return {
+                "mean": 0.0,
+                "std": 0.0,
+                "min": 0,
+                "max": 0,
+                "median": 0.0,
+                "range": 0,
+                "n_notes": 0,
+            }
+
+        return {
+            "mean": float(np.mean(pitches)),
+            "std": float(np.std(pitches)),
+            "min": int(np.min(pitches)),
+            "max": int(np.max(pitches)),
+            "median": float(np.median(pitches)),
+            "range": int(np.max(pitches) - np.min(pitches)),
+            "n_notes": len(pitches),
+        }
+
+    except Exception as e:
+        logging.error(f"Error decoding tokens: {e}")
+        return {
+            "mean": 0.0,
+            "std": 0.0,
+            "min": 0,
+            "max": 0,
+            "range": 0,
+            "n_notes": 0,
+            "error": str(e),
+        }
+
+
+def measure_concept_from_tokens(
+    tokens: np.ndarray, encoding: Dict, concept: str
+) -> Dict:
+    """Measure concept statistics from token sequence.
+
+    Args:
+        tokens: Token sequence (shape: seq_len, 6)
+        encoding: Encoding dictionary
+        concept: Concept name (velocity, average_pitch, pitch_range, etc.)
+
+    Returns:
+        Dictionary with concept statistics
+    """
+    if concept in ["velocity"]:
+        return measure_velocity_from_tokens(tokens, encoding)
+    elif concept in ["average_pitch", "pitch_range"]:
+        return measure_pitch_from_tokens(tokens, encoding)
+    else:
+        logging.warning(f"Unknown concept '{concept}', using pitch measurement")
+        return measure_pitch_from_tokens(tokens, encoding)
+
+
 def generate_and_evaluate(
     model: nn.Module,
     steering_vectors: Dict[int, torch.Tensor],
@@ -90,6 +165,7 @@ def generate_and_evaluate(
     n_samples: int,
     seq_len: int,
     alpha_values: List[float],
+    concept: str = "velocity",
     target_layers: List[int] = None,
     prompt_tokens: torch.Tensor = None,
     output_dir: pathlib.Path = None,
@@ -158,7 +234,7 @@ def generate_and_evaluate(
             full_seq = torch.cat((tgt_start, generated), 1).cpu().numpy()[0]
 
             # Measure metrics
-            metrics = measure_velocity_from_tokens(full_seq, encoding)
+            metrics = measure_concept_from_tokens(full_seq, encoding, concept)
             metrics["alpha"] = alpha
             metrics["sample_idx"] = i
 
@@ -169,12 +245,13 @@ def generate_and_evaluate(
                 # Save as NPY
                 np.save(alpha_dir / f"sample_{i}.npy", full_seq)
 
-                # Save as MIDI
+                # Save as MIDI and WAV
                 try:
                     music = representation.decode(full_seq, encoding)
-                    music.write(alpha_dir / f"sample_{i}.mid")
+                    music.write(str(alpha_dir / f"sample_{i}.mid"))
+                    music.write_audio(str(alpha_dir / f"sample_{i}.wav"))
                 except Exception as e:
-                    logging.error(f"Error saving MIDI: {e}")
+                    logging.error(f"Error saving MIDI/WAV: {e}")
 
             if (i + 1) % 10 == 0:
                 logging.info(f"Generated {i+1}/{n_samples} samples")
@@ -182,10 +259,10 @@ def generate_and_evaluate(
         results[alpha] = alpha_results
 
         # Log summary for this alpha
-        mean_velocities = [r["mean"] for r in alpha_results if r["n_notes"] > 0]
-        if mean_velocities:
+        mean_metrics = [r["mean"] for r in alpha_results if r["n_notes"] > 0]
+        if mean_metrics:
             logging.info(
-                f"Alpha {alpha}: Mean velocity = {np.mean(mean_velocities):.2f} ± {np.std(mean_velocities):.2f}"
+                f"Alpha {alpha}: Mean {concept} = {np.mean(mean_metrics):.2f} ± {np.std(mean_metrics):.2f}"
             )
 
     return results
@@ -221,7 +298,7 @@ def analyze_results(
 
         analysis["summary"][f"alpha_{alpha}"] = {
             "n_samples": len(valid_results),
-            "mean_velocity": {
+            "mean_metric": {
                 "mean": float(np.mean(mean_values)),
                 "std": float(np.std(mean_values)),
                 "min": float(np.min(mean_values)),
@@ -234,18 +311,18 @@ def analyze_results(
     # Statistical tests
     alpha_values = sorted(results.keys())
 
-    # 1. Correlation between alpha and mean velocity
+    # 1. Correlation between alpha and mean metric
     alphas = []
-    mean_velocities = []
+    mean_metrics = []
 
     for alpha in alpha_values:
         for result in results[alpha]:
             if result["n_notes"] > 0:
                 alphas.append(alpha)
-                mean_velocities.append(result["mean"])
+                mean_metrics.append(result["mean"])
 
     if len(alphas) > 2:
-        correlation, p_value = stats.pearsonr(alphas, mean_velocities)
+        correlation, p_value = stats.pearsonr(alphas, mean_metrics)
 
         # Handle NaN values from constant inputs
         if np.isnan(correlation) or np.isnan(p_value):
@@ -504,6 +581,7 @@ def main():
         args.n_samples,
         args.seq_len,
         args.alpha_values,
+        concept=args.concept,
         target_layers=config.TARGET_LAYERS,
         prompt_tokens=None,
         output_dir=args.output_dir / "samples",

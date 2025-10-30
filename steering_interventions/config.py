@@ -58,5 +58,5 @@ TARGET_LAYERS = None  # None means all layers, or specify list like [6, 7, 8, 9,
 N_GENERATION_SAMPLES = 50
 GENERATION_SEQ_LEN = 512
 GENERATION_TEMPERATURE = 1.0
-GENERATION_FILTER = "top_p"
+GENERATION_FILTER = "top_k"  # Changed from top_p to avoid repetitive generation
 GENERATION_FILTER_THRESHOLD = 0.9
