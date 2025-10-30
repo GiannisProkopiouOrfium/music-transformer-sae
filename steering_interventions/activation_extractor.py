@@ -93,10 +93,28 @@ class ActivationExtractor:
 
         # Register hooks on each layer
         if hasattr(attn_layers, "layers"):
-            for layer_idx, layer in enumerate(attn_layers.layers):
-                hook = layer.register_forward_hook(self._create_hook(layer_idx))
+            for layer_idx, layer_module_list in enumerate(attn_layers.layers):
+                # Each layer is a ModuleList containing [prenorm, attention, residual] or similar
+                # We want to hook the attention module (typically index 1)
+                # Try to find the attention/feedforward module
+                target_module = None
+
+                if (
+                    isinstance(layer_module_list, nn.ModuleList)
+                    and len(layer_module_list) > 1
+                ):
+                    # Typically: [0] = prenorm/ModuleList, [1] = Attention, [2] = Residual
+                    # Hook into the Attention module (index 1)
+                    target_module = layer_module_list[1]
+                else:
+                    # Fallback: hook the whole layer
+                    target_module = layer_module_list
+
+                hook = target_module.register_forward_hook(self._create_hook(layer_idx))
                 self.hooks.append(hook)
-                logging.debug(f"Registered hook on layer {layer_idx}")
+                logging.debug(
+                    f"Registered hook on layer {layer_idx}, module type: {type(target_module).__name__}"
+                )
         else:
             raise ValueError("Cannot find layers in attn_layers")
 
@@ -195,13 +213,17 @@ def load_segment_as_tokens(
 
         # Validate shape
         if len(notes.shape) != 2:
-            logging.error(f"Invalid shape {notes.shape} for {npy_path}, expected 2D array")
+            logging.error(
+                f"Invalid shape {notes.shape} for {npy_path}, expected 2D array"
+            )
             return None, 0
-        
+
         if notes.shape[1] != 5:
-            logging.error(f"Invalid note format {notes.shape} for {npy_path}, expected (seq_len, 5)")
+            logging.error(
+                f"Invalid note format {notes.shape} for {npy_path}, expected (seq_len, 5)"
+            )
             return None, 0
-        
+
         # Notes format: [beat, position, pitch, duration, program]
         # If we need to segment, extract the relevant beat range FIRST (before encoding)
         if segment_idx > 0 or n_beats is not None:
@@ -214,7 +236,7 @@ def load_segment_as_tokens(
             # Adjust beat values to start from 0
             if len(notes) > 0:
                 notes[:, 0] -= start_beat
-        
+
         if len(notes) == 0:
             logging.warning(f"No notes in segment for {npy_path}")
             return None, 0
@@ -222,9 +244,9 @@ def load_segment_as_tokens(
         # Now convert notes (5D) to codes (6D) using representation.encode_notes
         # This properly handles the instrument dimension
         codes = representation.encode_notes(notes, encoding)
-        
+
         # codes shape: (seq_len, 6) with format [type, beat, position, pitch, duration, instrument]
-        
+
         # Truncate to max_seq_len
         if len(codes) > max_seq_len:
             codes = codes[:max_seq_len]
@@ -236,6 +258,7 @@ def load_segment_as_tokens(
     except Exception as e:
         logging.error(f"Error loading {npy_path}: {e}")
         import traceback
+
         logging.error(traceback.format_exc())
         return None, 0
 
