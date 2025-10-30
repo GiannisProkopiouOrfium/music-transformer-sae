@@ -247,16 +247,27 @@ def analyze_results(
     if len(alphas) > 2:
         correlation, p_value = stats.pearsonr(alphas, mean_velocities)
 
-        analysis["statistics"]["correlation"] = {
-            "pearson_r": float(correlation),
-            "p_value": float(p_value),
-            "significant": p_value < 0.05,
-            "interpretation": (
-                f"{'Strong' if abs(correlation) > 0.7 else 'Moderate' if abs(correlation) > 0.4 else 'Weak'} "
-                f"{'positive' if correlation > 0 else 'negative'} correlation "
-                f"({'significant' if p_value < 0.05 else 'not significant'})"
-            ),
-        }
+        # Handle NaN values from constant inputs
+        if np.isnan(correlation) or np.isnan(p_value):
+            analysis["statistics"]["correlation"] = {
+                "pearson_r": None,
+                "p_value": None,
+                "significant": False,
+                "interpretation": "Cannot compute correlation - all values are constant",
+            }
+        else:
+            analysis["statistics"]["correlation"] = {
+                "pearson_r": float(correlation),
+                "p_value": float(p_value),
+                "significant": bool(
+                    p_value < 0.05
+                ),  # Convert numpy bool to Python bool
+                "interpretation": (
+                    f"{'Strong' if abs(correlation) > 0.7 else 'Moderate' if abs(correlation) > 0.4 else 'Weak'} "
+                    f"{'positive' if correlation > 0 else 'negative'} correlation "
+                    f"({'significant' if p_value < 0.05 else 'not significant'})"
+                ),
+            }
 
     # 2. Compare positive vs negative alpha
     positive_alphas = [a for a in alpha_values if a > 0]
