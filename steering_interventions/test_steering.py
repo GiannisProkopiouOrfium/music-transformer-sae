@@ -26,25 +26,49 @@ from steered_generator import SteeredGenerator, load_steering_vectors
 
 def extract_velocities_from_tokens(tokens: np.ndarray, encoding: dict) -> list:
     """Extract velocity values from generated tokens.
-    
+
     Args:
         tokens: Token array (seq_len, 6)
         encoding: Encoding dictionary
-    
+
     Returns:
         List of velocity values
     """
     try:
         music = representation.decode(tokens, encoding)
-        
+
         velocities = []
         for track in music.tracks:
             for note in track.notes:
                 velocities.append(note.velocity)
-        
+
         return velocities
     except Exception as e:
         logging.error(f"Error extracting velocities: {e}")
+        return []
+
+
+def extract_pitches_from_tokens(tokens: np.ndarray, encoding: dict) -> list:
+    """Extract pitch values from generated tokens.
+
+    Args:
+        tokens: Token array (seq_len, 6)
+        encoding: Encoding dictionary
+
+    Returns:
+        List of pitch values
+    """
+    try:
+        music = representation.decode(tokens, encoding)
+
+        pitches = []
+        for track in music.tracks:
+            for note in track.notes:
+                pitches.append(note.pitch)
+
+        return pitches
+    except Exception as e:
+        logging.error(f"Error extracting pitches: {e}")
         return []
 
 
@@ -58,7 +82,7 @@ def test_steering(
     n_samples=3,
 ):
     """Test steering with different alpha values.
-    
+
     Args:
         model: The model
         steering_vectors: Steering vectors dict
@@ -67,30 +91,31 @@ def test_steering(
         alphas: List of alpha values to test
         seq_len: Generation length
         n_samples: Number of samples per alpha
-    
+
     Returns:
         Dictionary with results
     """
     if alphas is None:
         alphas = [-2.0, 0.0, 2.0]
-    
+
     results = {}
-    
+
     sos = encoding["type_code_map"]["start-of-song"]
     eos = encoding["type_code_map"]["end-of-song"]
-    
+
     generator = SteeredGenerator(model, steering_vectors, encoding)
-    
+
     for alpha in alphas:
         logging.info(f"Testing alpha={alpha}")
-        
+
         alpha_velocities = []
-        
+        alpha_pitches = []
+
         for i in range(n_samples):
             # Create start tokens
             start_tokens = torch.zeros((1, 1, 6), dtype=torch.long, device=device)
             start_tokens[:, 0, 0] = sos
-            
+
             # Generate with steering
             generated = generator.generate(
                 start_tokens,
@@ -103,42 +128,51 @@ def test_steering(
                 filter_thres=config.GENERATION_FILTER_THRESHOLD,
                 monotonicity_dim=("type", "beat"),
             )
-            
+
             # Combine start and generated
             full_seq = torch.cat((start_tokens, generated), 1).cpu().numpy()[0]
-            
-            # Extract velocities
+
+            # Extract velocities and pitches
             velocities = extract_velocities_from_tokens(full_seq, encoding)
-            
+            pitches = extract_pitches_from_tokens(full_seq, encoding)
+
             if velocities:
                 alpha_velocities.extend(velocities)
-                logging.info(
-                    f"  Sample {i}: {len(velocities)} notes, "
-                    f"mean velocity={np.mean(velocities):.1f}, "
-                    f"std={np.std(velocities):.1f}"
-                )
-            else:
-                logging.warning(f"  Sample {i}: No velocities extracted")
-        
-        if alpha_velocities:
+            if pitches:
+                alpha_pitches.extend(pitches)
+
+            logging.info(
+                f"  Sample {i}: {len(pitches)} notes, "
+                f"mean pitch={np.mean(pitches):.1f}, "
+                f"std={np.std(pitches):.1f}, "
+                f"range=[{np.min(pitches)}, {np.max(pitches)}]"
+            )
+
+        if alpha_pitches:
             results[alpha] = {
                 "velocities": alpha_velocities,
-                "mean": np.mean(alpha_velocities),
-                "std": np.std(alpha_velocities),
-                "min": np.min(alpha_velocities),
-                "max": np.max(alpha_velocities),
-                "n_notes": len(alpha_velocities),
+                "pitches": alpha_pitches,
+                "velocity_mean": np.mean(alpha_velocities) if alpha_velocities else 0.0,
+                "velocity_std": np.std(alpha_velocities) if alpha_velocities else 0.0,
+                "pitch_mean": np.mean(alpha_pitches),
+                "pitch_std": np.std(alpha_pitches),
+                "pitch_min": np.min(alpha_pitches),
+                "pitch_max": np.max(alpha_pitches),
+                "n_notes": len(alpha_pitches),
             }
         else:
             results[alpha] = {
                 "velocities": [],
-                "mean": 0.0,
-                "std": 0.0,
-                "min": 0,
-                "max": 0,
+                "pitches": [],
+                "velocity_mean": 0.0,
+                "velocity_std": 0.0,
+                "pitch_mean": 0.0,
+                "pitch_std": 0.0,
+                "pitch_min": 0,
+                "pitch_max": 0,
                 "n_notes": 0,
             }
-    
+
     return results
 
 
@@ -255,41 +289,41 @@ def main():
 
     # Print results
     logging.info("\n" + "=" * 60)
-    logging.info("RESULTS SUMMARY")
+    logging.info("RESULTS SUMMARY - PITCH ANALYSIS")
     logging.info("=" * 60)
 
     for alpha in sorted(results.keys()):
         stats = results[alpha]
         logging.info(
             f"Alpha {alpha:+5.1f}: "
-            f"mean={stats['mean']:6.2f}, "
-            f"std={stats['std']:5.2f}, "
-            f"range=[{stats['min']:3d}, {stats['max']:3d}], "
+            f"pitch_mean={stats['pitch_mean']:6.2f}, "
+            f"pitch_std={stats['pitch_std']:5.2f}, "
+            f"range=[{stats['pitch_min']:3d}, {stats['pitch_max']:3d}], "
             f"n={stats['n_notes']:4d} notes"
         )
 
     # Verify steering effect
     if 0.0 in results and -2.0 in results and 2.0 in results:
-        baseline_mean = results[0.0]["mean"]
-        low_mean = results[-2.0]["mean"]
-        high_mean = results[2.0]["mean"]
+        baseline_mean = results[0.0]["pitch_mean"]
+        low_mean = results[-2.0]["pitch_mean"]
+        high_mean = results[2.0]["pitch_mean"]
 
         logging.info("\n" + "=" * 60)
-        logging.info("STEERING EFFECT VERIFICATION")
+        logging.info("STEERING EFFECT VERIFICATION - PITCH")
         logging.info("=" * 60)
-        logging.info(f"Baseline (alpha=0):    {baseline_mean:.2f}")
-        logging.info(f"Low velocity (alpha=-2):  {low_mean:.2f}")
-        logging.info(f"High velocity (alpha=+2): {high_mean:.2f}")
-        logging.info(f"Low vs Baseline:  {low_mean - baseline_mean:+.2f}")
-        logging.info(f"High vs Baseline: {high_mean - baseline_mean:+.2f}")
+        logging.info(f"Baseline (alpha=0):     {baseline_mean:.2f}")
+        logging.info(f"Low pitch (alpha=-2):   {low_mean:.2f}")
+        logging.info(f"High pitch (alpha=+2):  {high_mean:.2f}")
+        logging.info(f"Low vs Baseline:        {low_mean - baseline_mean:+.2f}")
+        logging.info(f"High vs Baseline:       {high_mean - baseline_mean:+.2f}")
 
         if high_mean > baseline_mean and low_mean < baseline_mean:
-            logging.info("\nSUCCESS: Steering works as expected!")
+            logging.info("\n✓ SUCCESS: Pitch steering works as expected!")
         elif high_mean == baseline_mean == low_mean:
-            logging.warning("\nWARNING: No steering effect detected (all equal)")
+            logging.warning("\n✗ WARNING: No steering effect detected (all equal)")
         else:
             logging.warning(
-                "\nWARNING: Unexpected steering pattern (check if inverted)"
+                "\n? WARNING: Unexpected steering pattern (check if inverted)"
             )
     else:
         logging.info("\nNot all alphas tested, skipping verification")
