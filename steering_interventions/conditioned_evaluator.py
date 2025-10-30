@@ -12,9 +12,7 @@ import json
 import logging
 import pathlib
 import sys
-from typing import Dict, List, Tuple
-
-import matplotlib.pyplot as plt
+from typing import Dict, List, Optional, Tuple
 import numpy as np
 import torch
 
@@ -28,41 +26,40 @@ import utils
 from steered_generator import SteeredGenerator, load_steering_vectors
 
 
-def load_song_tokens(filepath: pathlib.Path) -> np.ndarray:
-    """Load song tokens from .pt file.
+def load_song_tokens(filepath: pathlib.Path, encoding: Dict) -> np.ndarray:
+    """Load song tokens from .npy file (not .pt).
 
     Args:
-        filepath: Path to .pt file
+        filepath: Path to .npy file (in subfolder structure)
+        encoding: Encoding dictionary
 
     Returns:
         Token array (seq_len, 6)
     """
-    data = torch.load(filepath, map_location="cpu")
+    # The filepath should be a .npy file in data/sod/processed/notes/[subfolder]/[filename].npy
 
-    # Handle different formats
-    if isinstance(data, dict):
-        if "tokens" in data:
-            tokens = data["tokens"]
-        else:
-            tokens = data[list(data.keys())[0]]
-    else:
-        tokens = data
+    if not filepath.exists():
+        raise FileNotFoundError(f"File not found: {filepath}")
 
-    # Convert to numpy
-    if isinstance(tokens, torch.Tensor):
-        tokens = tokens.numpy()
+    # Load notes in 5D format: [beat, position, pitch, duration, program]
+    notes = np.load(filepath)
 
-    # Ensure 2D shape (seq_len, 6)
-    if len(tokens.shape) == 3:
-        tokens = tokens[0]
+    # Validate shape
+    if len(notes.shape) != 2 or notes.shape[1] != 5:
+        raise ValueError(f"Invalid shape {notes.shape}, expected (seq_len, 5)")
 
-    return tokens
+    # Convert notes (5D) to codes (6D) using representation.encode_notes
+    # This adds the type and instrument dimensions
+    codes = representation.encode_notes(notes, encoding)
+
+    # codes shape: (seq_len, 6) with format [type, beat, position, pitch, duration, instrument]
+    return codes
 
 
 def calculate_initial_pitch(
     tokens: np.ndarray, encoding: Dict, n_beats: int = 4
-) -> float:
-    """Calculate average pitch in the first N beats.
+) -> Optional[float]:
+    """Calculate average pitch in first N beats.
 
     Args:
         tokens: Token array (seq_len, 6)
@@ -86,7 +83,7 @@ def calculate_initial_pitch(
     if not pitches:
         return None
 
-    return np.mean(pitches)
+    return float(np.mean(pitches))
 
 
 def find_extreme_pitch_songs(
@@ -98,7 +95,7 @@ def find_extreme_pitch_songs(
     """Find songs with extreme initial pitch values.
 
     Args:
-        notes_dir: Directory containing .pt files
+        notes_dir: Directory containing .npy files in subfolders
         encoding: Encoding dictionary
         n_songs: Number of songs to find per category
         conditioning_beats: Number of beats to analyze
@@ -110,15 +107,22 @@ def find_extreme_pitch_songs(
 
     song_pitches = []
 
-    for filepath in notes_dir.glob("*.pt"):
-        try:
-            tokens = load_song_tokens(filepath)
-            avg_pitch = calculate_initial_pitch(tokens, encoding, conditioning_beats)
+    # Scan subfolders for .npy files
+    for subfolder in notes_dir.iterdir():
+        if not subfolder.is_dir():
+            continue
 
-            if avg_pitch is not None:
-                song_pitches.append((filepath, avg_pitch))
-        except Exception as e:
-            logging.warning(f"Error processing {filepath.name}: {e}")
+        for filepath in subfolder.glob("*.npy"):
+            try:
+                tokens = load_song_tokens(filepath, encoding)
+                avg_pitch = calculate_initial_pitch(
+                    tokens, encoding, conditioning_beats
+                )
+
+                if avg_pitch is not None:
+                    song_pitches.append((filepath, avg_pitch))
+            except Exception as e:
+                logging.debug(f"Error processing {filepath.name}: {e}")
 
     # Sort by pitch
     song_pitches.sort(key=lambda x: x[1])
@@ -134,14 +138,11 @@ def find_extreme_pitch_songs(
     return low_pitch_songs, high_pitch_songs
 
 
-def extract_conditioning_prefix(
-    tokens: np.ndarray, encoding: Dict, n_beats: int = 4
-) -> torch.Tensor:
+def extract_conditioning_prefix(tokens: np.ndarray, n_beats: int = 4) -> torch.Tensor:
     """Extract first N beats as conditioning.
 
     Args:
         tokens: Full song tokens (seq_len, 6)
-        encoding: Encoding dictionary
         n_beats: Number of beats to extract
 
     Returns:
@@ -240,8 +241,8 @@ def conditioned_generate_and_evaluate(
         logging.info(f"{'='*60}")
 
         # Load and extract conditioning
-        tokens = load_song_tokens(filepath)
-        conditioning = extract_conditioning_prefix(tokens, encoding, conditioning_beats)
+        tokens = load_song_tokens(filepath, encoding)
+        conditioning = extract_conditioning_prefix(tokens, conditioning_beats)
         conditioning = conditioning.to(device)
 
         logging.info(
