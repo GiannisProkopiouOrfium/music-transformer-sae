@@ -140,13 +140,16 @@ def test_steering(
                 alpha_velocities.extend(velocities)
             if pitches:
                 alpha_pitches.extend(pitches)
-
-            logging.info(
-                f"  Sample {i}: {len(pitches)} notes, "
-                f"mean pitch={np.mean(pitches):.1f}, "
-                f"std={np.std(pitches):.1f}, "
-                f"range=[{np.min(pitches)}, {np.max(pitches)}]"
-            )
+                logging.info(
+                    f"  Sample {i}: {len(pitches)} notes, "
+                    f"mean pitch={np.mean(pitches):.1f}, "
+                    f"std={np.std(pitches):.1f}, "
+                    f"range=[{np.min(pitches)}, {np.max(pitches)}]"
+                )
+            else:
+                logging.warning(
+                    f"  Sample {i}: No notes extracted! Generation may have failed."
+                )
 
         if alpha_pitches:
             results[alpha] = {
@@ -193,7 +196,7 @@ def main():
     parser.add_argument(
         "--alphas",
         type=str,
-        default="-2.0,0.0,2.0",
+        default="-1.0,0.0,1.0",
         help="Comma-separated alpha values to test",
     )
     parser.add_argument(
