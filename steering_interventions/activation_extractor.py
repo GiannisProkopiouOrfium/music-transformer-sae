@@ -176,13 +176,14 @@ def load_segment_as_tokens(
         (tokens, actual_length) or (None, 0) if not found
     """
     file_name = segment["file_name"]
+    sub_folder_name = file_name.split("-")[0]
     segment_idx = segment.get("segment_idx", 0)
     start_beat = segment.get("start_beat", 0)
     n_beats = segment.get("n_beats")
 
     # Try to find the .npy file
     # The file structure mirrors the JSON structure
-    npy_path = notes_dir / f"{file_name}.npy"
+    npy_path = notes_dir / sub_folder_name / f"{file_name}.npy"
 
     if not npy_path.exists():
         logging.warning(f"NPY file not found: {npy_path}")
