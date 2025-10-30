@@ -55,20 +55,36 @@ class SteeringHook:
         """
 
         def hook_fn(module, input, output):
-            # output shape: (batch_size, seq_len, dim)
+            # Handle different output types
+            # Some modules return tuples (output, attention_weights, etc.)
+            if isinstance(output, tuple):
+                # Take the first element which is usually the actual output tensor
+                actual_output = output[0]
+                is_tuple = True
+            else:
+                actual_output = output
+                is_tuple = False
+
+            # actual_output shape: (batch_size, seq_len, dim)
 
             if self.intervention_position == "last":
                 # Apply intervention only to the last token
                 # This is the summary position used for next-token prediction
-                output[:, -1, :] = output[
+                actual_output[:, -1, :] = actual_output[
                     :, -1, :
-                ] + self.alpha * self.steering_vector.to(output.device)
+                ] + self.alpha * self.steering_vector.to(actual_output.device)
 
             elif self.intervention_position == "all":
                 # Apply intervention to all tokens
-                output = output + self.alpha * self.steering_vector.to(output.device)
+                actual_output = actual_output + self.alpha * self.steering_vector.to(
+                    actual_output.device
+                )
 
-            return output
+            # Return in the same format as received
+            if is_tuple:
+                return (actual_output,) + output[1:]
+            else:
+                return actual_output
 
         return hook_fn
 
@@ -109,13 +125,23 @@ class SteeredGenerator:
         self.hooks = []
 
         # Get the attention layers for hook registration
-        if hasattr(self.model, "net"):
+        # Navigate through the model structure: MusicXTransformer -> .decoder (MusicAutoregressiveWrapper) -> .net (MusicTransformerWrapper) -> .attn_layers
+        if hasattr(self.model, "decoder"):
+            decoder_wrapper = self.model.decoder
+            if hasattr(decoder_wrapper, "net"):
+                self.transformer = decoder_wrapper.net
+            else:
+                raise ValueError("Cannot find 'net' in model.decoder")
+        elif hasattr(self.model, "net"):
+            # Fallback: direct access to net
             self.transformer = self.model.net
         else:
-            self.transformer = self.model
+            raise ValueError(
+                "Cannot navigate model structure - no 'decoder' or 'net' attribute"
+            )
 
         if not hasattr(self.transformer, "attn_layers"):
-            raise ValueError("Cannot find attn_layers in model")
+            raise ValueError("Cannot find attn_layers in transformer")
 
         self.attn_layers = self.transformer.attn_layers
 
@@ -161,10 +187,25 @@ class SteeredGenerator:
             )
 
             # Register on the layer
-            layer_module = self.attn_layers.layers[layer_idx]
-            hook.register(layer_module)
+            # Each layer is a ModuleList containing [prenorm, attention/feedforward, residual]
+            # We want to hook the attention/feedforward module (typically index 1)
+            layer_module_list = self.attn_layers.layers[layer_idx]
+            if (
+                isinstance(layer_module_list, nn.ModuleList)
+                and len(layer_module_list) > 1
+            ):
+                # Hook the Attention/FeedForward module at index 1
+                target_module = layer_module_list[1]
+            else:
+                # Fallback: hook the whole layer
+                target_module = layer_module_list
+
+            hook.register(target_module)
 
             self.hooks.append(hook)
+            logging.debug(
+                f"Registered steering hook on layer {layer_idx}, module type: {type(target_module).__name__}"
+            )
 
         logging.info(f"Registered {len(self.hooks)} steering hooks")
 
