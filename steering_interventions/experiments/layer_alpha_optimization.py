@@ -304,11 +304,7 @@ def main():
         ff_dropout=train_args["dropout"],
     ).to(device)
 
-    if args.checkpoint is None:
-        checkpoint_path = config.CHECKPOINT_DIR / "best_model.pt"
-    else:
-        checkpoint_path = args.checkpoint
-
+    checkpoint_path = config.CHECKPOINT_DIR / "best_model.pt"
     model.load_state_dict(torch.load(checkpoint_path, map_location=device))
     model.eval()
 
