@@ -98,12 +98,6 @@ def parse_args():
         help="Path to trained model",
     )
     parser.add_argument(
-        "--encoding_path",
-        type=pathlib.Path,
-        default=pathlib.Path("../baseline/encoding_remi.json"),
-        help="Path to encoding",
-    )
-    parser.add_argument(
         "--steering_dir",
         type=pathlib.Path,
         default=pathlib.Path("steering_vectors"),
@@ -292,11 +286,6 @@ def main():
     device = torch.device(f"cuda:{args.gpu}")
     logging.info(f"Using device: {device}")
 
-    # Load encoding
-    logging.info(f"Loading encoding from {args.encoding_path}")
-    encoding = representation.load_encoding(args.encoding_path)
-
-    # Load model
     # Load model
     train_args = utils.load_json(config.MODEL_DIR / "train-args.json")
     encoding = representation.load_encoding(config.NOTES_DIR / "encoding.json")
