@@ -310,7 +310,11 @@ def main():
 
     # Load steering vectors
     logging.info(f"Loading steering vectors from {args.steering_dir}")
-    steering_vectors = load_steering_vectors(args.steering_dir, args.concept, device)
+    steering_path = (
+        config.OUTPUT_DIR / "steering_vectors" / f"{args.concept}_steering_vectors.pt"
+    )
+    steering_vectors, _ = load_steering_vectors(steering_path)
+    steering_vectors = {k: v.to(device) for k, v in steering_vectors.items()}
 
     # Create generator
     generator = SteeredGenerator(model, steering_vectors, encoding)
