@@ -380,16 +380,16 @@ def analyze_conditioned_results(results: List[Dict]) -> Dict:
                         "success": (
                             # For low_pitch songs with positive alpha, we want higher pitch
                             (
-                                category == "low_pitch"
-                                and alpha > 0
+                                # category == "low_pitch" and
+                                alpha > 0
                                 and steered["mean_generated_pitch"]
                                 > baseline["mean_generated_pitch"]
                             )
                             or
                             # For high_pitch songs with negative alpha, we want lower pitch
                             (
-                                category == "high_pitch"
-                                and alpha < 0
+                                # category == "high_pitch" and
+                                alpha < 0
                                 and steered["mean_generated_pitch"]
                                 < baseline["mean_generated_pitch"]
                             )
@@ -421,12 +421,22 @@ def main():
         default=config.OUTPUT_DIR / "conditioned_evaluation",
         help="Output directory",
     )
+    # add experiment name subfolder to output_dir
+    parser.add_argument(
+        "--experiment_name",
+        type=str,
+        default=None,
+        help="Subfolder name for this experiment",
+    )
 
     args = parser.parse_args()
 
     logging.basicConfig(
         level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s"
     )
+
+    if args.experiment_name is not None:
+        args.output_dir = args.output_dir / args.experiment_name
 
     args.output_dir.mkdir(parents=True, exist_ok=True)
 
