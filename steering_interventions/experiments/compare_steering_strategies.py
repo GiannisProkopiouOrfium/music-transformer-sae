@@ -29,6 +29,7 @@ sys.path.insert(0, str(pathlib.Path(__file__).parent.parent.parent / "mmt"))
 sys.path.insert(0, str(pathlib.Path(__file__).parent.parent))
 
 import config
+import utils
 import music_x_transformers
 import representation
 from steered_generator import SteeredGenerator, load_steering_vectors
@@ -73,25 +74,19 @@ def parse_args():
     parser.add_argument(
         "--model_path",
         type=pathlib.Path,
-        default=pathlib.Path("exp/sod/model_best.pt"),
+        default=pathlib.Path("../exp/sod/model_best.pt"),
         help="Path to trained model",
-    )
-    parser.add_argument(
-        "--encoding_path",
-        type=pathlib.Path,
-        default=pathlib.Path("baseline/encoding_remi.json"),
-        help="Path to encoding",
     )
     parser.add_argument(
         "--steering_dir",
         type=pathlib.Path,
-        default=pathlib.Path("steering_interventions/steering_vectors"),
+        default=pathlib.Path("steering_vectors"),
         help="Directory containing steering vectors",
     )
     parser.add_argument(
         "--output_dir",
         type=pathlib.Path,
-        default=pathlib.Path("steering_interventions/experiments/results"),
+        default=pathlib.Path("experiments/results"),
         help="Output directory",
     )
     parser.add_argument("--gpu", type=int, default=0, help="GPU device")
@@ -265,29 +260,37 @@ def main():
 
     # Load encoding
     logging.info(f"Loading encoding from {args.encoding_path}")
-    encoding = representation.load_encoding(args.encoding_path)
+    encoding = representation.load_encoding(config.NOTES_DIR / "encoding.json")
+
+    train_args = utils.load_json(config.MODEL_DIR / "train-args.json")
 
     # Load model
     logging.info(f"Loading model from {args.model_path}")
     model = music_x_transformers.MusicXTransformer(
-        dim=config.DIM,
+        dim=train_args["dim"],
         encoding=encoding,
-        depth=config.N_LAYERS,
-        heads=config.N_HEADS,
-        max_seq_len=config.MAX_SEQ_LEN,
-        max_beat=config.MAX_BEAT,
-        rotary_pos_emb=True,
-        use_abs_pos_emb=False,
-        emb_dropout=0.1,
-        attn_dropout=0.1,
-        ff_dropout=0.1,
+        depth=train_args["layers"],
+        heads=train_args["heads"],
+        max_seq_len=train_args["max_seq_len"],
+        max_beat=train_args["max_beat"],
+        rotary_pos_emb=train_args["rel_pos_emb"],
+        use_abs_pos_emb=train_args["abs_pos_emb"],
+        emb_dropout=train_args["dropout"],
+        attn_dropout=train_args["dropout"],
+        ff_dropout=train_args["dropout"],
     ).to(device)
-    model.load_state_dict(torch.load(args.model_path, map_location=device))
+
+    checkpoint_path = config.CHECKPOINT_DIR / "best_model.pt"
+    model.load_state_dict(torch.load(checkpoint_path, map_location=device))
     model.eval()
 
     # Load steering vectors
     logging.info(f"Loading steering vectors from {args.steering_dir}")
-    steering_vectors = load_steering_vectors(args.steering_dir, args.concept, device)
+    steering_path = (
+        config.OUTPUT_DIR / "steering_vectors" / f"{args.concept}_steering_vectors.pt"
+    )
+    steering_vectors, _ = load_steering_vectors(steering_path)
+    steering_vectors = {k: v.to(device) for k, v in steering_vectors.items()}
 
     # Storage for results
     results = {
