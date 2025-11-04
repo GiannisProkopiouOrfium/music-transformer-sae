@@ -259,7 +259,7 @@ def main():
     logging.info(f"Using device: {device}")
 
     # Load encoding
-    logging.info(f"Loading encoding from {config.NOTES_DIR / "encoding.json"}")
+    logging.info(f"Loading encoding from {config.NOTES_DIR / 'encoding.json'}")
     encoding = representation.load_encoding(config.NOTES_DIR / "encoding.json")
 
     train_args = utils.load_json(config.MODEL_DIR / "train-args.json")
