@@ -206,13 +206,11 @@ def plot_kde_contours(
     )
 
     # Labels
-    ax.set_xlabel(
-        f"PC1 ({pca.explained_variance_ratio_[0]:.1%} variance)", fontsize=12
+    ax.set_xlabel(f"PC1 ({pca.explained_variance_ratio_[0]:.1%} variance)", fontsize=12)
+    ax.set_ylabel(f"PC2 ({pca.explained_variance_ratio_[1]:.1%} variance)", fontsize=12)
+    ax.set_title(
+        f"Layer {layer} - PCA Projection with KDE", fontsize=14, fontweight="bold"
     )
-    ax.set_ylabel(
-        f"PC2 ({pca.explained_variance_ratio_[1]:.1%} variance)", fontsize=12
-    )
-    ax.set_title(f"Layer {layer} - PCA Projection with KDE", fontsize=14, fontweight="bold")
     ax.legend(fontsize=10)
     ax.grid(True, alpha=0.3)
 
@@ -281,7 +279,9 @@ def plot_separation_metrics(
     axes[0].plot(layers, euclidean, "o-", linewidth=2, markersize=8)
     axes[0].set_xlabel("Layer", fontsize=12)
     axes[0].set_ylabel("Euclidean Distance", fontsize=12)
-    axes[0].set_title("Cluster Separation (Higher = Better)", fontsize=12, fontweight="bold")
+    axes[0].set_title(
+        "Cluster Separation (Higher = Better)", fontsize=12, fontweight="bold"
+    )
     axes[0].grid(True, alpha=0.3)
 
     # Cosine similarity
@@ -295,7 +295,9 @@ def plot_separation_metrics(
     axes[2].plot(layers, overlap, "o-", linewidth=2, markersize=8, color="green")
     axes[2].set_xlabel("Layer", fontsize=12)
     axes[2].set_ylabel("Overlap Coefficient", fontsize=12)
-    axes[2].set_title("Distribution Overlap (Lower = Better)", fontsize=12, fontweight="bold")
+    axes[2].set_title(
+        "Distribution Overlap (Lower = Better)", fontsize=12, fontweight="bold"
+    )
     axes[2].grid(True, alpha=0.3)
 
     plt.tight_layout()
@@ -391,9 +393,7 @@ def main():
     # Save metrics to JSON
     metrics_json = args.output_dir / f"{args.concept}_separation_metrics.json"
     with open(metrics_json, "w") as f:
-        json.dump(
-            {"concept": args.concept, "layers": separation_metrics}, f, indent=2
-        )
+        json.dump({"concept": args.concept, "layers": separation_metrics}, f, indent=2)
     logging.info(f"Saved metrics JSON: {metrics_json}")
 
     logging.info("\nVisualization complete!")
