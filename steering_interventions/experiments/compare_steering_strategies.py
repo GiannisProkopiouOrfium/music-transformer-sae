@@ -325,6 +325,12 @@ def main():
         logging.info(
             f"  Pitch class entropy: {eval_results['quality']['pitch_class_entropy']:.3f}"
         )
+        logging.info(
+            f"  Groove consistency: {eval_results['quality']['groove_consistency']:.3f}"
+        )
+        logging.info(
+            f"  Scale consistency: {eval_results['quality']['scale_consistency']:.3f}"
+        )
 
     # Test One-to-All strategy for each best layer
     for best_layer in best_layers:
@@ -353,6 +359,12 @@ def main():
             logging.info(f"  Mean pitch: {eval_results['pitch']['mean']:.2f}")
             logging.info(
                 f"  Pitch class entropy: {eval_results['quality']['pitch_class_entropy']:.3f}"
+            )
+            logging.info(
+                f"  Groove consistency: {eval_results['quality']['groove_consistency']:.3f}"
+            )
+            logging.info(
+                f"  Scale consistency: {eval_results['quality']['scale_consistency']:.3f}"
             )
 
     # Save results
@@ -386,8 +398,10 @@ def main():
         # All-to-All
         ata_pitch = results["all_to_all"][alpha]["pitch"]["mean"]
         ata_entropy = results["all_to_all"][alpha]["quality"]["pitch_class_entropy"]
+        ata_groove = results["all_to_all"][alpha]["quality"]["groove_consistency"]
+        ata_scale = results["all_to_all"][alpha]["quality"]["scale_consistency"]
         logging.info(
-            f"  All-to-All:        pitch={ata_pitch:6.2f}, entropy={ata_entropy:.3f}"
+            f"  All-to-All:        pitch={ata_pitch:6.2f}, entropy={ata_entropy:.3f}, groove={ata_groove:.3f}, scale={ata_scale:.3f}"
         )
 
         # One-to-All for each layer
@@ -396,8 +410,14 @@ def main():
             ota_entropy = results["one_to_all"][layer][alpha]["quality"][
                 "pitch_class_entropy"
             ]
+            ota_groove = results["one_to_all"][layer][alpha]["quality"][
+                "groove_consistency"
+            ]
+            ota_scale = results["one_to_all"][layer][alpha]["quality"][
+                "scale_consistency"
+            ]
             logging.info(
-                f"  One-to-All (L{layer:2d}): pitch={ota_pitch:6.2f}, entropy={ota_entropy:.3f}"
+                f"  One-to-All (L{layer:2d}): pitch={ota_pitch:6.2f}, entropy={ota_entropy:.3f}, groove={ota_groove:.3f}, scale={ota_scale:.3f}"
             )
 
     logging.info("\nComparison complete!")
