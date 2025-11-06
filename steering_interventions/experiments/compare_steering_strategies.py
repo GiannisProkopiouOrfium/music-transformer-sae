@@ -189,7 +189,7 @@ def generate_with_strategy(
     device: torch.device,
 ) -> List[np.ndarray]:
     """Generate samples with specified strategy.
-    
+
     Args:
         model: The model
         steering_vectors: Dict of steering vectors per layer
@@ -219,7 +219,9 @@ def generate_with_strategy(
     elif strategy == "some_to_some":
         # Use only specified layers with their own vectors
         if active_layers is None:
-            raise ValueError("active_layers must be specified for some_to_some strategy")
+            raise ValueError(
+                "active_layers must be specified for some_to_some strategy"
+            )
         steering_dict = {layer: steering_vectors[layer] for layer in active_layers}
         target_layers = active_layers  # Only apply to these layers
     else:
@@ -300,19 +302,23 @@ def main():
     logging.info(f"Samples per config: {args.n_samples}")
 
     # Parse parameters
-    best_layers = [int(layer) for layer in args.best_layers.split(",")] if args.best_layers else []
+    best_layers = (
+        [int(layer) for layer in args.best_layers.split(",")]
+        if args.best_layers
+        else []
+    )
     alphas = [float(a) for a in args.alphas.split(",")]
-    
+
     # Parse layer groups for Some-to-Some strategy
     layer_groups = []
     if args.layer_groups:
         for group_str in args.layer_groups.split("|"):
             group = [int(layer) for layer in group_str.split(",")]
             layer_groups.append(group)
-    
+
     if layer_groups:
         logging.info(f"Parsed layer groups: {layer_groups}")
-    
+
     # Validate that at least one strategy is selected
     if not best_layers and not layer_groups:
         raise ValueError(
@@ -362,7 +368,9 @@ def main():
     results = {
         "all_to_all": {},
         "one_to_all": {layer: {} for layer in best_layers} if best_layers else {},
-        "some_to_some": {str(group): {} for group in layer_groups} if layer_groups else {},
+        "some_to_some": (
+            {str(group): {} for group in layer_groups} if layer_groups else {}
+        ),
     }
 
     # Test All-to-All strategy
@@ -543,7 +551,7 @@ def main():
                 logging.info(
                     f"  One-to-All (L{layer:2d}): pitch={ota_pitch:6.2f}, entropy={ota_entropy:.3f}, groove={ota_groove:.3f}, scale={ota_scale:.3f}"
                 )
-        
+
         # Some-to-Some for each layer group
         if layer_groups:
             for layer_group in layer_groups:
