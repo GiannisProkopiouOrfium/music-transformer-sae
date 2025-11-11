@@ -39,6 +39,14 @@ CONCEPTS = {
         "low_threshold": 60,  # Low pitch notes (below middle C)
         "json_field": "pitch",
     },
+    "modality": {
+        "metric_name": "modality",
+        "metric_type": "categorical",  # Not threshold-based
+        "categories": ["major", "minor"],
+        "confidence_threshold": 0.7,  # Minimum confidence for classification
+        "min_notes": 10,  # Minimum notes required for reliable detection
+        "json_field": "pitch",  # Uses pitch for key detection
+    },
 }
 
 # Segmentation parameters
