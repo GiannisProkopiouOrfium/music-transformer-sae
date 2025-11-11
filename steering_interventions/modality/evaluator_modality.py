@@ -531,8 +531,15 @@ def main():
         if "vs_baseline" in key:
             stat = analysis["statistics"][key]
             print(f"\n{key}:")
+
+            # Determine which percentage to display (negative or positive alpha)
+            if "neg_major_pct" in stat:
+                alpha_major_pct = stat["neg_major_pct"]
+            else:
+                alpha_major_pct = stat["pos_major_pct"]
+
             print(
-                f"  {stat.get('neg_major_pct') or stat.get('pos_major_pct'):.1f}% vs {stat['baseline_major_pct']:.1f}% major"
+                f"  {alpha_major_pct:.1f}% vs {stat['baseline_major_pct']:.1f}% major"
             )
             print(
                 f"  Difference: {stat['difference']:+.1f}% ({'significant' if stat['significant'] else 'not significant'})"

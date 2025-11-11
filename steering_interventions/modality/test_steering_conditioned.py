@@ -212,6 +212,7 @@ def conditioned_generate_and_evaluate(
     target_layers: List[int],
     conditioning_beats: int,
     continuation_len: int,
+    output_dir: pathlib.Path = None,
 ) -> List[Dict]:
     """Generate conditioned continuations with steering.
 
@@ -226,6 +227,7 @@ def conditioned_generate_and_evaluate(
         target_layers: Layers to apply steering
         conditioning_beats: Beats for conditioning
         continuation_len: Length to generate
+        output_dir: Where to save results (optional)
 
     Returns:
         List of result dictionaries
@@ -306,6 +308,25 @@ def conditioned_generate_and_evaluate(
                 f"Shift: {'YES' if result['mode_shift'] else 'NO'}, "
                 f"Bidirectional score: {bidirectional_score:+4d}"
             )
+
+            # Save if output_dir provided
+            if output_dir is not None:
+                # Combine conditioning + generated for full sequence
+                full_seq = torch.cat((conditioning, generated), 1).cpu().numpy()[0]
+
+                save_dir = output_dir / category / f"alpha_{alpha}"
+                save_dir.mkdir(parents=True, exist_ok=True)
+
+                # Save tokens
+                np.save(save_dir / f"{filepath.stem}.npy", full_seq)
+
+                # Save audio
+                try:
+                    music = representation.decode(full_seq, encoding)
+                    music.write(str(save_dir / f"{filepath.stem}.mid"))
+                    music.write_audio(str(save_dir / f"{filepath.stem}.wav"))
+                except Exception as e:
+                    logging.error(f"Error saving audio: {e}")
 
     return results
 
@@ -620,6 +641,7 @@ def main():
         target_layers,
         args.conditioning_beats,
         args.continuation_len,
+        args.output_dir,
     )
     all_results.extend(major_results)
 
@@ -636,6 +658,7 @@ def main():
         target_layers,
         args.conditioning_beats,
         args.continuation_len,
+        args.output_dir,
     )
     all_results.extend(minor_results)
 
