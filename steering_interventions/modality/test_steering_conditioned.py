@@ -30,6 +30,7 @@ sys.path.insert(0, str(pathlib.Path(__file__).parent.parent))
 
 import config
 import music_x_transformers
+import muspy
 import representation
 import utils
 from steered_generator import SteeredGenerator, load_steering_vectors
@@ -43,6 +44,14 @@ except ImportError:
     MUSIC21_AVAILABLE = False
     print("ERROR: music21 not available. Install with: pip install music21")
     sys.exit(1)
+
+
+# Ground truth metrics from paper
+GROUND_TRUTH_METRICS = {
+    "pitch_class_entropy": 2.974,
+    "scale_consistency": 92.26,
+    "groove_consistency": 93.05,
+}
 
 
 def load_song_tokens(filepath: pathlib.Path, encoding: Dict) -> np.ndarray:
@@ -103,6 +112,68 @@ def detect_modality_from_tokens(
     except Exception as e:
         logging.warning(f"Modality detection failed: {e}")
         return ("unknown", 0.0)
+
+
+def evaluate_quality_metrics(tokens: np.ndarray, encoding: Dict) -> Dict:
+    """Evaluate objective quality metrics.
+
+    Args:
+        tokens: Token array (seq_len, 6)
+        encoding: Encoding dictionary
+
+    Returns:
+        Dictionary with quality metrics
+    """
+    try:
+        import muspy
+
+        music = representation.decode(tokens, encoding)
+        music.trim(music.resolution * 64)
+
+        if not music.tracks:
+            return {
+                "pitch_class_entropy": np.nan,
+                "scale_consistency": np.nan,
+                "groove_consistency": np.nan,
+            }
+
+        return {
+            "pitch_class_entropy": muspy.pitch_class_entropy(music),
+            "scale_consistency": muspy.scale_consistency(music),
+            "groove_consistency": muspy.groove_consistency(music, 4 * music.resolution),
+        }
+    except Exception as e:
+        logging.error(f"Error evaluating quality: {e}")
+        return {
+            "pitch_class_entropy": np.nan,
+            "scale_consistency": np.nan,
+            "groove_consistency": np.nan,
+            "error": str(e),
+        }
+
+
+def calculate_degradation(metrics: Dict, baseline: Dict) -> Dict:
+    """Calculate quality degradation from baseline.
+
+    Args:
+        metrics: Current quality metrics
+        baseline: Baseline quality metrics
+
+    Returns:
+        Degradation scores
+    """
+    entropy_diff = abs(metrics["pitch_class_entropy"] - baseline["pitch_class_entropy"])
+    scale_diff = max(0, baseline["scale_consistency"] - metrics["scale_consistency"])
+    groove_diff = max(0, baseline["groove_consistency"] - metrics["groove_consistency"])
+
+    total_degradation = entropy_diff + scale_diff + groove_diff
+
+    return {
+        "entropy_diff": float(entropy_diff),
+        "scale_diff": float(scale_diff),
+        "groove_diff": float(groove_diff),
+        "total_degradation": float(total_degradation),
+    }
 
 
 def find_extreme_modality_songs(
@@ -277,6 +348,9 @@ def conditioned_generate_and_evaluate(
                 generated_only, encoding
             )
 
+            # Evaluate quality metrics on generated portion
+            quality_metrics = evaluate_quality_metrics(generated_only, encoding)
+
             # Calculate bidirectional metric
             # +100 = pure major, -100 = pure minor
             if gen_mode == "major" and gen_confidence >= 0.5:
@@ -299,6 +373,7 @@ def conditioned_generate_and_evaluate(
                 "mode_shift": gen_mode != cond_mode,  # Did mode change?
                 "conditioning_beats": conditioning_beats,
                 "continuation_tokens": len(generated_only),
+                "quality_metrics": quality_metrics,
             }
 
             results.append(result)
@@ -307,6 +382,11 @@ def conditioned_generate_and_evaluate(
                 f"    Generated: {gen_mode} (conf: {gen_confidence:.3f}), "
                 f"Shift: {'YES' if result['mode_shift'] else 'NO'}, "
                 f"Bidirectional score: {bidirectional_score:+4d}"
+            )
+            logging.info(
+                f"    Quality: entropy={quality_metrics.get('pitch_class_entropy', 0):.3f}, "
+                f"scale={quality_metrics.get('scale_consistency', 0):.1f}%, "
+                f"groove={quality_metrics.get('groove_consistency', 0):.1f}%"
             )
 
             # Save if output_dir provided
@@ -474,7 +554,81 @@ def analyze_results(results: List[Dict]) -> Dict:
                         "expected_direction": expected_success,
                     }
 
+    # Calculate degradation for each result
+    for r in results:
+        if "quality_metrics" in r and r["quality_metrics"]:
+            r["degradation"] = calculate_degradation(
+                r["quality_metrics"], GROUND_TRUTH_METRICS
+            )
+
     return analysis
+
+
+def rank_best_generations(results: List[Dict]) -> Dict:
+    """Rank best generations by steering effect and quality.
+
+    Args:
+        results: List of result dictionaries
+
+    Returns:
+        Dictionary with ranked lists for minor→major and major→minor
+    """
+    # Filter for confident and successful shifts
+    minor_to_major = []
+    major_to_minor = []
+
+    for r in results:
+        if r["generated_confidence"] < 0.5:
+            continue  # Skip low confidence
+        if "degradation" not in r:
+            continue  # Skip if no quality metrics
+
+        degradation = r["degradation"]["total_degradation"]
+
+        # Minor conditioning → Major generation (positive alpha)
+        if (
+            r["conditioning_category"] == "minor"
+            and r["generated_mode"] == "major"
+            and r["alpha"] > 0
+        ):
+            score = 100 * r["generated_confidence"] - degradation
+            minor_to_major.append(
+                {
+                    "song": r["song_name"],
+                    "alpha": r["alpha"],
+                    "confidence": r["generated_confidence"],
+                    "degradation": degradation,
+                    "score": score,
+                    "quality": r["quality_metrics"],
+                }
+            )
+
+        # Major conditioning → Minor generation (negative alpha)
+        if (
+            r["conditioning_category"] == "major"
+            and r["generated_mode"] == "minor"
+            and r["alpha"] < 0
+        ):
+            score = 100 * r["generated_confidence"] - degradation
+            major_to_minor.append(
+                {
+                    "song": r["song_name"],
+                    "alpha": r["alpha"],
+                    "confidence": r["generated_confidence"],
+                    "degradation": degradation,
+                    "score": score,
+                    "quality": r["quality_metrics"],
+                }
+            )
+
+    # Sort by score (high confidence, low degradation)
+    minor_to_major.sort(key=lambda x: x["score"], reverse=True)
+    major_to_minor.sort(key=lambda x: x["score"], reverse=True)
+
+    return {
+        "minor_to_major": minor_to_major,
+        "major_to_minor": major_to_minor,
+    }
 
 
 def main():
@@ -672,6 +826,57 @@ def main():
         json.dump({"results": all_results, "analysis": analysis}, f, indent=2)
 
     logging.info(f"Saved results to: {results_file}")
+
+    # Rank best generations
+    logging.info("\nRanking best generations by steering + quality...")
+    ranked = rank_best_generations(all_results)
+
+    # Save ranked results
+    ranked_file = args.output_dir / "ranked_best_generations.json"
+    with open(ranked_file, "w") as f:
+        json.dump(ranked, f, indent=2)
+
+    logging.info(f"Saved ranked results to: {ranked_file}")
+
+    # Print ranked summary
+    print("\n" + "=" * 70)
+    print("TOP RANKED GENERATIONS (Steering Effect + Quality)")
+    print("=" * 70)
+
+    for category_name, category_key in [
+        ("MINOR → MAJOR (Positive Steering)", "minor_to_major"),
+        ("MAJOR → MINOR (Negative Steering)", "major_to_minor"),
+    ]:
+        print(f"\n### {category_name} ###")
+        ranked_list = ranked[category_key]
+
+        if not ranked_list:
+            print("  (No confident examples found)")
+            continue
+
+        print(
+            f"  {'Rank':<6} {'Song':<30} {'Alpha':<8} {'Score':<8} "
+            f"{'Conf%':<7} {'Degrad':<8} {'Entropy':<9} {'Scale%':<8} {'Groove%':<8}"
+        )
+        print("  " + "-" * 110)
+
+        # Show top 10
+        for i, gen in enumerate(ranked_list[:10], 1):
+            metrics = gen["quality_metrics"]
+            deg = gen["degradation"]
+            print(
+                f"  {i:<6} {gen['song_name']:<30} "
+                f"{gen['alpha']:>+6.1f}  {gen['score']:>7.1f} "
+                f"{gen['confidence']*100:>6.1f} {deg['total_degradation']:>7.2f} "
+                f"{metrics['pitch_class_entropy']:>8.3f} "
+                f"{metrics['scale_consistency']:>7.1f} "
+                f"{metrics['groove_consistency']:>7.1f}"
+            )
+
+        if len(ranked_list) > 10:
+            print(f"  ... ({len(ranked_list) - 10} more examples)")
+
+    print("=" * 70)
 
     # Print summary
     print("\n" + "=" * 70)
