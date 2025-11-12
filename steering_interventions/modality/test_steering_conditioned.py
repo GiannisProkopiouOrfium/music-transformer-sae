@@ -139,8 +139,8 @@ def evaluate_quality_metrics(tokens: np.ndarray, encoding: Dict) -> Dict:
 
         return {
             "pitch_class_entropy": muspy.pitch_class_entropy(music),
-            "scale_consistency": muspy.scale_consistency(music),
-            "groove_consistency": muspy.groove_consistency(music, 4 * music.resolution),
+            "scale_consistency": muspy.scale_consistency(music) * 100,  # Convert to percentage
+            "groove_consistency": muspy.groove_consistency(music, 4 * music.resolution) * 100,  # Convert to percentage
         }
     except Exception as e:
         logging.error(f"Error evaluating quality: {e}")
@@ -862,12 +862,12 @@ def main():
 
         # Show top 10
         for i, gen in enumerate(ranked_list[:10], 1):
-            metrics = gen["quality_metrics"]
+            metrics = gen["quality"]  # Changed from "quality_metrics"
             deg = gen["degradation"]
             print(
-                f"  {i:<6} {gen['song_name']:<30} "
+                f"  {i:<6} {gen['song']:<30} "
                 f"{gen['alpha']:>+6.1f}  {gen['score']:>7.1f} "
-                f"{gen['confidence']*100:>6.1f} {deg['total_degradation']:>7.2f} "
+                f"{gen['confidence']*100:>6.1f} {deg:>7.2f} "
                 f"{metrics['pitch_class_entropy']:>8.3f} "
                 f"{metrics['scale_consistency']:>7.1f} "
                 f"{metrics['groove_consistency']:>7.1f}"
