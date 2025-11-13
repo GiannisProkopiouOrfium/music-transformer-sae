@@ -139,8 +139,10 @@ def evaluate_quality_metrics(tokens: np.ndarray, encoding: Dict) -> Dict:
 
         return {
             "pitch_class_entropy": muspy.pitch_class_entropy(music),
-            "scale_consistency": muspy.scale_consistency(music),
-            "groove_consistency": muspy.groove_consistency(music, 4 * music.resolution),
+            "scale_consistency": muspy.scale_consistency(music)
+            * 100,  # Convert to percentage
+            "groove_consistency": muspy.groove_consistency(music, 4 * music.resolution)
+            * 100,  # Convert to percentage
         }
     except Exception as e:
         logging.error(f"Error evaluating quality: {e}")
@@ -611,7 +613,7 @@ def rank_best_generations(results: List[Dict]) -> Dict:
         # Calculate score based on expected behavior
         alpha = r["alpha"]
         conditioning = r["conditioning_category"]
-        
+
         if conditioning == "major":
             if alpha > 0:
                 # Positive α: should stay/reinforce major
@@ -643,28 +645,34 @@ def rank_best_generations(results: List[Dict]) -> Dict:
         degradation = r["degradation"]["total_degradation"]
         score = score - degradation
 
-        ranked_results.append({
-            "song_name": r["song_name"],
-            "conditioning": conditioning,
-            "alpha": alpha,
-            "initial_major_pct": initial_major_pct,
-            "initial_minor_pct": initial_minor_pct,
-            "final_major_pct": final_major_pct,
-            "final_minor_pct": final_minor_pct,
-            "major_shift": major_shift,
-            "minor_shift": minor_shift,
-            "degradation": degradation,
-            "score": score,
-            "expected_behavior": expected_behavior,
-            "quality_metrics": r["quality_metrics"],
-        })
+        ranked_results.append(
+            {
+                "song_name": r["song_name"],
+                "conditioning": conditioning,
+                "alpha": alpha,
+                "initial_major_pct": initial_major_pct,
+                "initial_minor_pct": initial_minor_pct,
+                "final_major_pct": final_major_pct,
+                "final_minor_pct": final_minor_pct,
+                "major_shift": major_shift,
+                "minor_shift": minor_shift,
+                "degradation": degradation,
+                "score": score,
+                "expected_behavior": expected_behavior,
+                "quality_metrics": r["quality_metrics"],
+            }
+        )
 
     # Sort by score (high = correct behavior with low degradation)
     ranked_results.sort(key=lambda x: x["score"], reverse=True)
 
     # Separate by category for backward compatibility
-    minor_to_major = [r for r in ranked_results if r["expected_behavior"] == "shift_to_major"]
-    major_to_minor = [r for r in ranked_results if r["expected_behavior"] == "shift_to_minor"]
+    minor_to_major = [
+        r for r in ranked_results if r["expected_behavior"] == "shift_to_major"
+    ]
+    major_to_minor = [
+        r for r in ranked_results if r["expected_behavior"] == "shift_to_minor"
+    ]
 
     return {
         "all_ranked": ranked_results,
@@ -923,20 +931,22 @@ def main():
 
     # Group by conditioning category
     for category in ["major", "minor"]:
-        category_results = [r for r in ranked["all_ranked"] if r["conditioning"] == category]
-        
+        category_results = [
+            r for r in ranked["all_ranked"] if r["conditioning"] == category
+        ]
+
         if not category_results:
             continue
 
         print(f"\n### {category.upper()} CONDITIONING ###")
-        
+
         # Group by song
         songs = {}
         for r in category_results:
             if r["song_name"] not in songs:
                 songs[r["song_name"]] = []
             songs[r["song_name"]].append(r)
-        
+
         for song_name in sorted(songs.keys()):
             print(f"\n{song_name}:")
             print(
@@ -945,10 +955,10 @@ def main():
                 f"{'Score':<7} {'Degrad':<8}"
             )
             print("  " + "-" * 110)
-            
+
             # Sort by alpha
             song_results = sorted(songs[song_name], key=lambda x: x["alpha"])
-            
+
             for r in song_results:
                 behavior_label = r["expected_behavior"].replace("_", " ").title()
                 print(
@@ -967,8 +977,10 @@ def main():
     print("=" * 80)
 
     for category in ["major", "minor"]:
-        category_results = [r for r in ranked["all_ranked"] if r["conditioning"] == category]
-        
+        category_results = [
+            r for r in ranked["all_ranked"] if r["conditioning"] == category
+        ]
+
         if not category_results:
             continue
 
@@ -978,7 +990,7 @@ def main():
             f"{'Avg_Shift_Maj':<14} {'Avg_Score':<10} {'Avg_Degrad':<11}"
         )
         print("  " + "-" * 90)
-        
+
         # Group by alpha
         alphas_data = {}
         for r in category_results:
@@ -986,7 +998,7 @@ def main():
             if alpha not in alphas_data:
                 alphas_data[alpha] = []
             alphas_data[alpha].append(r)
-        
+
         # Calculate averages for each alpha
         for alpha in sorted(alphas_data.keys()):
             alpha_results = alphas_data[alpha]
@@ -996,7 +1008,7 @@ def main():
             avg_shift_maj = np.mean([r["major_shift"] for r in alpha_results])
             avg_score = np.mean([r["score"] for r in alpha_results])
             avg_degrad = np.mean([r["degradation"] for r in alpha_results])
-            
+
             print(
                 f"  {alpha:>+5.1f}  {n:<4} {avg_init_maj:>13.1f} {avg_final_maj:>13.1f} "
                 f"{avg_shift_maj:>+13.1f} {avg_score:>9.1f} {avg_degrad:>10.2f}"
