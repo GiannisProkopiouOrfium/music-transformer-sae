@@ -139,8 +139,8 @@ def evaluate_quality_metrics(tokens: np.ndarray, encoding: Dict) -> Dict:
 
         return {
             "pitch_class_entropy": muspy.pitch_class_entropy(music),
-            "scale_consistency": muspy.scale_consistency(music) * 100,  # Convert to percentage
-            "groove_consistency": muspy.groove_consistency(music, 4 * music.resolution) * 100,  # Convert to percentage
+            "scale_consistency": muspy.scale_consistency(music),
+            "groove_consistency": muspy.groove_consistency(music, 4 * music.resolution),
         }
     except Exception as e:
         logging.error(f"Error evaluating quality: {e}")
@@ -567,15 +567,19 @@ def analyze_results(results: List[Dict]) -> Dict:
 def rank_best_generations(results: List[Dict]) -> Dict:
     """Rank best generations by steering effect and quality.
 
+    Score evaluates correct directional shift:
+    - Major conditioning + positive α: should stay major (score = generated_major_pct)
+    - Major conditioning + negative α: should shift to minor (score = generated_minor_pct)
+    - Minor conditioning + positive α: should shift to major (score = generated_major_pct)
+    - Minor conditioning + negative α: should stay minor (score = generated_minor_pct)
+
     Args:
         results: List of result dictionaries
 
     Returns:
-        Dictionary with ranked lists for minor→major and major→minor
+        Dictionary with ranked lists and detailed analysis
     """
-    # Filter for confident and successful shifts
-    minor_to_major = []
-    major_to_minor = []
+    ranked_results = []
 
     for r in results:
         if r["generated_confidence"] < 0.5:
@@ -583,49 +587,87 @@ def rank_best_generations(results: List[Dict]) -> Dict:
         if "degradation" not in r:
             continue  # Skip if no quality metrics
 
+        # Calculate percentages
+        # Initial (conditioning)
+        if r["conditioning_mode"] == "major":
+            initial_major_pct = r["conditioning_confidence"] * 100
+            initial_minor_pct = (1 - r["conditioning_confidence"]) * 100
+        else:  # minor
+            initial_minor_pct = r["conditioning_confidence"] * 100
+            initial_major_pct = (1 - r["conditioning_confidence"]) * 100
+
+        # Final (generated)
+        if r["generated_mode"] == "major":
+            final_major_pct = r["generated_confidence"] * 100
+            final_minor_pct = (1 - r["generated_confidence"]) * 100
+        else:  # minor
+            final_minor_pct = r["generated_confidence"] * 100
+            final_major_pct = (1 - r["generated_confidence"]) * 100
+
+        # Calculate shift
+        major_shift = final_major_pct - initial_major_pct
+        minor_shift = final_minor_pct - initial_minor_pct
+
+        # Calculate score based on expected behavior
+        alpha = r["alpha"]
+        conditioning = r["conditioning_category"]
+        
+        if conditioning == "major":
+            if alpha > 0:
+                # Positive α: should stay/reinforce major
+                score = final_major_pct
+                expected_behavior = "stay_major"
+            elif alpha < 0:
+                # Negative α: should shift to minor
+                score = final_minor_pct
+                expected_behavior = "shift_to_minor"
+            else:
+                # Baseline
+                score = 0
+                expected_behavior = "baseline"
+        else:  # minor conditioning
+            if alpha > 0:
+                # Positive α: should shift to major
+                score = final_major_pct
+                expected_behavior = "shift_to_major"
+            elif alpha < 0:
+                # Negative α: should stay/reinforce minor
+                score = final_minor_pct
+                expected_behavior = "stay_minor"
+            else:
+                # Baseline
+                score = 0
+                expected_behavior = "baseline"
+
+        # Penalize for quality degradation
         degradation = r["degradation"]["total_degradation"]
+        score = score - degradation
 
-        # Minor conditioning → Major generation (positive alpha)
-        if (
-            r["conditioning_category"] == "minor"
-            and r["generated_mode"] == "major"
-            and r["alpha"] > 0
-        ):
-            score = 100 * r["generated_confidence"] - degradation
-            minor_to_major.append(
-                {
-                    "song": r["song_name"],
-                    "alpha": r["alpha"],
-                    "confidence": r["generated_confidence"],
-                    "degradation": degradation,
-                    "score": score,
-                    "quality": r["quality_metrics"],
-                }
-            )
+        ranked_results.append({
+            "song_name": r["song_name"],
+            "conditioning": conditioning,
+            "alpha": alpha,
+            "initial_major_pct": initial_major_pct,
+            "initial_minor_pct": initial_minor_pct,
+            "final_major_pct": final_major_pct,
+            "final_minor_pct": final_minor_pct,
+            "major_shift": major_shift,
+            "minor_shift": minor_shift,
+            "degradation": degradation,
+            "score": score,
+            "expected_behavior": expected_behavior,
+            "quality_metrics": r["quality_metrics"],
+        })
 
-        # Major conditioning → Minor generation (negative alpha)
-        if (
-            r["conditioning_category"] == "major"
-            and r["generated_mode"] == "minor"
-            and r["alpha"] < 0
-        ):
-            score = 100 * r["generated_confidence"] - degradation
-            major_to_minor.append(
-                {
-                    "song": r["song_name"],
-                    "alpha": r["alpha"],
-                    "confidence": r["generated_confidence"],
-                    "degradation": degradation,
-                    "score": score,
-                    "quality": r["quality_metrics"],
-                }
-            )
+    # Sort by score (high = correct behavior with low degradation)
+    ranked_results.sort(key=lambda x: x["score"], reverse=True)
 
-    # Sort by score (high confidence, low degradation)
-    minor_to_major.sort(key=lambda x: x["score"], reverse=True)
-    major_to_minor.sort(key=lambda x: x["score"], reverse=True)
+    # Separate by category for backward compatibility
+    minor_to_major = [r for r in ranked_results if r["expected_behavior"] == "shift_to_major"]
+    major_to_minor = [r for r in ranked_results if r["expected_behavior"] == "shift_to_minor"]
 
     return {
+        "all_ranked": ranked_results,
         "minor_to_major": minor_to_major,
         "major_to_minor": major_to_minor,
     }
@@ -839,9 +881,9 @@ def main():
     logging.info(f"Saved ranked results to: {ranked_file}")
 
     # Print ranked summary
-    print("\n" + "=" * 70)
-    print("TOP RANKED GENERATIONS (Steering Effect + Quality)")
-    print("=" * 70)
+    print("\n" + "=" * 80)
+    print("DETAILED STEERING RESULTS (All Songs & Alphas)")
+    print("=" * 80)
 
     for category_name, category_key in [
         ("MINOR → MAJOR (Positive Steering)", "minor_to_major"),
@@ -855,28 +897,112 @@ def main():
             continue
 
         print(
-            f"  {'Rank':<6} {'Song':<30} {'Alpha':<8} {'Score':<8} "
-            f"{'Conf%':<7} {'Degrad':<8} {'Entropy':<9} {'Scale%':<8} {'Groove%':<8}"
+            f"  {'Rank':<6} {'Song':<25} {'Alpha':<7} {'Score':<7} "
+            f"{'Init_Maj%':<10} {'Final_Maj%':<10} {'Shift_Maj':<10} "
+            f"{'Init_Min%':<10} {'Final_Min%':<10} {'Shift_Min':<10} {'Degrad':<8}"
         )
-        print("  " + "-" * 110)
+        print("  " + "-" * 120)
 
-        # Show top 10
-        for i, gen in enumerate(ranked_list[:10], 1):
-            metrics = gen["quality"]  # Changed from "quality_metrics"
-            deg = gen["degradation"]
+        # Show all examples
+        for i, gen in enumerate(ranked_list, 1):
             print(
-                f"  {i:<6} {gen['song']:<30} "
-                f"{gen['alpha']:>+6.1f}  {gen['score']:>7.1f} "
-                f"{gen['confidence']*100:>6.1f} {deg:>7.2f} "
-                f"{metrics['pitch_class_entropy']:>8.3f} "
-                f"{metrics['scale_consistency']:>7.1f} "
-                f"{metrics['groove_consistency']:>7.1f}"
+                f"  {i:<6} {gen['song_name']:<25} "
+                f"{gen['alpha']:>+5.1f}  {gen['score']:>6.1f} "
+                f"{gen['initial_major_pct']:>9.1f} {gen['final_major_pct']:>9.1f} "
+                f"{gen['major_shift']:>+9.1f} "
+                f"{gen['initial_minor_pct']:>9.1f} {gen['final_minor_pct']:>9.1f} "
+                f"{gen['minor_shift']:>+9.1f} {gen['degradation']:>7.2f}"
             )
 
-        if len(ranked_list) > 10:
-            print(f"  ... ({len(ranked_list) - 10} more examples)")
+    print("=" * 80)
 
-    print("=" * 70)
+    # Print summary with all results by song and alpha
+    print("\n" + "=" * 80)
+    print("COMPLETE ANALYSIS BY SONG AND ALPHA")
+    print("=" * 80)
+
+    # Group by conditioning category
+    for category in ["major", "minor"]:
+        category_results = [r for r in ranked["all_ranked"] if r["conditioning"] == category]
+        
+        if not category_results:
+            continue
+
+        print(f"\n### {category.upper()} CONDITIONING ###")
+        
+        # Group by song
+        songs = {}
+        for r in category_results:
+            if r["song_name"] not in songs:
+                songs[r["song_name"]] = []
+            songs[r["song_name"]].append(r)
+        
+        for song_name in sorted(songs.keys()):
+            print(f"\n{song_name}:")
+            print(
+                f"  {'Alpha':<7} {'Behavior':<16} {'Init_Maj%':<10} {'Final_Maj%':<10} "
+                f"{'Shift_Maj':<10} {'Init_Min%':<10} {'Final_Min%':<10} {'Shift_Min':<10} "
+                f"{'Score':<7} {'Degrad':<8}"
+            )
+            print("  " + "-" * 110)
+            
+            # Sort by alpha
+            song_results = sorted(songs[song_name], key=lambda x: x["alpha"])
+            
+            for r in song_results:
+                behavior_label = r["expected_behavior"].replace("_", " ").title()
+                print(
+                    f"  {r['alpha']:>+5.1f}  {behavior_label:<16} "
+                    f"{r['initial_major_pct']:>9.1f} {r['final_major_pct']:>9.1f} "
+                    f"{r['major_shift']:>+9.1f} "
+                    f"{r['initial_minor_pct']:>9.1f} {r['final_minor_pct']:>9.1f} "
+                    f"{r['minor_shift']:>+9.1f} {r['score']:>6.1f} {r['degradation']:>7.2f}"
+                )
+
+    print("=" * 80)
+
+    # Print average behavior by alpha
+    print("\n" + "=" * 80)
+    print("AVERAGE STEERING BEHAVIOR BY ALPHA")
+    print("=" * 80)
+
+    for category in ["major", "minor"]:
+        category_results = [r for r in ranked["all_ranked"] if r["conditioning"] == category]
+        
+        if not category_results:
+            continue
+
+        print(f"\n### {category.upper()} CONDITIONING ###")
+        print(
+            f"  {'Alpha':<7} {'N':<4} {'Avg_Init_Maj%':<14} {'Avg_Final_Maj%':<14} "
+            f"{'Avg_Shift_Maj':<14} {'Avg_Score':<10} {'Avg_Degrad':<11}"
+        )
+        print("  " + "-" * 90)
+        
+        # Group by alpha
+        alphas_data = {}
+        for r in category_results:
+            alpha = r["alpha"]
+            if alpha not in alphas_data:
+                alphas_data[alpha] = []
+            alphas_data[alpha].append(r)
+        
+        # Calculate averages for each alpha
+        for alpha in sorted(alphas_data.keys()):
+            alpha_results = alphas_data[alpha]
+            n = len(alpha_results)
+            avg_init_maj = np.mean([r["initial_major_pct"] for r in alpha_results])
+            avg_final_maj = np.mean([r["final_major_pct"] for r in alpha_results])
+            avg_shift_maj = np.mean([r["major_shift"] for r in alpha_results])
+            avg_score = np.mean([r["score"] for r in alpha_results])
+            avg_degrad = np.mean([r["degradation"] for r in alpha_results])
+            
+            print(
+                f"  {alpha:>+5.1f}  {n:<4} {avg_init_maj:>13.1f} {avg_final_maj:>13.1f} "
+                f"{avg_shift_maj:>+13.1f} {avg_score:>9.1f} {avg_degrad:>10.2f}"
+            )
+
+    print("=" * 80)
 
     # Print summary
     print("\n" + "=" * 70)
