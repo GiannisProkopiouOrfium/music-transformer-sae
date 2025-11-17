@@ -513,17 +513,17 @@ def conditioned_generate_and_evaluate(
                 "generated_confidence": float(gen_confidence),
                 # Transition analysis
                 "key_transition": key_transition,
-                "tonic_changed": cond_tonic != gen_tonic,
-                "mode_changed": cond_mode != gen_mode,
-                "tonic_interval_semitones": tonic_interval,
+                "tonic_changed": bool(cond_tonic != gen_tonic),
+                "mode_changed": bool(cond_mode != gen_mode),
+                "tonic_interval_semitones": int(tonic_interval),
                 "tonic_interval_name": interval_name,
                 "transition_type": transition_type,
                 # Other metrics
-                "alpha": alpha,
+                "alpha": float(alpha),
                 "target_layers": target_layers if target_layers else "all",
-                "bidirectional_score": bidirectional_score,
-                "conditioning_beats": conditioning_beats,
-                "continuation_tokens": len(generated_only),
+                "bidirectional_score": int(bidirectional_score),
+                "conditioning_beats": int(conditioning_beats),
+                "continuation_tokens": int(len(generated_only)),
                 "quality_metrics": quality_metrics,
             }
 
