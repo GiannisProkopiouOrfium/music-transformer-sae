@@ -937,7 +937,7 @@ def compare_alpha_distributions(results: List[Dict]) -> Dict:
                     "chi2": float(pair_chi2),
                     "p_value": float(pair_p_value),
                     "dof": int(pair_dof),
-                    "significant": pair_p_value < 0.05,
+                    "significant": bool(pair_p_value < 0.05),
                 }
             except Exception:
                 pairwise_tests[f"baseline_vs_{alpha}"] = {
@@ -962,7 +962,7 @@ def compare_alpha_distributions(results: List[Dict]) -> Dict:
             "chi2": float(chi2),
             "p_value": float(p_value),
             "dof": int(dof),
-            "significant": p_value < 0.05,
+            "significant": bool(p_value < 0.05),
             "interpretation": (
                 "Reject null hypothesis: Alpha significantly affects transition types"
                 if p_value < 0.05
@@ -975,7 +975,7 @@ def compare_alpha_distributions(results: List[Dict]) -> Dict:
             "chi2": float(mode_chi2),
             "p_value": float(mode_p_value),
             "dof": int(mode_dof),
-            "significant": mode_p_value < 0.05,
+            "significant": bool(mode_p_value < 0.05),
         },
         "alphas_tested": alphas,
         "transition_types": transition_types,
