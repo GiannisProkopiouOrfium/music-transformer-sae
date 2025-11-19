@@ -244,16 +244,12 @@ def print_summary(analysis: Dict):
     print("=" * 80)
 
     print("\n### MINOR → MAJOR (Positive Alpha) ###")
-    print(
-        f"Total successful transitions: {summary['minor_to_major']['total_count']}"
-    )
+    print(f"Total successful transitions: {summary['minor_to_major']['total_count']}")
     if summary["minor_to_major"]["total_count"] > 0:
         print(
             f"Average success score: {summary['minor_to_major']['avg_success_score']:.2f}"
         )
-        print(
-            f"Average confidence: {summary['minor_to_major']['avg_confidence']:.3f}"
-        )
+        print(f"Average confidence: {summary['minor_to_major']['avg_confidence']:.3f}")
         print(
             f"Average degradation: {summary['minor_to_major']['avg_degradation']:.2f}"
         )
@@ -280,16 +276,12 @@ def print_summary(analysis: Dict):
             )
 
     print("\n### MAJOR → MINOR (Negative Alpha) ###")
-    print(
-        f"Total successful transitions: {summary['major_to_minor']['total_count']}"
-    )
+    print(f"Total successful transitions: {summary['major_to_minor']['total_count']}")
     if summary["major_to_minor"]["total_count"] > 0:
         print(
             f"Average success score: {summary['major_to_minor']['avg_success_score']:.2f}"
         )
-        print(
-            f"Average confidence: {summary['major_to_minor']['avg_confidence']:.3f}"
-        )
+        print(f"Average confidence: {summary['major_to_minor']['avg_confidence']:.3f}")
         print(
             f"Average degradation: {summary['major_to_minor']['avg_degradation']:.2f}"
         )

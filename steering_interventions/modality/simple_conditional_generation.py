@@ -377,9 +377,7 @@ def main():
 
     # Detect modality in generated portion
     gen_mode, gen_confidence = detect_modality_from_tokens(generated_only, encoding)
-    logging.info(
-        f"Generated modality: {gen_mode} (confidence: {gen_confidence:.3f})"
-    )
+    logging.info(f"Generated modality: {gen_mode} (confidence: {gen_confidence:.3f})")
 
     # Evaluate quality metrics
     logging.info("Evaluating quality metrics...")
@@ -391,7 +389,9 @@ def main():
     print("GENERATION RESULTS")
     print("=" * 70)
     print(f"\nSong: {args.song_path.stem}")
-    print(f"Conditioning: {args.conditioning_beats} beats ({conditioning.shape[1]} tokens)")
+    print(
+        f"Conditioning: {args.conditioning_beats} beats ({conditioning.shape[1]} tokens)"
+    )
     print(f"  Modality: {cond_mode} (confidence: {cond_confidence:.3f})")
     print(f"\nSteering: α = {args.alpha}")
     if target_layers:
