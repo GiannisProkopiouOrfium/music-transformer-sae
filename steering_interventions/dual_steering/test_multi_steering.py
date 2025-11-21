@@ -267,14 +267,14 @@ def main():
     parser.add_argument(
         "--model_checkpoint",
         type=pathlib.Path,
-        required=True,
+        required=False,
         help="Path to model checkpoint",
     )
     parser.add_argument(
         "--pitch_vectors",
         type=pathlib.Path,
         default=pathlib.Path(
-            "steering_interventions/outputs/steering_vectors/average_pitch_steering_vectors.pt"
+            "outputs/steering_vectors/average_pitch_steering_vectors.pt"
         ),
         help="Path to pitch steering vectors",
     )
