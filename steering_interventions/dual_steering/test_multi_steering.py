@@ -168,7 +168,7 @@ def generate_and_evaluate(
     """
     # Create generator directly with composer (avoid reloading vectors)
     from multi_steered_generator import MultiSteeringGenerator
-    
+
     generator = MultiSteeringGenerator(
         model=model,
         composer=composer,

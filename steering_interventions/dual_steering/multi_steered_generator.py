@@ -94,6 +94,30 @@ class MultiSteeringGenerator:
             f"position={intervention_position}, layers={len(self.target_layers)}"
         )
 
+        # Get the attention layers for hook registration
+        # Navigate through the model structure: MusicXTransformer -> .decoder -> .net -> .attn_layers
+        if hasattr(self.model, "decoder"):
+            decoder_wrapper = self.model.decoder
+            if hasattr(decoder_wrapper, "net"):
+                self.transformer = decoder_wrapper.net
+            else:
+                raise ValueError("Cannot find 'net' in model.decoder")
+        elif hasattr(self.model, "net"):
+            # Fallback: direct access to net
+            self.transformer = self.model.net
+        else:
+            raise ValueError(
+                "Cannot navigate model structure - no 'decoder' or 'net' attribute"
+            )
+
+        if not hasattr(self.transformer, "attn_layers"):
+            raise ValueError("Cannot find attn_layers in transformer")
+
+        self.attn_layers = self.transformer.attn_layers
+
+        if not hasattr(self.attn_layers, "layers"):
+            raise ValueError("Cannot find layers in attn_layers")
+
         # Store hooks
         self.hooks = []
         self.is_active = False
@@ -104,11 +128,8 @@ class MultiSteeringGenerator:
             logging.warning("Steering already active, skipping")
             return
 
-        # Get model layers
-        if hasattr(self.model, "net"):
-            layers = self.model.net.layers
-        else:
-            layers = self.model.layers
+        # Get model layers (already resolved in __init__)
+        layers = self.attn_layers.layers
 
         # Apply hooks to target layers
         for layer_idx in self.target_layers:
@@ -118,17 +139,29 @@ class MultiSteeringGenerator:
                 )
                 continue
 
-            layer = layers[layer_idx]
-            steering_vector = self.composed_vectors[layer_idx]
-
-            # Create hook
-            hook_fn = SteeringHook.make_hook_fn(
-                steering_vector, position=self.intervention_position
+            # Create hook with composed steering vector
+            # Note: alpha is already applied in compose(), so we pass alpha=1.0
+            hook = SteeringHook(
+                steering_vector=self.composed_vectors[layer_idx],
+                alpha=1.0,  # Alpha already applied during composition
+                intervention_position=self.intervention_position,
             )
 
-            # Register hook on attention output
-            handle = layer.attn.to_out.register_forward_hook(hook_fn)
-            self.hooks.append(handle)
+            # Register on the layer
+            # Each layer is a ModuleList containing [prenorm, attention/feedforward, residual]
+            # We want to hook the attention/feedforward module (typically index 1)
+            layer_module_list = layers[layer_idx]
+            if isinstance(layer_module_list, torch.nn.ModuleList) and len(
+                layer_module_list
+            ) > 1:
+                # Hook the Attention/FeedForward module at index 1
+                target_module = layer_module_list[1]
+            else:
+                # Fallback: hook the whole layer
+                target_module = layer_module_list
+
+            hook.register(target_module)
+            self.hooks.append(hook)
 
         self.is_active = True
         logging.info(f"Applied {len(self.hooks)} steering hooks")
