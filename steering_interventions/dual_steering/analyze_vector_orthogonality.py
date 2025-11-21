@@ -72,7 +72,7 @@ def projection_magnitude(v_source: torch.Tensor, v_target: torch.Tensor) -> floa
     # Flatten vectors to ensure 1D
     v_source_flat = v_source.flatten()
     v_target_flat = v_target.flatten()
-    
+
     v_target_norm = v_target_flat / (v_target_flat.norm() + 1e-8)
     projection = torch.dot(v_source_flat, v_target_norm) * v_target_norm
     proj_magnitude = projection.norm()
@@ -495,7 +495,9 @@ def main():
     parser.add_argument(
         "--output_dir",
         type=pathlib.Path,
-        default=pathlib.Path("steering_interventions/dual_steering/outputs/orthogonality_analysis"),
+        default=pathlib.Path(
+            "steering_interventions/dual_steering/outputs/orthogonality_analysis"
+        ),
         help="Output directory for results",
     )
     parser.add_argument(
@@ -580,7 +582,10 @@ def main():
     logging.info("NEXT STEPS:")
     logging.info("=" * 80)
     logging.info("1. Review the recommendation above")
-    logging.info("2. Check the visualization: " + str(args.output_dir / "orthogonality_analysis.png"))
+    logging.info(
+        "2. Check the visualization: "
+        + str(args.output_dir / "orthogonality_analysis.png")
+    )
     logging.info("3. Share the results to proceed with implementation")
     logging.info("=" * 80)
 
