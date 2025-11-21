@@ -45,7 +45,6 @@ import config
 import music_x_transformers
 import representation
 import utils
-from multi_steered_generator import create_multi_steering_generator
 from vector_composition import VectorComposer
 
 
@@ -167,20 +166,17 @@ def generate_and_evaluate(
     Returns:
         Dictionary with aggregated metrics
     """
-    # Create generator
-    generator = create_multi_steering_generator(
+    # Create generator directly with composer (avoid reloading vectors)
+    from multi_steered_generator import MultiSteeringGenerator
+    
+    generator = MultiSteeringGenerator(
         model=model,
-        pitch_vectors_path=None,  # Already have composer
-        modality_vectors_path=None,
+        composer=composer,
         alpha_pitch=alpha_pitch,
         alpha_modality=alpha_modality,
         strategy=strategy,
         intervention_position="last",
     )
-    # Override composer
-    generator.composer = composer
-    generator.composed_vectors = composer.compose(alpha_pitch, alpha_modality, strategy)
-    generator.target_layers = sorted(generator.composed_vectors.keys())
 
     # Generate samples
     all_pitches = []
@@ -267,8 +263,8 @@ def main():
     parser.add_argument(
         "--model_checkpoint",
         type=pathlib.Path,
-        required=False,
-        help="Path to model checkpoint",
+        default=None,
+        help="Path to model checkpoint (defaults to best_model.pt)",
     )
     parser.add_argument(
         "--pitch_vectors",
@@ -376,7 +372,7 @@ def main():
     if args.model_checkpoint is None:
         checkpoint_path = config.CHECKPOINT_DIR / "best_model.pt"
     else:
-        checkpoint_path = args.checkpoint
+        checkpoint_path = args.model_checkpoint
 
     model.load_state_dict(torch.load(checkpoint_path, map_location=device))
     model.eval()
