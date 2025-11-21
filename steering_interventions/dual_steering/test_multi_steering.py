@@ -193,8 +193,10 @@ def generate_and_evaluate(
             output = generator.generate(
                 primer,
                 seq_len,
-                beam=0,
-                beam_chance=1.0,
+                eos_token=None,
+                temperature=1.0,
+                filter_logits_fn="top_k",
+                filter_thres=0.9,
             )
 
             # Convert to numpy
