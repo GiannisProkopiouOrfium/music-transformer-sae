@@ -44,6 +44,7 @@ sys.path.insert(0, str(pathlib.Path(__file__).parent.parent))
 import config
 import music_x_transformers
 import representation
+import utils
 from multi_steered_generator import create_multi_steering_generator
 from vector_composition import VectorComposer
 
@@ -317,8 +318,17 @@ def main():
         default=["direct", "gram_schmidt"],
         help="Strategies to test",
     )
+    parser.add_argument(
+        "--gpu",
+        type=int,
+        default=None,
+        help="GPU number to use (0, 1, etc.)",
+    )
 
     args = parser.parse_args()
+
+    # Create output directory first (needed for log file)
+    args.output_dir.mkdir(parents=True, exist_ok=True)
 
     logging.basicConfig(
         level=logging.INFO,
@@ -329,21 +339,44 @@ def main():
         ],
     )
 
-    # Setup
-    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-    logging.info(f"Using device: {device}")
+    # Setup device
+    if args.gpu is not None:
+        if torch.cuda.is_available():
+            device = torch.device(f"cuda:{args.gpu}")
+            logging.info(f"Using CUDA device: GPU {args.gpu}")
+        elif torch.backends.mps.is_available():
+            device = torch.device("mps")
+            logging.info("Using MPS device")
+        else:
+            device = torch.device("cpu")
+            logging.warning("CUDA/MPS not available, using CPU")
+    else:
+        device = torch.device("cpu")
+        logging.info("Using CPU")
 
     # Load model
     logging.info(f"Loading model from {args.model_checkpoint}")
-    model_config = config.load_model_config()
-    model = music_x_transformers.MusicXTransformer(**model_config).to(device)
+    train_args = utils.load_json(config.MODEL_DIR / "train-args.json")
+    encoding = representation.load_encoding(config.NOTES_DIR / "encoding.json")
 
-    checkpoint = torch.load(args.model_checkpoint, map_location=device)
-    model.load_state_dict(checkpoint["model"])
+    model = music_x_transformers.MusicXTransformer(
+        dim=train_args["dim"],
+        encoding=encoding,
+        depth=train_args["layers"],
+        heads=train_args["heads"],
+        max_seq_len=train_args["max_seq_len"],
+        max_beat=train_args["max_beat"],
+        rotary_pos_emb=train_args["rel_pos_emb"],
+        use_abs_pos_emb=train_args["abs_pos_emb"],
+        emb_dropout=train_args["dropout"],
+        attn_dropout=train_args["dropout"],
+        ff_dropout=train_args["dropout"],
+    ).to(device)
+
+    model.load_state_dict(torch.load(args.model_checkpoint, map_location=device))
     model.eval()
 
-    # Load encoding
-    encoding = representation.get_encoding()
+    logging.info("Model loaded")
 
     # Create composer
     logging.info("Creating vector composer")
@@ -352,9 +385,6 @@ def main():
     composer = load_and_create_composer(
         str(args.pitch_vectors), str(args.modality_vectors)
     )
-
-    # Create output directory
-    args.output_dir.mkdir(parents=True, exist_ok=True)
 
     # Generate test matrix
     test_configs = []
