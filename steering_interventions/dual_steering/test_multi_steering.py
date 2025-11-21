@@ -191,8 +191,8 @@ def generate_and_evaluate(
         # Generate
         try:
             output = generator.generate(
-                primer=primer,
-                target_seq_length=seq_len,
+                primer,
+                seq_len,
                 beam=0,
                 beam_chance=1.0,
             )

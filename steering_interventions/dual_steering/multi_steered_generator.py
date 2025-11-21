@@ -151,9 +151,10 @@ class MultiSteeringGenerator:
             # Each layer is a ModuleList containing [prenorm, attention/feedforward, residual]
             # We want to hook the attention/feedforward module (typically index 1)
             layer_module_list = layers[layer_idx]
-            if isinstance(layer_module_list, torch.nn.ModuleList) and len(
-                layer_module_list
-            ) > 1:
+            if (
+                isinstance(layer_module_list, torch.nn.ModuleList)
+                and len(layer_module_list) > 1
+            ):
                 # Hook the Attention/FeedForward module at index 1
                 target_module = layer_module_list[1]
             else:
@@ -178,20 +179,23 @@ class MultiSteeringGenerator:
         self.is_active = False
         logging.info("Removed all steering hooks")
 
-    def generate(self, primer: torch.Tensor, **generate_kwargs) -> torch.Tensor:
+    def generate(
+        self, start_tokens: torch.Tensor, seq_len: int, **kwargs
+    ) -> torch.Tensor:
         """Generate with steering applied.
 
         Args:
-            primer: Input primer sequence [1, seq_len]
-            **generate_kwargs: Additional arguments for model.generate()
+            start_tokens: Input primer sequence [batch, seq_len, features]
+            seq_len: Target sequence length to generate
+            **kwargs: Additional arguments for model.generate()
 
         Returns:
-            Generated sequence [1, target_seq_length]
+            Generated sequence [batch, seq_len, features]
         """
         try:
             self.apply_steering()
             with torch.no_grad():
-                output = self.model.generate(primer, **generate_kwargs)
+                output = self.model.generate(start_tokens, seq_len, **kwargs)
             return output
         finally:
             self.remove_steering()
