@@ -120,12 +120,13 @@ def analyze_modality_control(results: List[Dict]) -> Dict:
         alpha = r["alpha_modality"]
         if alpha not in modality_alphas:
             modality_alphas[alpha] = []
-        modality_alphas[alpha].append(r["modality_control"]["mean_major_likelihood"])
+        # Use major_percentage from new structure
+        modality_alphas[alpha].append(r["modality_control"]["major_percentage"])
 
-    # Compute mean major likelihood for each alpha
+    # Compute mean major percentage for each alpha
     alpha_means = {
-        alpha: float(np.mean(likelihoods))
-        for alpha, likelihoods in modality_alphas.items()
+        alpha: float(np.mean(percentages))
+        for alpha, percentages in modality_alphas.items()
     }
 
     # Measure control strength
@@ -168,6 +169,60 @@ def analyze_stability(results: List[Dict]) -> Dict:
     }
 
 
+def analyze_quality_metrics(results: List[Dict]) -> Dict:
+    """Analyze music quality metrics across results.
+
+    Args:
+        results: List of results for one strategy
+
+    Returns:
+        Dictionary with quality metric statistics
+    """
+    quality_summary = {}
+
+    for metric in ["pitch_class_entropy", "scale_consistency", "groove_consistency"]:
+        means = []
+        for r in results:
+            if r["valid_samples"] > 0:
+                mean_val = r["quality_metrics"][metric]["mean"]
+                if not np.isnan(mean_val):
+                    means.append(mean_val)
+
+        quality_summary[metric] = {
+            "overall_mean": float(np.mean(means)) if means else np.nan,
+            "overall_std": float(np.std(means)) if means else np.nan,
+        }
+
+    return quality_summary
+
+
+def analyze_degradation(results: List[Dict]) -> Dict:
+    """Analyze quality degradation across results.
+
+    Args:
+        results: List of results for one strategy
+
+    Returns:
+        Dictionary with degradation statistics
+    """
+    degradation_summary = {}
+
+    for metric in ["entropy_diff", "scale_diff", "groove_diff", "total_degradation"]:
+        means = []
+        for r in results:
+            if r["valid_samples"] > 0:
+                mean_val = r["degradation"][metric]["mean"]
+                if not np.isnan(mean_val):
+                    means.append(mean_val)
+
+        degradation_summary[metric] = {
+            "overall_mean": float(np.mean(means)) if means else np.nan,
+            "overall_std": float(np.std(means)) if means else np.nan,
+        }
+
+    return degradation_summary
+
+
 def compare_strategies(grouped_results: Dict[str, List[Dict]]) -> Dict:
     """Compare all strategies across all metrics.
 
@@ -183,16 +238,25 @@ def compare_strategies(grouped_results: Dict[str, List[Dict]]) -> Dict:
         pitch_analysis = analyze_pitch_control(results)
         modality_analysis = analyze_modality_control(results)
         stability_analysis = analyze_stability(results)
+        quality_analysis = analyze_quality_metrics(results)
+        degradation_analysis = analyze_degradation(results)
+
+        # Calculate degradation penalty (lower is better)
+        total_deg = degradation_analysis["total_degradation"]["overall_mean"]
+        degradation_penalty = 0.0 if np.isnan(total_deg) else min(total_deg / 10.0, 1.0)
 
         comparison[strategy] = {
             "pitch_control": pitch_analysis,
             "modality_control": modality_analysis,
             "stability": stability_analysis,
-            # Overall score (weighted average)
+            "quality_metrics": quality_analysis,
+            "degradation": degradation_analysis,
+            # Overall score (weighted average with degradation penalty)
             "overall_score": (
-                0.35 * pitch_analysis["control_strength"]
-                + 0.35 * modality_analysis["control_strength"]
-                + 0.30 * stability_analysis["stability_score"]
+                0.30 * pitch_analysis["control_strength"]
+                + 0.30 * modality_analysis["control_strength"]
+                + 0.25 * stability_analysis["stability_score"]
+                - 0.15 * degradation_penalty  # Penalize quality loss
             ),
         }
 
@@ -213,7 +277,7 @@ def visualize_comparison(
     """
     output_dir.mkdir(parents=True, exist_ok=True)
 
-    fig, axes = plt.subplots(2, 3, figsize=(18, 10))
+    fig, axes = plt.subplots(3, 3, figsize=(18, 15))
     fig.suptitle(
         "Phase 2: Dual-Steering Strategy Comparison", fontsize=16, fontweight="bold"
     )
@@ -330,7 +394,7 @@ def visualize_comparison(
         strategies, modality_corrs, color=[colors.get(s, "gray") for s in strategies]
     )
     ax.set_ylabel("Correlation", fontsize=12)
-    ax.set_title("Modality Alpha ↔ Major Likelihood Correlation", fontsize=13)
+    ax.set_title("Modality Alpha ↔ Major % Correlation", fontsize=13)
     ax.axhline(y=0, color="gray", linestyle="-", alpha=0.3)
     for bar in bars:
         height = bar.get_height()
@@ -340,6 +404,73 @@ def visualize_comparison(
             f"{height:+.3f}",
             ha="center",
             va="bottom" if height >= 0 else "top",
+        )
+
+    # 7. Total degradation
+    ax = axes[2, 0]
+    total_degs = [
+        comparison[s]["degradation"]["total_degradation"]["overall_mean"]
+        for s in strategies
+    ]
+    bars = ax.bar(
+        strategies, total_degs, color=[colors.get(s, "gray") for s in strategies]
+    )
+    ax.set_ylabel("Total Degradation", fontsize=12)
+    ax.set_title("Quality Degradation (Lower is Better)", fontsize=13)
+    for bar in bars:
+        height = bar.get_height()
+        ax.text(
+            bar.get_x() + bar.get_width() / 2.0,
+            height,
+            f"{height:.2f}",
+            ha="center",
+            va="bottom",
+        )
+
+    # 8. Scale consistency (quality metric)
+    ax = axes[2, 1]
+    scale_cons = [
+        comparison[s]["quality_metrics"]["scale_consistency"]["overall_mean"]
+        for s in strategies
+    ]
+    bars = ax.bar(
+        strategies, scale_cons, color=[colors.get(s, "gray") for s in strategies]
+    )
+    ax.set_ylabel("Scale Consistency (%)", fontsize=12)
+    ax.set_title("Scale Consistency (Higher is Better)", fontsize=13)
+    ax.axhline(y=92.26, color="green", linestyle="--", alpha=0.5, label="Ground Truth")
+    ax.legend()
+    for bar in bars:
+        height = bar.get_height()
+        ax.text(
+            bar.get_x() + bar.get_width() / 2.0,
+            height,
+            f"{height:.1f}%",
+            ha="center",
+            va="bottom",
+        )
+
+    # 9. Groove consistency (quality metric)
+    ax = axes[2, 2]
+    groove_cons = [
+        comparison[s]["quality_metrics"]["groove_consistency"]["overall_mean"]
+        for s in strategies
+    ]
+    bars = ax.bar(
+        strategies, groove_cons, color=[colors.get(s, "gray") for s in strategies]
+    )
+    ax.set_ylabel("Groove Consistency (%)", fontsize=12)
+    ax.set_title("Groove Consistency (Higher is Better)", fontsize=13)
+    ax.axhline(y=93.05, color="green", linestyle="--", alpha=0.5, label="Ground Truth")
+    ax.legend()
+    for bar in bars:
+        height = bar.get_height()
+        ax.text(
+            bar.get_x() + bar.get_width() / 2.0,
+            height,
+            f"{height:.1f}%",
+            ha="center",
+            va="bottom",
         )
 
     plt.tight_layout()
@@ -363,18 +494,29 @@ def determine_recommendation(comparison: Dict) -> str:
     )
     best = strategies[0]
     best_score = comparison[best]["overall_score"]
+    best_deg = comparison[best]["degradation"]["total_degradation"]["overall_mean"]
 
     if len(strategies) > 1:
         second = strategies[1]
         second_score = comparison[second]["overall_score"]
+        second_deg = comparison[second]["degradation"]["total_degradation"][
+            "overall_mean"
+        ]
         score_diff = best_score - second_score
+
+        # Add degradation context
+        deg_comparison = (
+            f"\nQuality Degradation:\n"
+            f"  {best}: {best_deg:.2f}\n"
+            f"  {second}: {second_deg:.2f}"
+        )
 
         if score_diff < 0.05:  # Very close
             return (
                 f"🟡 CLOSE COMPETITION\n\n"
                 f"Best: {best} (score: {best_score:.3f})\n"
                 f"Runner-up: {second} (score: {second_score:.3f})\n"
-                f"Difference: {score_diff:.3f}\n\n"
+                f"Difference: {score_diff:.3f}{deg_comparison}\n\n"
                 f"Recommendation: Proceed with BOTH strategies in Phase 3 grid search.\n"
                 f"The performance difference is too small to confidently eliminate one strategy."
             )
@@ -383,14 +525,15 @@ def determine_recommendation(comparison: Dict) -> str:
                 f"🟢 CLEAR WINNER\n\n"
                 f"Best: {best} (score: {best_score:.3f})\n"
                 f"Runner-up: {second} (score: {second_score:.3f})\n"
-                f"Difference: {score_diff:.3f}\n\n"
+                f"Difference: {score_diff:.3f}{deg_comparison}\n\n"
                 f"Recommendation: Proceed with {best.upper()} strategy only in Phase 3.\n"
                 f"This strategy shows significantly better performance across metrics."
             )
     else:
         return (
             f"🟢 SINGLE STRATEGY\n\n"
-            f"Strategy: {best} (score: {best_score:.3f})\n\n"
+            f"Strategy: {best} (score: {best_score:.3f})\n"
+            f"Degradation: {best_deg:.2f}\n\n"
             f"Recommendation: Proceed with {best.upper()} strategy in Phase 3."
         )
 

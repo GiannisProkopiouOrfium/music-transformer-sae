@@ -43,100 +43,152 @@ sys.path.insert(0, str(pathlib.Path(__file__).parent.parent))
 
 import config
 import music_x_transformers
+import muspy
 import representation
 import utils
+from multi_steered_generator import MultiSteeringGenerator
 from vector_composition import VectorComposer
 
+# Import music21
+try:
+    from music21 import note, stream
 
-def extract_music_features(tokens: np.ndarray, encoding: dict) -> Dict:
-    """Extract pitch and modality features from generated tokens.
+    MUSIC21_AVAILABLE = True
+except ImportError:
+    MUSIC21_AVAILABLE = False
+    print("ERROR: music21 not available. Install with: pip install music21")
+    sys.exit(1)
+
+# Ground truth metrics from paper
+GROUND_TRUTH_METRICS = {
+    "pitch_class_entropy": 2.974,
+    "scale_consistency": 92.26,
+    "groove_consistency": 93.05,
+}
+
+
+def extract_pitches_from_tokens(tokens: np.ndarray, encoding: dict) -> list:
+    """Extract pitch values from generated tokens.
 
     Args:
         tokens: Token array (seq_len, 6)
         encoding: Encoding dictionary
 
     Returns:
-        Dictionary with extracted features
+        List of pitch values
     """
     try:
         music = representation.decode(tokens, encoding)
 
         pitches = []
-        note_events = 0
-
         for track in music.tracks:
             for note in track.notes:
                 pitches.append(note.pitch)
-                note_events += 1
 
-        if len(pitches) == 0:
-            return {
-                "valid": False,
-                "pitch_mean": 0.0,
-                "pitch_std": 0.0,
-                "pitch_range": 0,
-                "num_notes": 0,
-            }
-
-        # Pitch statistics
-        pitch_mean = float(np.mean(pitches))
-        pitch_std = float(np.std(pitches))
-        pitch_range = int(max(pitches) - min(pitches))
-
-        return {
-            "valid": True,
-            "pitch_mean": pitch_mean,
-            "pitch_std": pitch_std,
-            "pitch_range": pitch_range,
-            "num_notes": note_events,
-        }
-
+        return pitches
     except Exception as e:
-        logging.error(f"Error extracting features: {e}")
-        return {
-            "valid": False,
-            "pitch_mean": 0.0,
-            "pitch_std": 0.0,
-            "pitch_range": 0,
-            "num_notes": 0,
-        }
+        logging.error(f"Error extracting pitches: {e}")
+        return []
 
 
-def detect_modality_from_pitches(pitches: List[int]) -> Dict:
-    """Simple heuristic modality detection from pitch content.
+def detect_key_from_tokens(tokens: np.ndarray, encoding: dict) -> tuple:
+    """Detect full key (tonic + mode) from tokens using music21.
 
     Args:
-        pitches: List of MIDI pitch values
+        tokens: Token array (seq_len, 6)
+        encoding: Encoding dictionary
 
     Returns:
-        Dictionary with modality estimates
+        (tonic, mode, confidence): e.g., ("A", "minor", 0.85)
     """
-    if len(pitches) < 10:
-        return {"confidence": 0.0, "major_likelihood": 0.5}
+    try:
+        note_type = encoding["type_code_map"]["note"]
+        pitches = []
 
-    # Count pitch class occurrences
-    pitch_classes = [p % 12 for p in pitches]
-    pc_counts = np.bincount(pitch_classes, minlength=12)
-    pc_probs = pc_counts / pc_counts.sum()
+        for token in tokens:
+            if token[0] == note_type:
+                pitch_value = token[3]
+                pitches.append(pitch_value)
 
-    # Major scale profile (C major as reference)
-    major_profile = np.array([1, 0, 1, 0, 1, 1, 0, 1, 0, 1, 0, 1])
-    major_profile = major_profile / major_profile.sum()
+        if len(pitches) < 10:
+            return ("unknown", "unknown", 0.0)
 
-    # Minor scale profile (A minor as reference)
-    minor_profile = np.array([1, 0, 1, 1, 0, 1, 0, 1, 1, 0, 1, 0])
-    minor_profile = minor_profile / minor_profile.sum()
+        s = stream.Stream()
+        for p in pitches:
+            s.append(note.Note(p))
 
-    # Compute correlations
-    major_corr = float(np.corrcoef(pc_probs, major_profile)[0, 1])
-    minor_corr = float(np.corrcoef(pc_probs, minor_profile)[0, 1])
+        key = s.analyze("key")
 
-    # Estimate likelihood (normalize to 0-1)
-    total = max(abs(major_corr) + abs(minor_corr), 1e-8)
-    major_likelihood = abs(major_corr) / total
-    confidence = max(abs(major_corr), abs(minor_corr))
+        # Extract tonic name (e.g., "A", "C#", "Bb")
+        tonic = key.tonic.name
+        mode = key.mode
+        confidence = key.correlationCoefficient
 
-    return {"confidence": confidence, "major_likelihood": major_likelihood}
+        return (tonic, mode, confidence)
+
+    except Exception as e:
+        logging.warning(f"Key detection failed: {e}")
+        return ("unknown", "unknown", 0.0)
+
+
+def evaluate_quality_metrics(tokens: np.ndarray, encoding: dict) -> Dict:
+    """Evaluate objective quality metrics.
+
+    Args:
+        tokens: Token array (seq_len, 6)
+        encoding: Encoding dictionary
+
+    Returns:
+        Dictionary with quality metrics
+    """
+    try:
+        music = representation.decode(tokens, encoding)
+        music.trim(music.resolution * 64)
+
+        if not music.tracks:
+            return {
+                "pitch_class_entropy": np.nan,
+                "scale_consistency": np.nan,
+                "groove_consistency": np.nan,
+            }
+
+        return {
+            "pitch_class_entropy": muspy.pitch_class_entropy(music),
+            "scale_consistency": muspy.scale_consistency(music) * 100,
+            "groove_consistency": muspy.groove_consistency(music, 4 * music.resolution)
+            * 100,
+        }
+    except Exception as e:
+        logging.error(f"Error evaluating quality: {e}")
+        return {
+            "pitch_class_entropy": np.nan,
+            "scale_consistency": np.nan,
+            "groove_consistency": np.nan,
+        }
+
+
+def calculate_degradation(metrics: Dict, baseline: Dict) -> Dict:
+    """Calculate quality degradation from baseline.
+
+    Args:
+        metrics: Current quality metrics
+        baseline: Baseline quality metrics (GROUND_TRUTH_METRICS)
+
+    Returns:
+        Degradation scores
+    """
+    entropy_diff = abs(metrics["pitch_class_entropy"] - baseline["pitch_class_entropy"])
+    scale_diff = max(0, baseline["scale_consistency"] - metrics["scale_consistency"])
+    groove_diff = max(0, baseline["groove_consistency"] - metrics["groove_consistency"])
+
+    total_degradation = entropy_diff + scale_diff + groove_diff
+
+    return {
+        "entropy_diff": float(entropy_diff),
+        "scale_diff": float(scale_diff),
+        "groove_diff": float(groove_diff),
+        "total_degradation": float(total_degradation),
+    }
 
 
 def generate_and_evaluate(
@@ -179,8 +231,11 @@ def generate_and_evaluate(
     )
 
     # Generate samples
-    all_pitches = []
-    all_modalities = []
+    all_pitch_means = []
+    all_modes = []  # "major" or "minor"
+    all_mode_confidences = []
+    all_quality_metrics = []
+    all_degradations = []
     valid_count = 0
     tokens_list = []
 
@@ -203,23 +258,29 @@ def generate_and_evaluate(
             tokens = output[0].cpu().numpy()
             tokens_list.append(tokens)
 
-            # Extract features
-            features = extract_music_features(tokens, encoding)
+            # Extract pitches
+            pitches = extract_pitches_from_tokens(tokens, encoding)
 
-            if features["valid"]:
+            if len(pitches) >= 10:
                 valid_count += 1
-                all_pitches.append(features["pitch_mean"])
 
-                # Detect modality
-                music = representation.decode(tokens, encoding)
-                pitches = []
-                for track in music.tracks:
-                    for note in track.notes:
-                        pitches.append(note.pitch)
+                # Pitch statistics
+                pitch_mean = float(np.mean(pitches))
+                all_pitch_means.append(pitch_mean)
 
-                if len(pitches) >= 10:
-                    modality = detect_modality_from_pitches(pitches)
-                    all_modalities.append(modality["major_likelihood"])
+                # Detect key/modality using music21
+                tonic, mode, confidence = detect_key_from_tokens(tokens, encoding)
+                all_modes.append(mode)
+                all_mode_confidences.append(confidence)
+
+                # Evaluate quality metrics
+                quality = evaluate_quality_metrics(tokens, encoding)
+                all_quality_metrics.append(quality)
+
+                # Calculate degradation from ground truth
+                if not np.isnan(quality["pitch_class_entropy"]):
+                    degradation = calculate_degradation(quality, GROUND_TRUTH_METRICS)
+                    all_degradations.append(degradation)
 
         except Exception as e:
             logging.error(f"Generation failed for sample {i}: {e}")
@@ -233,8 +294,61 @@ def generate_and_evaluate(
             "alpha_modality": alpha_modality,
             "valid_samples": 0,
             "pitch_control": {"mean": 0.0, "std": 0.0},
-            "modality_control": {"mean_major_likelihood": 0.5, "std": 0.0},
+            "modality_control": {
+                "major_count": 0,
+                "minor_count": 0,
+                "major_percentage": 0.0,
+                "avg_confidence": 0.0,
+            },
+            "quality_metrics": {
+                "pitch_class_entropy": {"mean": np.nan, "std": np.nan},
+                "scale_consistency": {"mean": np.nan, "std": np.nan},
+                "groove_consistency": {"mean": np.nan, "std": np.nan},
+            },
+            "degradation": {
+                "entropy_diff": {"mean": np.nan, "std": np.nan},
+                "scale_diff": {"mean": np.nan, "std": np.nan},
+                "groove_diff": {"mean": np.nan, "std": np.nan},
+                "total_degradation": {"mean": np.nan, "std": np.nan},
+            },
             "success_rate": 0.0,
+        }
+
+    # Calculate modality statistics
+    confident_modes = [m for m, c in zip(all_modes, all_mode_confidences) if c >= 0.5]
+    major_count = sum(1 for m in confident_modes if m == "major")
+    minor_count = sum(1 for m in confident_modes if m == "minor")
+    total_confident = major_count + minor_count
+
+    major_percentage = (
+        100 * major_count / total_confident if total_confident > 0 else 0.0
+    )
+    avg_confidence = (
+        float(np.mean([c for c in all_mode_confidences if c >= 0.5]))
+        if confident_modes
+        else 0.0
+    )
+
+    # Aggregate quality metrics
+    quality_summary = {}
+    for metric in ["pitch_class_entropy", "scale_consistency", "groove_consistency"]:
+        values = [
+            q[metric]
+            for q in all_quality_metrics
+            if not np.isnan(q.get(metric, np.nan))
+        ]
+        quality_summary[metric] = {
+            "mean": float(np.mean(values)) if values else np.nan,
+            "std": float(np.std(values)) if values else np.nan,
+        }
+
+    # Aggregate degradation
+    degradation_summary = {}
+    for metric in ["entropy_diff", "scale_diff", "groove_diff", "total_degradation"]:
+        values = [d[metric] for d in all_degradations if not np.isnan(d[metric])]
+        degradation_summary[metric] = {
+            "mean": float(np.mean(values)) if values else np.nan,
+            "std": float(np.std(values)) if values else np.nan,
         }
 
     return {
@@ -243,15 +357,17 @@ def generate_and_evaluate(
         "alpha_modality": alpha_modality,
         "valid_samples": valid_count,
         "pitch_control": {
-            "mean": float(np.mean(all_pitches)),
-            "std": float(np.std(all_pitches)),
+            "mean": float(np.mean(all_pitch_means)),
+            "std": float(np.std(all_pitch_means)),
         },
         "modality_control": {
-            "mean_major_likelihood": (
-                float(np.mean(all_modalities)) if all_modalities else 0.5
-            ),
-            "std": float(np.std(all_modalities)) if all_modalities else 0.0,
+            "major_count": major_count,
+            "minor_count": minor_count,
+            "major_percentage": major_percentage,
+            "avg_confidence": avg_confidence,
         },
+        "quality_metrics": quality_summary,
+        "degradation": degradation_summary,
         "success_rate": valid_count / n_samples,
         "tokens": [t.tolist() for t in tokens_list],  # For later analysis
     }
