@@ -1,29 +1,31 @@
 #!/usr/bin/env python3
-"""Phase 2: Small-Scale Dual-Steering Strategy Validation.
+"""Phase 3: Extended Dual-Steering Grid Search with Negative Alphas.
 
-Tests both composition strategies (direct and gram_schmidt) with a focused
-parameter grid to identify which performs best before running full grid search.
+Tests both composition strategies (direct and gram_schmidt) with an extended
+parameter grid including negative values to map the complete steering landscape.
 
 Test matrix:
 - Strategies: direct, gram_schmidt (2 strategies)
-- Alpha pitch: [0, 1.0, 1.5, 2.0] (4 values)
-- Alpha modality: [0, 2.0, 2.5, 3.0] (4 values)
-- Total configs: 2 * 4 * 4 = 32 configs
+- Alpha pitch: [-2.0, -1.5, -1.0, -0.5, 0, 0.5, 1.0, 1.5, 2.0] (9 values)
+- Alpha modality: [-2.0, -1.5, -1.0, -0.5, 0, 0.5, 1.0, 1.5, 2.0] (9 values)
+- Total configs: 2 * 9 * 9 = 162 configs
 - Samples per config: 5
-- Total generations: 32 * 5 = 160 samples (~30-60 min on single GPU)
+- Total generations: 162 * 5 = 810 samples (~2-4 hours on single GPU)
 
 Output:
-- Generated MIDI files
-- JSON with metrics per config
-- Summary comparison between strategies
+- Generated MIDI files with comprehensive metrics
+- JSON with detailed metrics per config
+- Heatmap visualizations (pitch, modality, quality)
+- Pareto frontier and interaction analyses
 
 Usage:
     python dual_steering/test_multi_steering.py \\
         --model_checkpoint path/to/model.ckpt \\
         --pitch_vectors steering_interventions/outputs/steering_vectors/average_pitch_steering_vectors.pt \\
         --modality_vectors steering_interventions/modality/outputs/steering_vectors/modality_steering_vectors.pt \\
-        --output_dir steering_interventions/dual_steering/outputs/phase2_validation \\
-        --n_samples 5
+        --output_dir steering_interventions/dual_steering/outputs/phase3_grid_search \\
+        --n_samples 5 \\
+        --strategies gram_schmidt
 """
 
 import argparse
@@ -416,14 +418,14 @@ def main():
         "--alphas_pitch",
         type=float,
         nargs="+",
-        default=[0.0, 1.0, 1.5, 2.0],
+        default=[-2.0, -1.5, -1.0, -0.5, 0.0, 0.5, 1.0, 1.5, 2.0],
         help="Pitch alpha values to test",
     )
     parser.add_argument(
         "--alphas_modality",
         type=float,
         nargs="+",
-        default=[0.0, 2.0, 2.5, 3.0],
+        default=[-2.0, -1.5, -1.0, -0.5, 0.0, 0.5, 1.0, 1.5, 2.0],
         help="Modality alpha values to test",
     )
     parser.add_argument(
