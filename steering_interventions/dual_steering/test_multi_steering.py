@@ -552,7 +552,10 @@ def main():
                 f"  Pitch mean: {result['pitch_control']['mean']:.2f} ± {result['pitch_control']['std']:.2f}"
             )
             logging.info(
-                f"  Major likelihood: {result['modality_control']['mean_major_likelihood']:.3f}"
+                f"  Major percentage: {result['modality_control']['major_percentage']:.1f}% (conf: {result['modality_control']['avg_confidence']:.2f})"
+            )
+            logging.info(
+                f"  Quality degradation: {result['degradation']['total_degradation']['mean']:.2f}"
             )
 
     elapsed_time = time.time() - start_time
