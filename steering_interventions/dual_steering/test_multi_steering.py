@@ -418,14 +418,14 @@ def main():
         "--alphas_pitch",
         type=float,
         nargs="+",
-        default=[-2.0, -1.5, -1.0, -0.5, 0.0, 0.5, 1.0, 1.5, 2.0],
+        default=[-2.5, -2.0, -1.5, -1.0, -0.5, 0.0, 0.5, 1.0, 1.5, 2.0, 2.5],
         help="Pitch alpha values to test",
     )
     parser.add_argument(
         "--alphas_modality",
         type=float,
         nargs="+",
-        default=[-2.0, -1.5, -1.0, -0.5, 0.0, 0.5, 1.0, 1.5, 2.0],
+        default=[-2.5, -2.0, -1.5, -1.0, -0.5, 0.0, 0.5, 1.0, 1.5, 2.0, 2.5],
         help="Modality alpha values to test",
     )
     parser.add_argument(
