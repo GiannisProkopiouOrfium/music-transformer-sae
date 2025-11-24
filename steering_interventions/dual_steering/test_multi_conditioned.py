@@ -373,6 +373,62 @@ def extract_conditioning_prefix(tokens: np.ndarray, n_beats: int = 8) -> torch.T
     return cond_tensor
 
 
+def filter_alphas_for_scenario(
+    scenario: str,
+    alpha_pitch_list: List[float],
+    alpha_modality_list: List[float],
+) -> Tuple[List[float], List[float]]:
+    """Filter alpha values based on scenario to test only relevant combinations.
+
+    Rules:
+    1. low_pitch_minor_to_high_major: positive pitch + positive modality + baseline
+    2. high_pitch_major_to_low_minor: positive pitch + positive modality + baseline
+    3. low_pitch_major_to_high_minor: positive pitch + negative modality + baseline
+    4. high_pitch_minor_to_low_major: negative pitch + positive modality + baseline
+
+    Args:
+        scenario: Scenario name
+        alpha_pitch_list: Full list of pitch alphas
+        alpha_modality_list: Full list of modality alphas
+
+    Returns:
+        (filtered_pitch_alphas, filtered_modality_alphas)
+    """
+    # Always include baseline (0.0)
+    baseline = [0.0]
+
+    if scenario == "low_pitch_minor_to_high_major":
+        # Fight both: need positive for both
+        pitch_alphas = baseline + [a for a in alpha_pitch_list if a > 0]
+        modality_alphas = baseline + [a for a in alpha_modality_list if a > 0]
+
+    elif scenario == "high_pitch_major_to_low_minor":
+        # Fight both: need positive for both (steering vectors are directional)
+        pitch_alphas = baseline + [a for a in alpha_pitch_list if a > 0]
+        modality_alphas = baseline + [a for a in alpha_modality_list if a > 0]
+
+    elif scenario == "low_pitch_major_to_high_minor":
+        # Fight pitch (positive), fight modality (negative)
+        pitch_alphas = baseline + [a for a in alpha_pitch_list if a > 0]
+        modality_alphas = baseline + [a for a in alpha_modality_list if a < 0]
+
+    elif scenario == "high_pitch_minor_to_low_major":
+        # Fight pitch (negative), fight modality (positive)
+        pitch_alphas = baseline + [a for a in alpha_pitch_list if a < 0]
+        modality_alphas = baseline + [a for a in alpha_modality_list if a > 0]
+
+    else:
+        # Fallback: use all alphas
+        pitch_alphas = alpha_pitch_list
+        modality_alphas = alpha_modality_list
+
+    # Remove duplicates and sort
+    pitch_alphas = sorted(list(set(pitch_alphas)))
+    modality_alphas = sorted(list(set(modality_alphas)))
+
+    return pitch_alphas, modality_alphas
+
+
 def conditioned_generate_and_evaluate(
     model,
     composer,
@@ -410,6 +466,19 @@ def conditioned_generate_and_evaluate(
 
     results = []
     eos = encoding["type_code_map"]["end-of-song"]
+
+    # Filter alphas based on scenario to test only relevant combinations
+    alpha_pitch_list, alpha_modality_list = filter_alphas_for_scenario(
+        scenario, alpha_pitch_list, alpha_modality_list
+    )
+
+    logging.info(f"Testing {len(alpha_pitch_list)} pitch alphas: {alpha_pitch_list}")
+    logging.info(
+        f"Testing {len(alpha_modality_list)} modality alphas: {alpha_modality_list}"
+    )
+    logging.info(
+        f"Total combinations: {len(alpha_pitch_list) * len(alpha_modality_list)}"
+    )
 
     for song_idx, (filepath, cond_pitch, cond_mode, cond_confidence) in enumerate(
         song_list
@@ -457,7 +526,8 @@ def conditioned_generate_and_evaluate(
                     )
 
                     # Convert to numpy (generated portion only)
-                    generated_tokens = output[0, conditioning.shape[1] :].cpu().numpy()
+                    # Note: output from model.generate() already excludes conditioning
+                    generated_tokens = output.cpu().numpy()[0]
 
                     # Extract pitches
                     pitches = extract_pitches_from_tokens(generated_tokens, encoding)
@@ -553,7 +623,12 @@ def conditioned_generate_and_evaluate(
                             save_dir.mkdir(parents=True, exist_ok=True)
 
                             # Save full sequence (conditioning + generated)
-                            full_seq = output[0].cpu().numpy()
+                            # Note: output from model.generate() contains only generated tokens, not conditioning
+                            # full_seq = torch.cat((conditioning, output), 1)[0].cpu().numpy()
+                            full_seq = (
+                                torch.cat((conditioning, output), 1).cpu().numpy()[0]
+                            )
+
                             np.save(save_dir / f"{filepath.stem}.npy", full_seq)
 
                             # Save as MIDI/WAV
