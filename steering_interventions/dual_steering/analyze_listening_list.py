@@ -36,6 +36,11 @@ def main():
         if r.get("generated_n_notes", 0) < 10:
             continue
 
+        # Exclude combinations where either alpha is zero (baseline)
+        # We want both concepts actively steered
+        if r["alpha_pitch"] == 0.0 or r["alpha_modality"] == 0.0:
+            continue
+
         # Calculate audibility score
         pitch_magnitude = abs(r["pitch_change"]) / 10.0
         mode_change_score = 1.0 if r["mode_changed"] else 0.0
