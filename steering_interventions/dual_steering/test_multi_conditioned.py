@@ -404,8 +404,8 @@ def filter_alphas_for_scenario(
 
     elif scenario == "high_pitch_major_to_low_minor":
         # Fight both: need positive for both (steering vectors are directional)
-        pitch_alphas = baseline + [a for a in alpha_pitch_list if a > 0]
-        modality_alphas = baseline + [a for a in alpha_modality_list if a > 0]
+        pitch_alphas = baseline + [a for a in alpha_pitch_list if a < 0]
+        modality_alphas = baseline + [a for a in alpha_modality_list if a < 0]
 
     elif scenario == "low_pitch_major_to_high_minor":
         # Fight pitch (positive), fight modality (negative)
