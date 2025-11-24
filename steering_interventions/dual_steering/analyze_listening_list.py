@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Analyze listening list by scenario.
 
-Shows top examples for each scenario separately.
+Shows top examples for each scenario separately by analyzing the full results file.
 """
 
 import json
@@ -16,18 +16,49 @@ def main():
     else:
         results_dir = pathlib.Path("outputs/phase4_conditioned_quick")
 
-    listening_file = results_dir / "listening_list.json"
+    # Load full results to get per-scenario examples
+    results_file = results_dir / "conditioned_results.json"
 
-    if not listening_file.exists():
-        print(f"❌ File not found: {listening_file}")
+    if not results_file.exists():
+        print(f"❌ File not found: {results_file}")
         return
 
-    print(f"📖 Loading: {listening_file}\n")
+    print(f"📖 Loading: {results_file}\n")
 
-    with open(listening_file, "r") as f:
-        data = json.load(f)
+    with open(results_file, "r") as f:
+        full_data = json.load(f)
 
-    top_examples = data["top_examples"]
+    all_results = full_data["results"]
+
+    # Score each result using the same criteria as extract_listening_list
+    scored_results = []
+    for r in all_results:
+        if r.get("generated_n_notes", 0) < 10:
+            continue
+
+        # Calculate audibility score
+        pitch_magnitude = abs(r["pitch_change"]) / 10.0
+        mode_change_score = 1.0 if r["mode_changed"] else 0.0
+        confidence_score = r["generated_confidence"]
+
+        # Calculate quality score
+        degradation = r["degradation"]["total_degradation"]
+        quality_score = max(0, 1.0 - degradation / 10.0)
+
+        # Combined score
+        audibility = (pitch_magnitude + mode_change_score + confidence_score) / 3.0
+        overall_score = 0.6 * audibility + 0.4 * quality_score
+
+        scored_results.append(
+            {
+                **r,
+                "audibility_score": audibility,
+                "quality_score": quality_score,
+                "listening_score": overall_score,
+            }
+        )
+
+    top_examples = scored_results
 
     # Group by scenario
     by_scenario = defaultdict(list)
