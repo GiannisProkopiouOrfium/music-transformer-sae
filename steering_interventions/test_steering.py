@@ -144,9 +144,9 @@ def test_steering(
                 alpha_pitches.extend(pitches)
                 logging.info(
                     f"  Sample {i}: {len(pitches)} notes, "
+                    f"mean velocity={np.mean(velocities):.1f}, "
                     f"mean pitch={np.mean(pitches):.1f}, "
-                    f"std={np.std(pitches):.1f}, "
-                    f"range=[{np.min(pitches)}, {np.max(pitches)}]"
+                    f"pitch_range=[{np.min(pitches)}, {np.max(pitches)}]"
                 )
             else:
                 logging.warning(
@@ -309,37 +309,50 @@ def main():
 
     # Print results
     logging.info("\n" + "=" * 60)
-    logging.info("RESULTS SUMMARY - PITCH ANALYSIS")
+    logging.info("RESULTS SUMMARY")
     logging.info("=" * 60)
 
     for alpha in sorted(results.keys()):
         stats = results[alpha]
         logging.info(
             f"Alpha {alpha:+5.1f}: "
+            f"velocity_mean={stats['velocity_mean']:6.2f}, "
             f"pitch_mean={stats['pitch_mean']:6.2f}, "
             f"pitch_std={stats['pitch_std']:5.2f}, "
-            f"range=[{stats['pitch_min']:3d}, {stats['pitch_max']:3d}], "
+            f"pitch_range=[{stats['pitch_min']:3d}, {stats['pitch_max']:3d}], "
             f"n={stats['n_notes']:4d} notes"
         )
 
     # Verify steering effect
     if 0.0 in results and -1.0 in results and 1.0 in results:
-        baseline_mean = results[0.0]["pitch_mean"]
-        low_mean = results[-1.0]["pitch_mean"]
-        high_mean = results[1.0]["pitch_mean"]
+        baseline_vel = results[0.0]["velocity_mean"]
+        low_vel = results[-1.0]["velocity_mean"]
+        high_vel = results[1.0]["velocity_mean"]
+        
+        baseline_pitch = results[0.0]["pitch_mean"]
+        low_pitch = results[-1.0]["pitch_mean"]
+        high_pitch = results[1.0]["pitch_mean"]
 
         logging.info("\n" + "=" * 60)
-        logging.info("STEERING EFFECT VERIFICATION - PITCH")
+        logging.info("STEERING EFFECT VERIFICATION")
         logging.info("=" * 60)
-        logging.info(f"Baseline (alpha=0):     {baseline_mean:.2f}")
-        logging.info(f"Low pitch (alpha=-2):   {low_mean:.2f}")
-        logging.info(f"High pitch (alpha=+2):  {high_mean:.2f}")
-        logging.info(f"Low vs Baseline:        {low_mean - baseline_mean:+.2f}")
-        logging.info(f"High vs Baseline:       {high_mean - baseline_mean:+.2f}")
+        logging.info("\nVELOCITY:")
+        logging.info(f"  Baseline (alpha=0):    {baseline_vel:.2f}")
+        logging.info(f"  Low (alpha=-1):        {low_vel:.2f}")
+        logging.info(f"  High (alpha=+1):       {high_vel:.2f}")
+        logging.info(f"  Low vs Baseline:       {low_vel - baseline_vel:+.2f}")
+        logging.info(f"  High vs Baseline:      {high_vel - baseline_vel:+.2f}")
+        
+        logging.info("\nPITCH:")
+        logging.info(f"  Baseline (alpha=0):    {baseline_pitch:.2f}")
+        logging.info(f"  Low (alpha=-1):        {low_pitch:.2f}")
+        logging.info(f"  High (alpha=+1):       {high_pitch:.2f}")
+        logging.info(f"  Low vs Baseline:       {low_pitch - baseline_pitch:+.2f}")
+        logging.info(f"  High vs Baseline:      {high_pitch - baseline_pitch:+.2f}")
 
-        if high_mean > baseline_mean and low_mean < baseline_mean:
+        if high_pitch > baseline_pitch and low_pitch < baseline_pitch:
             logging.info("\n✓ SUCCESS: Pitch steering works as expected!")
-        elif high_mean == baseline_mean == low_mean:
+        elif high_pitch == baseline_pitch == low_pitch:
             logging.warning("\n✗ WARNING: No steering effect detected (all equal)")
         else:
             logging.warning(
