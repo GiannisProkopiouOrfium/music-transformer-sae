@@ -25,6 +25,77 @@ import utils
 from steered_generator import SteeredGenerator, load_steering_vectors
 
 
+# Ground truth metrics from paper
+GROUND_TRUTH_METRICS = {
+    "pitch_class_entropy": 2.974,
+    "scale_consistency": 92.26,
+    "groove_consistency": 93.05,
+}
+
+
+def evaluate_quality_metrics(tokens: np.ndarray, encoding: dict) -> dict:
+    """Evaluate objective quality metrics.
+
+    Args:
+        tokens: Token array (seq_len, 6)
+        encoding: Encoding dictionary
+
+    Returns:
+        Dictionary with quality metrics
+    """
+    try:
+        import muspy
+
+        music = representation.decode(tokens, encoding)
+        music.trim(music.resolution * 64)
+
+        if not music.tracks:
+            return {
+                "pitch_class_entropy": np.nan,
+                "scale_consistency": np.nan,
+                "groove_consistency": np.nan,
+            }
+
+        return {
+            "pitch_class_entropy": muspy.pitch_class_entropy(music),
+            "scale_consistency": muspy.scale_consistency(music) * 100,
+            "groove_consistency": muspy.groove_consistency(music, 4 * music.resolution)
+            * 100,
+        }
+    except Exception as e:
+        logging.error(f"Error evaluating quality: {e}")
+        return {
+            "pitch_class_entropy": np.nan,
+            "scale_consistency": np.nan,
+            "groove_consistency": np.nan,
+            "error": str(e),
+        }
+
+
+def calculate_degradation(metrics: dict, baseline: dict) -> dict:
+    """Calculate quality degradation from baseline.
+
+    Args:
+        metrics: Current quality metrics
+        baseline: Baseline quality metrics (GROUND_TRUTH_METRICS)
+
+    Returns:
+        Degradation scores
+    """
+    entropy_diff = abs(metrics["pitch_class_entropy"] - baseline["pitch_class_entropy"])
+    scale_diff = max(0, baseline["scale_consistency"] - metrics["scale_consistency"])
+    groove_diff = max(0, baseline["groove_consistency"] - metrics["groove_consistency"])
+
+    total_degradation = entropy_diff + scale_diff + groove_diff
+
+    return {
+        "entropy_diff": float(entropy_diff),
+        "scale_diff": float(scale_diff),
+        "groove_diff": float(groove_diff),
+        "total_degradation": float(total_degradation),
+    }
+
+
 def extract_velocities_from_tokens(tokens: np.ndarray, encoding: dict) -> list:
     """Extract velocity values from generated tokens.
 
@@ -165,6 +236,9 @@ def test_steering(
             pitches = extract_pitches_from_tokens(full_seq, encoding)
             durations = extract_durations_from_tokens(full_seq, encoding)
 
+            # Evaluate quality metrics
+            quality_metrics = evaluate_quality_metrics(full_seq, encoding)
+
             if velocities:
                 alpha_velocities.extend(velocities)
             if pitches:
@@ -186,6 +260,29 @@ def test_steering(
                 )
 
         if alpha_pitches:
+            # Calculate average quality metrics across samples
+            avg_quality = {
+                "pitch_class_entropy": np.mean(
+                    [
+                        quality_metrics.get("pitch_class_entropy", np.nan)
+                        for _ in range(n_samples)
+                    ]
+                ),
+                "scale_consistency": np.mean(
+                    [
+                        quality_metrics.get("scale_consistency", np.nan)
+                        for _ in range(n_samples)
+                    ]
+                ),
+                "groove_consistency": np.mean(
+                    [
+                        quality_metrics.get("groove_consistency", np.nan)
+                        for _ in range(n_samples)
+                    ]
+                ),
+            }
+            degradation = calculate_degradation(avg_quality, GROUND_TRUTH_METRICS)
+
             results[alpha] = {
                 "velocities": alpha_velocities,
                 "pitches": alpha_pitches,
@@ -201,6 +298,8 @@ def test_steering(
                 "duration_min": np.min(alpha_durations) if alpha_durations else 0,
                 "duration_max": np.max(alpha_durations) if alpha_durations else 0,
                 "n_notes": len(alpha_pitches),
+                "quality_metrics": avg_quality,
+                "degradation": degradation,
             }
         else:
             results[alpha] = {
@@ -356,6 +455,7 @@ def main():
 
     for alpha in sorted(results.keys()):
         stats = results[alpha]
+        deg = stats.get("degradation", {})
         logging.info(
             f"Alpha {alpha:+5.1f}: "
             f"velocity_mean={stats['velocity_mean']:6.2f}, "
@@ -364,7 +464,8 @@ def main():
             f"pitch_range=[{stats['pitch_min']:3d}, {stats['pitch_max']:3d}], "
             f"duration_mean={stats['duration_mean']:6.2f} ticks, "
             f"duration_std={stats['duration_std']:5.2f}, "
-            f"n={stats['n_notes']:4d} notes"
+            f"n={stats['n_notes']:4d} notes, "
+            f"degradation={deg.get('total_degradation', 0):.2f}"
         )
 
     # Verify steering effect

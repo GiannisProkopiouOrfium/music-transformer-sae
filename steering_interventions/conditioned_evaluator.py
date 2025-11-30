@@ -26,6 +26,77 @@ import utils
 from steered_generator import SteeredGenerator, load_steering_vectors
 
 
+# Ground truth metrics from paper
+GROUND_TRUTH_METRICS = {
+    "pitch_class_entropy": 2.974,
+    "scale_consistency": 92.26,
+    "groove_consistency": 93.05,
+}
+
+
+def evaluate_quality_metrics(tokens: np.ndarray, encoding: Dict) -> Dict:
+    """Evaluate objective quality metrics.
+
+    Args:
+        tokens: Token array (seq_len, 6)
+        encoding: Encoding dictionary
+
+    Returns:
+        Dictionary with quality metrics
+    """
+    try:
+        import muspy
+
+        music = representation.decode(tokens, encoding)
+        music.trim(music.resolution * 64)
+
+        if not music.tracks:
+            return {
+                "pitch_class_entropy": np.nan,
+                "scale_consistency": np.nan,
+                "groove_consistency": np.nan,
+            }
+
+        return {
+            "pitch_class_entropy": muspy.pitch_class_entropy(music),
+            "scale_consistency": muspy.scale_consistency(music) * 100,
+            "groove_consistency": muspy.groove_consistency(music, 4 * music.resolution)
+            * 100,
+        }
+    except Exception as e:
+        logging.error(f"Error evaluating quality: {e}")
+        return {
+            "pitch_class_entropy": np.nan,
+            "scale_consistency": np.nan,
+            "groove_consistency": np.nan,
+            "error": str(e),
+        }
+
+
+def calculate_degradation(metrics: Dict, baseline: Dict) -> Dict:
+    """Calculate quality degradation from baseline.
+
+    Args:
+        metrics: Current quality metrics
+        baseline: Baseline quality metrics (GROUND_TRUTH_METRICS)
+
+    Returns:
+        Degradation scores
+    """
+    entropy_diff = abs(metrics["pitch_class_entropy"] - baseline["pitch_class_entropy"])
+    scale_diff = max(0, baseline["scale_consistency"] - metrics["scale_consistency"])
+    groove_diff = max(0, baseline["groove_consistency"] - metrics["groove_consistency"])
+
+    total_degradation = entropy_diff + scale_diff + groove_diff
+
+    return {
+        "entropy_diff": float(entropy_diff),
+        "scale_diff": float(scale_diff),
+        "groove_diff": float(groove_diff),
+        "total_degradation": float(total_degradation),
+    }
+
+
 def load_song_tokens(filepath: pathlib.Path, encoding: Dict) -> np.ndarray:
     """Load song tokens from .npy file (not .pt).
 
@@ -373,6 +444,10 @@ def conditioned_generate_and_evaluate(
         # Also measure full sequence for reference
         full_metrics = measure_pitch_from_tokens(full_seq, encoding)
 
+        # Evaluate quality metrics on full sequence
+        quality_metrics = evaluate_quality_metrics(full_seq, encoding)
+        degradation = calculate_degradation(quality_metrics, GROUND_TRUTH_METRICS)
+
         result = {
             "song_name": filepath.stem,
             "category": category,
@@ -392,6 +467,8 @@ def conditioned_generate_and_evaluate(
             "full_n_notes": full_metrics["n_notes"],
             "pitch_change": float(metrics["mean"] - initial_pitch),
             "duration_change": float(metrics["duration_mean"] - conditioning_duration),
+            "quality_metrics": quality_metrics,
+            "degradation": degradation,
         }
 
         results.append(result)
@@ -407,6 +484,12 @@ def conditioned_generate_and_evaluate(
         logging.info(
             f"Change: pitch={metrics['mean'] - initial_pitch:+.1f}, "
             f"duration={metrics['duration_mean'] - conditioning_duration:+.2f} ticks"
+        )
+        logging.info(
+            f"Quality: entropy={quality_metrics.get('pitch_class_entropy', 0):.3f}, "
+            f"scale={quality_metrics.get('scale_consistency', 0):.1f}%, "
+            f"groove={quality_metrics.get('groove_consistency', 0):.1f}%, "
+            f"degradation={degradation.get('total_degradation', 0):.2f}"
         )
 
         # Save if output_dir provided
@@ -548,6 +631,111 @@ def analyze_conditioned_results(results: List[Dict]) -> Dict:
                     }
 
     return analysis
+
+
+def generate_listening_priority_list(
+    results: List[Dict], output_dir: pathlib.Path
+) -> None:
+    """Generate a listening priority list based on quality and steering effectiveness.
+
+    Args:
+        results: List of result dictionaries
+        output_dir: Output directory to save the list
+    """
+    # Filter out results with errors or no notes
+    valid_results = [
+        r
+        for r in results
+        if r.get("generated_n_notes", 0) > 0
+        and "degradation" in r
+        and not np.isnan(r["degradation"].get("total_degradation", np.nan))
+    ]
+
+    # Calculate steering score for each result
+    for r in valid_results:
+        # Check if steering is in correct direction
+        is_duration_concept = "duration" in r["category"]
+
+        if is_duration_concept:
+            # For duration: low_duration + positive α should increase, high_duration + negative α should decrease
+            if "low" in r["category"] and r["alpha"] > 0:
+                steering_score = r["duration_change"]  # Positive change is good
+            elif "high" in r["category"] and r["alpha"] < 0:
+                steering_score = -r["duration_change"]  # Negative change is good
+            else:
+                steering_score = 0
+        else:
+            # For pitch: same logic
+            if "low" in r["category"] and r["alpha"] > 0:
+                steering_score = r["pitch_change"]
+            elif "high" in r["category"] and r["alpha"] < 0:
+                steering_score = -r["pitch_change"]
+            else:
+                steering_score = 0
+
+        r["steering_score"] = abs(steering_score)  # Magnitude of correct steering
+
+        # Combined score: high steering effect + low degradation
+        # Normalize: steering_score (0-50) and degradation (0-100)
+        normalized_steering = min(r["steering_score"] / 50.0, 1.0)
+        normalized_degradation = 1.0 - min(
+            r["degradation"]["total_degradation"] / 100.0, 1.0
+        )
+        r["priority_score"] = (
+            normalized_steering * 0.6 + normalized_degradation * 0.4
+        ) * 100
+
+    # Sort by priority score (highest first)
+    valid_results.sort(key=lambda x: x["priority_score"], reverse=True)
+
+    # Generate listening list
+    listening_list = []
+    listening_list.append("=" * 100)
+    listening_list.append("LISTENING PRIORITY LIST")
+    listening_list.append(
+        "Ranked by: Steering Effectiveness (60%) + Low Degradation (40%)"
+    )
+    listening_list.append("=" * 100)
+    listening_list.append("")
+
+    for i, r in enumerate(valid_results[:20], 1):  # Top 20
+        listening_list.append(f"{i}. [{r['priority_score']:.1f}] {r['song_name']}")
+        listening_list.append(f"   Category: {r['category']}, Alpha: {r['alpha']:+.1f}")
+        listening_list.append(
+            f"   Steering: {r['steering_score']:.2f}, Degradation: {r['degradation']['total_degradation']:.2f}"
+        )
+
+        if "duration" in r["category"]:
+            listening_list.append(
+                f"   Duration: {r['conditioning_duration']:.1f} → {r['generated_mean_duration']:.1f} ticks "
+                f"(change: {r['duration_change']:+.1f})"
+            )
+        else:
+            listening_list.append(
+                f"   Pitch: {r['initial_pitch']:.1f} → {r['generated_mean_pitch']:.1f} "
+                f"(change: {r['pitch_change']:+.1f})"
+            )
+
+        listening_list.append(
+            f"   Quality: entropy={r['quality_metrics']['pitch_class_entropy']:.2f}, "
+            f"scale={r['quality_metrics']['scale_consistency']:.1f}%, "
+            f"groove={r['quality_metrics']['groove_consistency']:.1f}%"
+        )
+
+        # File path
+        alpha_str = f"alpha_{r['alpha']}"
+        file_path = output_dir / r["category"] / alpha_str / f"{r['song_name']}.wav"
+        listening_list.append(f"   File: {file_path.relative_to(output_dir)}")
+        listening_list.append("")
+
+    # Save to file
+    list_file = output_dir / "listening_priority_list.txt"
+    with open(list_file, "w") as f:
+        f.write("\n".join(listening_list))
+
+    # Also print to console
+    print("\n" + "\n".join(listening_list[:200]))  # Print first few
+    print(f"\nFull listening list saved to: {list_file}")
 
 
 def main():
@@ -696,6 +884,10 @@ def main():
         json.dump({"results": all_results, "analysis": analysis}, f, indent=2)
 
     logging.info(f"Saved results to: {results_file}")
+
+    # Generate listening priority list
+    logging.info("\nGenerating listening priority list...")
+    generate_listening_priority_list(all_results, args.output_dir)
 
     # Print summary
     print("\n" + "=" * 80)
