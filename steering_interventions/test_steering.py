@@ -14,6 +14,7 @@ import sys
 
 import numpy as np
 import torch
+from scipy import stats as scipy_stats
 
 sys.path.insert(0, str(pathlib.Path(__file__).parent.parent / "mmt"))
 
@@ -239,7 +240,7 @@ def main():
     parser.add_argument(
         "--alphas",
         type=str,
-        default="-1.0,-0.5,0.0,0.5,1.0",
+        default="-2.5,-2.0,-1.5,-1.0,-0.5,0.0,0.5,1.0,1.5,2.0,2.5",
         help="Comma-separated alpha values to test",
     )
     parser.add_argument(
@@ -367,55 +368,305 @@ def main():
         )
 
     # Verify steering effect
-    if 0.0 in results and -1.0 in results and 1.0 in results:
+    if 0.0 in results and len(results) >= 3:
+        # Find the most negative and most positive alphas
+        sorted_alphas = sorted(results.keys())
+        min_alpha = sorted_alphas[0]
+        max_alpha = sorted_alphas[-1]
+
+        # Collect all metrics across alphas
+        all_velocities = {
+            alpha: results[alpha]["velocity_mean"] for alpha in sorted_alphas
+        }
+        all_pitches = {alpha: results[alpha]["pitch_mean"] for alpha in sorted_alphas}
+        all_durations = {
+            alpha: results[alpha]["duration_mean"] for alpha in sorted_alphas
+        }
+
         baseline_vel = results[0.0]["velocity_mean"]
-        low_vel = results[-1.0]["velocity_mean"]
-        high_vel = results[1.0]["velocity_mean"]
+        low_vel = results[min_alpha]["velocity_mean"]
+        high_vel = results[max_alpha]["velocity_mean"]
 
         baseline_pitch = results[0.0]["pitch_mean"]
-        low_pitch = results[-1.0]["pitch_mean"]
-        high_pitch = results[1.0]["pitch_mean"]
+        low_pitch = results[min_alpha]["pitch_mean"]
+        high_pitch = results[max_alpha]["pitch_mean"]
 
         baseline_duration = results[0.0]["duration_mean"]
-        low_duration = results[-1.0]["duration_mean"]
-        high_duration = results[1.0]["duration_mean"]
+        low_duration = results[min_alpha]["duration_mean"]
+        high_duration = results[max_alpha]["duration_mean"]
+
+        # Calculate statistics across all alphas
+        velocity_values = [v for v in all_velocities.values() if v > 0]
+        pitch_values = [v for v in all_pitches.values() if v > 0]
+        duration_values = [v for v in all_durations.values() if v > 0]
+
+        velocity_range = (
+            max(velocity_values) - min(velocity_values) if velocity_values else 0
+        )
+        pitch_range = max(pitch_values) - min(pitch_values) if pitch_values else 0
+        duration_range = (
+            max(duration_values) - min(duration_values) if duration_values else 0
+        )
+
+        # Calculate correlation and regression statistics
+        alphas_array = np.array(sorted_alphas)
+        pitch_array = np.array([all_pitches[a] for a in sorted_alphas])
+        duration_array = np.array([all_durations[a] for a in sorted_alphas])
+        velocity_array = np.array([all_velocities[a] for a in sorted_alphas])
+
+        # Pearson correlation (linear relationship)
+        pitch_corr, pitch_corr_pvalue = scipy_stats.pearsonr(alphas_array, pitch_array)
+        duration_corr, duration_corr_pvalue = scipy_stats.pearsonr(
+            alphas_array, duration_array
+        )
+        velocity_corr, velocity_corr_pvalue = scipy_stats.pearsonr(
+            alphas_array, velocity_array
+        )
+
+        # Spearman correlation (monotonic relationship)
+        pitch_spearman, pitch_spearman_pvalue = scipy_stats.spearmanr(
+            alphas_array, pitch_array
+        )
+        duration_spearman, duration_spearman_pvalue = scipy_stats.spearmanr(
+            alphas_array, duration_array
+        )
+
+        # R² for linear fit
+        pitch_slope, pitch_intercept, pitch_r_value, _, _ = scipy_stats.linregress(
+            alphas_array, pitch_array
+        )
+        duration_slope, duration_intercept, duration_r_value, _, _ = (
+            scipy_stats.linregress(alphas_array, duration_array)
+        )
+
+        # Effect size (Cohen's d) for extreme alphas vs baseline
+        def cohens_d(mean1, std1, mean2, std2, n1, n2):
+            pooled_std = np.sqrt(
+                ((n1 - 1) * std1**2 + (n2 - 1) * std2**2) / (n1 + n2 - 2)
+            )
+            return (mean1 - mean2) / pooled_std if pooled_std > 0 else 0
+
+        pitch_effect_size_low = cohens_d(
+            results[min_alpha]["pitch_mean"],
+            results[min_alpha]["pitch_std"],
+            baseline_pitch,
+            results[0.0]["pitch_std"],
+            results[min_alpha]["n_notes"],
+            results[0.0]["n_notes"],
+        )
+        pitch_effect_size_high = cohens_d(
+            results[max_alpha]["pitch_mean"],
+            results[max_alpha]["pitch_std"],
+            baseline_pitch,
+            results[0.0]["pitch_std"],
+            results[max_alpha]["n_notes"],
+            results[0.0]["n_notes"],
+        )
+
+        duration_effect_size_low = cohens_d(
+            results[min_alpha]["duration_mean"],
+            results[min_alpha]["duration_std"],
+            baseline_duration,
+            results[0.0]["duration_std"],
+            results[min_alpha]["n_notes"],
+            results[0.0]["n_notes"],
+        )
+        duration_effect_size_high = cohens_d(
+            results[max_alpha]["duration_mean"],
+            results[max_alpha]["duration_std"],
+            baseline_duration,
+            results[0.0]["duration_std"],
+            results[max_alpha]["n_notes"],
+            results[0.0]["n_notes"],
+        )
 
         logging.info("\n" + "=" * 60)
         logging.info("STEERING EFFECT VERIFICATION")
         logging.info("=" * 60)
+
+        logging.info("\nOVERALL STATISTICS:")
+        logging.info(f"  Number of alpha values tested: {len(sorted_alphas)}")
+        logging.info(f"  Alpha range: [{min_alpha}, {max_alpha}]")
+        logging.info(
+            f"  Total notes generated: {sum(results[a]['n_notes'] for a in sorted_alphas)}"
+        )
+
         logging.info("\nVELOCITY:")
-        logging.info(f"  Baseline (alpha=0):    {baseline_vel:.2f}")
-        logging.info(f"  Low (alpha=-1):        {low_vel:.2f}")
-        logging.info(f"  High (alpha=+1):       {high_vel:.2f}")
-        logging.info(f"  Low vs Baseline:       {low_vel - baseline_vel:+.2f}")
-        logging.info(f"  High vs Baseline:      {high_vel - baseline_vel:+.2f}")
+        logging.info(f"  Baseline (alpha=0.0):       {baseline_vel:.2f}")
+        logging.info(f"  Min (alpha={min_alpha:+.1f}):        {low_vel:.2f}")
+        logging.info(f"  Max (alpha={max_alpha:+.1f}):        {high_vel:.2f}")
+        logging.info(f"  Range across all alphas:    {velocity_range:.2f}")
+        logging.info(
+            f"  Min vs Baseline:            {low_vel - baseline_vel:+.2f} ({((low_vel - baseline_vel) / baseline_vel * 100) if baseline_vel > 0 else 0:+.1f}%)"
+        )
+        logging.info(
+            f"  Max vs Baseline:            {high_vel - baseline_vel:+.2f} ({((high_vel - baseline_vel) / baseline_vel * 100) if baseline_vel > 0 else 0:+.1f}%)"
+        )
+        logging.info(
+            f"  Pearson correlation (r):    {velocity_corr:+.4f} (p={velocity_corr_pvalue:.4f})"
+        )
 
         logging.info("\nPITCH:")
-        logging.info(f"  Baseline (alpha=0):    {baseline_pitch:.2f}")
-        logging.info(f"  Low (alpha=-1):        {low_pitch:.2f}")
-        logging.info(f"  High (alpha=+1):       {high_pitch:.2f}")
-        logging.info(f"  Low vs Baseline:       {low_pitch - baseline_pitch:+.2f}")
-        logging.info(f"  High vs Baseline:      {high_pitch - baseline_pitch:+.2f}")
+        logging.info(f"  Baseline (alpha=0.0):       {baseline_pitch:.2f}")
+        logging.info(f"  Min (alpha={min_alpha:+.1f}):        {low_pitch:.2f}")
+        logging.info(f"  Max (alpha={max_alpha:+.1f}):        {high_pitch:.2f}")
+        logging.info(f"  Range across all alphas:    {pitch_range:.2f} semitones")
+        logging.info(
+            f"  Min vs Baseline:            {low_pitch - baseline_pitch:+.2f} ({((low_pitch - baseline_pitch) / baseline_pitch * 100) if baseline_pitch > 0 else 0:+.1f}%)"
+        )
+        logging.info(
+            f"  Max vs Baseline:            {high_pitch - baseline_pitch:+.2f} ({((high_pitch - baseline_pitch) / baseline_pitch * 100) if baseline_pitch > 0 else 0:+.1f}%)"
+        )
+        logging.info(
+            f"  Pearson correlation (r):    {pitch_corr:+.4f} (p={pitch_corr_pvalue:.4f})"
+        )
+        logging.info(
+            f"  Spearman correlation (ρ):   {pitch_spearman:+.4f} (p={pitch_spearman_pvalue:.4f})"
+        )
+        logging.info(f"  Linear fit R²:              {pitch_r_value**2:.4f}")
+        logging.info(
+            f"  Linear slope:               {pitch_slope:+.4f} semitones per α"
+        )
+        logging.info(
+            f"  Effect size (Cohen's d):    min={pitch_effect_size_low:+.3f}, max={pitch_effect_size_high:+.3f}"
+        )
 
         logging.info("\nDURATION (ticks):")
-        logging.info(f"  Baseline (alpha=0):    {baseline_duration:.2f}")
-        logging.info(f"  Low (alpha=-1):        {low_duration:.2f}")
-        logging.info(f"  High (alpha=+1):       {high_duration:.2f}")
+        logging.info(f"  Baseline (alpha=0.0):       {baseline_duration:.2f}")
+        logging.info(f"  Min (alpha={min_alpha:+.1f}):        {low_duration:.2f}")
+        logging.info(f"  Max (alpha={max_alpha:+.1f}):        {high_duration:.2f}")
+        logging.info(f"  Range across all alphas:    {duration_range:.2f} ticks")
         logging.info(
-            f"  Low vs Baseline:       {low_duration - baseline_duration:+.2f}"
+            f"  Min vs Baseline:            {low_duration - baseline_duration:+.2f} ({((low_duration - baseline_duration) / baseline_duration * 100) if baseline_duration > 0 else 0:+.1f}%)"
         )
         logging.info(
-            f"  High vs Baseline:      {high_duration - baseline_duration:+.2f}"
+            f"  Max vs Baseline:            {high_duration - baseline_duration:+.2f} ({((high_duration - baseline_duration) / baseline_duration * 100) if baseline_duration > 0 else 0:+.1f}%)"
+        )
+        logging.info(
+            f"  Pearson correlation (r):    {duration_corr:+.4f} (p={duration_corr_pvalue:.4f})"
+        )
+        logging.info(
+            f"  Spearman correlation (ρ):   {duration_spearman:+.4f} (p={duration_spearman_pvalue:.4f})"
+        )
+        logging.info(f"  Linear fit R²:              {duration_r_value**2:.4f}")
+        logging.info(f"  Linear slope:               {duration_slope:+.4f} ticks per α")
+        logging.info(
+            f"  Effect size (Cohen's d):    min={duration_effect_size_low:+.3f}, max={duration_effect_size_high:+.3f}"
         )
 
-        if high_pitch > baseline_pitch and low_pitch < baseline_pitch:
-            logging.info("\n✓ SUCCESS: Pitch steering works as expected!")
-        elif high_pitch == baseline_pitch == low_pitch:
-            logging.warning("\n✗ WARNING: No steering effect detected (all equal)")
-        else:
-            logging.warning(
-                "\n? WARNING: Unexpected steering pattern (check if inverted)"
+        # Show progression across all alphas
+        logging.info("\nPROGRESSION ACROSS ALPHAS:")
+        for alpha in sorted_alphas:
+            logging.info(
+                f"  α={alpha:+5.1f}: "
+                f"pitch={results[alpha]['pitch_mean']:6.2f}, "
+                f"duration={results[alpha]['duration_mean']:6.2f}"
             )
+
+        # Evaluation
+        logging.info("\nSTEERING EFFECTIVENESS:")
+
+        # Interpretation helper
+        def interpret_correlation(r, pval):
+            if pval > 0.05:
+                return "NOT SIGNIFICANT"
+            elif abs(r) >= 0.9:
+                return "VERY STRONG"
+            elif abs(r) >= 0.7:
+                return "STRONG"
+            elif abs(r) >= 0.5:
+                return "MODERATE"
+            elif abs(r) >= 0.3:
+                return "WEAK"
+            else:
+                return "VERY WEAK"
+
+        def interpret_effect_size(d):
+            abs_d = abs(d)
+            if abs_d >= 0.8:
+                return "LARGE"
+            elif abs_d >= 0.5:
+                return "MEDIUM"
+            elif abs_d >= 0.2:
+                return "SMALL"
+            else:
+                return "NEGLIGIBLE"
+
+        # Check pitch steering
+        pitch_correct = high_pitch > baseline_pitch and low_pitch < baseline_pitch
+        pitch_monotonic = all(
+            all_pitches[sorted_alphas[i]] <= all_pitches[sorted_alphas[i + 1]]
+            for i in range(len(sorted_alphas) - 1)
+        )
+        pitch_strength = interpret_correlation(pitch_corr, pitch_corr_pvalue)
+        pitch_effect = interpret_effect_size(
+            max(abs(pitch_effect_size_low), abs(pitch_effect_size_high))
+        )
+
+        logging.info(f"\n  Pitch Steering:")
+        logging.info(
+            f"    Direction: {'✓ Correct' if pitch_correct else '✗ Incorrect/None'}"
+        )
+        logging.info(
+            f"    Monotonicity: {'✓ Monotonic' if pitch_monotonic else '✗ Non-monotonic'}"
+        )
+        logging.info(
+            f"    Correlation: {pitch_strength} (r={pitch_corr:+.3f}, p={pitch_corr_pvalue:.4f})"
+        )
+        logging.info(
+            f"    Linearity: R²={pitch_r_value**2:.3f} ({'Good fit' if pitch_r_value**2 > 0.8 else 'Moderate fit' if pitch_r_value**2 > 0.5 else 'Poor fit'})"
+        )
+        logging.info(
+            f"    Effect Size: {pitch_effect} (d={max(abs(pitch_effect_size_low), abs(pitch_effect_size_high)):.3f})"
+        )
+
+        if pitch_correct and pitch_monotonic and abs(pitch_corr) > 0.7:
+            logging.info(f"    ✓✓✓ EXCELLENT: Strong monotonic steering effect")
+        elif pitch_correct and abs(pitch_corr) > 0.5:
+            logging.info(f"    ✓✓ GOOD: Clear steering effect with some variability")
+        elif pitch_correct:
+            logging.info(f"    ✓ WEAK: Correct direction but inconsistent")
+        else:
+            logging.warning(f"    ✗ FAILED: No effective steering detected")
+
+        # Check duration steering
+        duration_correct = (
+            high_duration > baseline_duration and low_duration < baseline_duration
+        )
+        duration_monotonic = all(
+            all_durations[sorted_alphas[i]] <= all_durations[sorted_alphas[i + 1]]
+            for i in range(len(sorted_alphas) - 1)
+        )
+        duration_strength = interpret_correlation(duration_corr, duration_corr_pvalue)
+        duration_effect = interpret_effect_size(
+            max(abs(duration_effect_size_low), abs(duration_effect_size_high))
+        )
+
+        logging.info(f"\n  Duration Steering:")
+        logging.info(
+            f"    Direction: {'✓ Correct' if duration_correct else '✗ Incorrect/None'}"
+        )
+        logging.info(
+            f"    Monotonicity: {'✓ Monotonic' if duration_monotonic else '✗ Non-monotonic'}"
+        )
+        logging.info(
+            f"    Correlation: {duration_strength} (r={duration_corr:+.3f}, p={duration_corr_pvalue:.4f})"
+        )
+        logging.info(
+            f"    Linearity: R²={duration_r_value**2:.3f} ({'Good fit' if duration_r_value**2 > 0.8 else 'Moderate fit' if duration_r_value**2 > 0.5 else 'Poor fit'})"
+        )
+        logging.info(
+            f"    Effect Size: {duration_effect} (d={max(abs(duration_effect_size_low), abs(duration_effect_size_high)):.3f})"
+        )
+
+        if duration_correct and duration_monotonic and abs(duration_corr) > 0.7:
+            logging.info(f"    ✓✓✓ EXCELLENT: Strong monotonic steering effect")
+        elif duration_correct and abs(duration_corr) > 0.5:
+            logging.info(f"    ✓✓ GOOD: Clear steering effect with some variability")
+        elif duration_correct:
+            logging.info(f"    ✓ WEAK: Correct direction but inconsistent")
+        else:
+            logging.warning(f"    ✗ FAILED: No effective steering detected")
     else:
         logging.info("\nNot all alphas tested, skipping verification")
 
