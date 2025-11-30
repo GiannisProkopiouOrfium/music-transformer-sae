@@ -86,6 +86,36 @@ def calculate_initial_pitch(
     return float(np.mean(pitches))
 
 
+def calculate_initial_duration(
+    tokens: np.ndarray, encoding: Dict, n_beats: int = 4
+) -> Optional[float]:
+    """Calculate average duration in first N beats.
+
+    Args:
+        tokens: Token array (seq_len, 6)
+        encoding: Encoding dictionary
+        n_beats: Number of beats to analyze
+
+    Returns:
+        Average duration in first N beats (in ticks), or None if no notes
+    """
+    note_type = encoding["type_code_map"]["note"]
+
+    # Find notes in first n_beats
+    durations = []
+    for i, token in enumerate(tokens):
+        if token[0] == note_type:
+            beat = token[1]  # Beat is in dimension 1
+            if beat < n_beats:
+                duration = token[4]  # Duration is in dimension 4
+                durations.append(duration)
+
+    if not durations:
+        return None
+
+    return float(np.mean(durations))
+
+
 def find_extreme_pitch_songs(
     notes_dir: pathlib.Path,
     encoding: Dict,
@@ -138,6 +168,58 @@ def find_extreme_pitch_songs(
     return low_pitch_songs, high_pitch_songs
 
 
+def find_extreme_duration_songs(
+    notes_dir: pathlib.Path,
+    encoding: Dict,
+    n_songs: int = 10,
+    conditioning_beats: int = 4,
+) -> Tuple[List[Tuple[pathlib.Path, float]], List[Tuple[pathlib.Path, float]]]:
+    """Find songs with extreme initial duration values.
+
+    Args:
+        notes_dir: Directory containing .npy files in subfolders
+        encoding: Encoding dictionary
+        n_songs: Number of songs to find per category
+        conditioning_beats: Number of beats to analyze
+
+    Returns:
+        (low_duration_songs, high_duration_songs) - lists of (filepath, avg_duration)
+    """
+    logging.info(f"Scanning {notes_dir} for songs with extreme initial duration...")
+
+    song_durations = []
+
+    # Scan subfolders for .npy files
+    for subfolder in notes_dir.iterdir():
+        if not subfolder.is_dir():
+            continue
+
+        for filepath in subfolder.glob("*.npy"):
+            try:
+                tokens = load_song_tokens(filepath, encoding)
+                avg_duration = calculate_initial_duration(
+                    tokens, encoding, conditioning_beats
+                )
+
+                if avg_duration is not None:
+                    song_durations.append((filepath, avg_duration))
+            except Exception as e:
+                logging.debug(f"Error processing {filepath.name}: {e}")
+
+    # Sort by duration
+    song_durations.sort(key=lambda x: x[1])
+
+    # Get extreme songs
+    low_duration_songs = song_durations[:n_songs]
+    high_duration_songs = song_durations[-n_songs:]
+
+    logging.info(f"Found {len(song_durations)} valid songs")
+    logging.info(f"Low duration songs: {[f'{d:.1f}' for _, d in low_duration_songs]}")
+    logging.info(f"High duration songs: {[f'{d:.1f}' for _, d in high_duration_songs]}")
+
+    return low_duration_songs, high_duration_songs
+
+
 def extract_conditioning_prefix(tokens: np.ndarray, n_beats: int = 4) -> torch.Tensor:
     """Extract first N beats as conditioning.
 
@@ -169,17 +251,27 @@ def extract_conditioning_prefix(tokens: np.ndarray, n_beats: int = 4) -> torch.T
 
 
 def measure_pitch_from_tokens(tokens: np.ndarray, encoding: Dict) -> Dict:
-    """Measure pitch statistics from generated tokens."""
+    """Measure pitch and duration statistics from generated tokens."""
     try:
         music = representation.decode(tokens, encoding)
 
         pitches = []
+        durations = []
         for track in music.tracks:
             for note in track.notes:
                 pitches.append(note.pitch)
+                durations.append(note.duration)
 
         if not pitches:
-            return {"mean": 0.0, "std": 0.0, "min": 0, "max": 0, "n_notes": 0}
+            return {
+                "mean": 0.0,
+                "std": 0.0,
+                "min": 0,
+                "max": 0,
+                "n_notes": 0,
+                "duration_mean": 0.0,
+                "duration_std": 0.0,
+            }
 
         return {
             "mean": float(np.mean(pitches)),
@@ -187,6 +279,8 @@ def measure_pitch_from_tokens(tokens: np.ndarray, encoding: Dict) -> Dict:
             "min": int(np.min(pitches)),
             "max": int(np.max(pitches)),
             "n_notes": len(pitches),
+            "duration_mean": float(np.mean(durations)),
+            "duration_std": float(np.std(durations)),
         }
     except Exception as e:
         logging.error(f"Error decoding: {e}")
@@ -196,6 +290,8 @@ def measure_pitch_from_tokens(tokens: np.ndarray, encoding: Dict) -> Dict:
             "min": 0,
             "max": 0,
             "n_notes": 0,
+            "duration_mean": 0.0,
+            "duration_std": 0.0,
             "error": str(e),
         }
 
@@ -281,15 +377,20 @@ def conditioned_generate_and_evaluate(
             "conditioning_tokens": conditioning.shape[1],
             "generated_mean_pitch": metrics["mean"],
             "generated_std_pitch": metrics["std"],
+            "generated_mean_duration": metrics["duration_mean"],
+            "generated_std_duration": metrics["duration_std"],
             "generated_n_notes": metrics["n_notes"],
             "full_mean_pitch": full_metrics["mean"],
+            "full_mean_duration": full_metrics["duration_mean"],
             "full_n_notes": full_metrics["n_notes"],
         }
 
         results.append(result)
 
         logging.info(
-            f"Generated {metrics['n_notes']} notes, mean pitch: {metrics['mean']:.1f}"
+            f"Generated {metrics['n_notes']} notes, "
+            f"mean pitch: {metrics['mean']:.1f}, "
+            f"mean duration: {metrics['duration_mean']:.2f} ticks"
         )
 
         # Save if output_dir provided
@@ -478,10 +579,19 @@ def main():
 
     logging.info("Model loaded")
 
-    # Find extreme pitch songs
-    low_pitch_songs, high_pitch_songs = find_extreme_pitch_songs(
-        config.NOTES_DIR, encoding, args.n_songs, args.conditioning_beats
-    )
+    # Find extreme songs based on concept
+    if args.concept == "average_duration":
+        low_songs, high_songs = find_extreme_duration_songs(
+            config.NOTES_DIR, encoding, args.n_songs, args.conditioning_beats
+        )
+        low_category = "low_duration"
+        high_category = "high_duration"
+    else:  # default to pitch
+        low_songs, high_songs = find_extreme_pitch_songs(
+            config.NOTES_DIR, encoding, args.n_songs, args.conditioning_beats
+        )
+        low_category = "low_pitch"
+        high_category = "high_pitch"
 
     # Parse alphas
     alphas = [float(a.strip()) for a in args.alphas.split(",")]
@@ -494,15 +604,15 @@ def main():
         logging.info(f"ALPHA = {alpha}")
         logging.info(f"{'='*80}")
 
-        # Low pitch songs
-        logging.info("\nProcessing LOW PITCH songs...")
+        # Low category songs
+        logging.info(f"\nProcessing {low_category.upper().replace('_', ' ')} songs...")
         low_results = conditioned_generate_and_evaluate(
             model,
             steering_vectors,
             encoding,
             device,
-            low_pitch_songs,
-            "low_pitch",
+            low_songs,
+            low_category,
             alpha,
             args.conditioning_beats,
             args.continuation_len,
@@ -510,15 +620,15 @@ def main():
         )
         all_results.extend(low_results)
 
-        # High pitch songs
-        logging.info("\nProcessing HIGH PITCH songs...")
+        # High category songs
+        logging.info(f"\nProcessing {high_category.upper().replace('_', ' ')} songs...")
         high_results = conditioned_generate_and_evaluate(
             model,
             steering_vectors,
             encoding,
             device,
-            high_pitch_songs,
-            "high_pitch",
+            high_songs,
+            high_category,
             alpha,
             args.conditioning_beats,
             args.continuation_len,

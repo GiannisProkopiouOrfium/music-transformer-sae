@@ -72,6 +72,30 @@ def extract_pitches_from_tokens(tokens: np.ndarray, encoding: dict) -> list:
         return []
 
 
+def extract_durations_from_tokens(tokens: np.ndarray, encoding: dict) -> list:
+    """Extract duration values from generated tokens.
+
+    Args:
+        tokens: Token array (seq_len, 6)
+        encoding: Encoding dictionary
+
+    Returns:
+        List of duration values (in ticks)
+    """
+    try:
+        music = representation.decode(tokens, encoding)
+
+        durations = []
+        for track in music.tracks:
+            for note in track.notes:
+                durations.append(note.duration)
+
+        return durations
+    except Exception as e:
+        logging.error(f"Error extracting durations: {e}")
+        return []
+
+
 def test_steering(
     model,
     steering_vectors,
@@ -112,6 +136,7 @@ def test_steering(
 
         alpha_velocities = []
         alpha_pitches = []
+        alpha_durations = []
 
         for i in range(n_samples):
             # Create start tokens
@@ -134,19 +159,25 @@ def test_steering(
             # Combine start and generated
             full_seq = torch.cat((start_tokens, generated), 1).cpu().numpy()[0]
 
-            # Extract velocities and pitches
+            # Extract velocities, pitches, and durations
             velocities = extract_velocities_from_tokens(full_seq, encoding)
             pitches = extract_pitches_from_tokens(full_seq, encoding)
+            durations = extract_durations_from_tokens(full_seq, encoding)
 
             if velocities:
                 alpha_velocities.extend(velocities)
             if pitches:
                 alpha_pitches.extend(pitches)
+            if durations:
+                alpha_durations.extend(durations)
+
+            if pitches:
                 logging.info(
                     f"  Sample {i}: {len(pitches)} notes, "
                     f"mean velocity={np.mean(velocities):.1f}, "
                     f"mean pitch={np.mean(pitches):.1f}, "
-                    f"pitch_range=[{np.min(pitches)}, {np.max(pitches)}]"
+                    f"pitch_range=[{np.min(pitches)}, {np.max(pitches)}], "
+                    f"mean duration={np.mean(durations):.2f} ticks"
                 )
             else:
                 logging.warning(
@@ -157,24 +188,34 @@ def test_steering(
             results[alpha] = {
                 "velocities": alpha_velocities,
                 "pitches": alpha_pitches,
+                "durations": alpha_durations,
                 "velocity_mean": np.mean(alpha_velocities) if alpha_velocities else 0.0,
                 "velocity_std": np.std(alpha_velocities) if alpha_velocities else 0.0,
                 "pitch_mean": np.mean(alpha_pitches),
                 "pitch_std": np.std(alpha_pitches),
                 "pitch_min": np.min(alpha_pitches),
                 "pitch_max": np.max(alpha_pitches),
+                "duration_mean": np.mean(alpha_durations) if alpha_durations else 0.0,
+                "duration_std": np.std(alpha_durations) if alpha_durations else 0.0,
+                "duration_min": np.min(alpha_durations) if alpha_durations else 0,
+                "duration_max": np.max(alpha_durations) if alpha_durations else 0,
                 "n_notes": len(alpha_pitches),
             }
         else:
             results[alpha] = {
                 "velocities": [],
                 "pitches": [],
+                "durations": [],
                 "velocity_mean": 0.0,
                 "velocity_std": 0.0,
                 "pitch_mean": 0.0,
                 "pitch_std": 0.0,
                 "pitch_min": 0,
                 "pitch_max": 0,
+                "duration_mean": 0.0,
+                "duration_std": 0.0,
+                "duration_min": 0,
+                "duration_max": 0,
                 "n_notes": 0,
             }
 
@@ -320,6 +361,8 @@ def main():
             f"pitch_mean={stats['pitch_mean']:6.2f}, "
             f"pitch_std={stats['pitch_std']:5.2f}, "
             f"pitch_range=[{stats['pitch_min']:3d}, {stats['pitch_max']:3d}], "
+            f"duration_mean={stats['duration_mean']:6.2f} ticks, "
+            f"duration_std={stats['duration_std']:5.2f}, "
             f"n={stats['n_notes']:4d} notes"
         )
 
@@ -328,10 +371,14 @@ def main():
         baseline_vel = results[0.0]["velocity_mean"]
         low_vel = results[-1.0]["velocity_mean"]
         high_vel = results[1.0]["velocity_mean"]
-        
+
         baseline_pitch = results[0.0]["pitch_mean"]
         low_pitch = results[-1.0]["pitch_mean"]
         high_pitch = results[1.0]["pitch_mean"]
+
+        baseline_duration = results[0.0]["duration_mean"]
+        low_duration = results[-1.0]["duration_mean"]
+        high_duration = results[1.0]["duration_mean"]
 
         logging.info("\n" + "=" * 60)
         logging.info("STEERING EFFECT VERIFICATION")
@@ -342,13 +389,24 @@ def main():
         logging.info(f"  High (alpha=+1):       {high_vel:.2f}")
         logging.info(f"  Low vs Baseline:       {low_vel - baseline_vel:+.2f}")
         logging.info(f"  High vs Baseline:      {high_vel - baseline_vel:+.2f}")
-        
+
         logging.info("\nPITCH:")
         logging.info(f"  Baseline (alpha=0):    {baseline_pitch:.2f}")
         logging.info(f"  Low (alpha=-1):        {low_pitch:.2f}")
         logging.info(f"  High (alpha=+1):       {high_pitch:.2f}")
         logging.info(f"  Low vs Baseline:       {low_pitch - baseline_pitch:+.2f}")
         logging.info(f"  High vs Baseline:      {high_pitch - baseline_pitch:+.2f}")
+
+        logging.info("\nDURATION (ticks):")
+        logging.info(f"  Baseline (alpha=0):    {baseline_duration:.2f}")
+        logging.info(f"  Low (alpha=-1):        {low_duration:.2f}")
+        logging.info(f"  High (alpha=+1):       {high_duration:.2f}")
+        logging.info(
+            f"  Low vs Baseline:       {low_duration - baseline_duration:+.2f}"
+        )
+        logging.info(
+            f"  High vs Baseline:      {high_duration - baseline_duration:+.2f}"
+        )
 
         if high_pitch > baseline_pitch and low_pitch < baseline_pitch:
             logging.info("\n✓ SUCCESS: Pitch steering works as expected!")
