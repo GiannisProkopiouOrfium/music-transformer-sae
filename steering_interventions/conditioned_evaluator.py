@@ -345,6 +345,11 @@ def conditioned_generate_and_evaluate(
             f"Conditioning: {conditioning.shape[1]} tokens ({conditioning_beats} beats)"
         )
 
+        # Calculate conditioning duration for comparison
+        conditioning_duration = (
+            calculate_initial_duration(tokens, encoding, conditioning_beats) or 0.0
+        )
+
         # Generate continuation
         generated = generator.generate(
             conditioning,
@@ -372,9 +377,11 @@ def conditioned_generate_and_evaluate(
             "song_name": filepath.stem,
             "category": category,
             "initial_pitch": float(initial_pitch),
+            "initial_duration": float(conditioning_duration),
             "alpha": alpha,
             "conditioning_beats": conditioning_beats,
             "conditioning_tokens": conditioning.shape[1],
+            "conditioning_duration": float(conditioning_duration),
             "generated_mean_pitch": metrics["mean"],
             "generated_std_pitch": metrics["std"],
             "generated_mean_duration": metrics["duration_mean"],
@@ -383,14 +390,23 @@ def conditioned_generate_and_evaluate(
             "full_mean_pitch": full_metrics["mean"],
             "full_mean_duration": full_metrics["duration_mean"],
             "full_n_notes": full_metrics["n_notes"],
+            "pitch_change": float(metrics["mean"] - initial_pitch),
+            "duration_change": float(metrics["duration_mean"] - conditioning_duration),
         }
 
         results.append(result)
 
         logging.info(
-            f"Generated {metrics['n_notes']} notes, "
-            f"mean pitch: {metrics['mean']:.1f}, "
-            f"mean duration: {metrics['duration_mean']:.2f} ticks"
+            f"Conditioning: pitch={initial_pitch:.1f}, duration={conditioning_duration:.2f} ticks"
+        )
+        logging.info(
+            f"Generated: {metrics['n_notes']} notes, "
+            f"mean pitch={metrics['mean']:.1f}, "
+            f"mean duration={metrics['duration_mean']:.2f} ticks"
+        )
+        logging.info(
+            f"Change: pitch={metrics['mean'] - initial_pitch:+.1f}, "
+            f"duration={metrics['duration_mean'] - conditioning_duration:+.2f} ticks"
         )
 
         # Save if output_dir provided
@@ -444,15 +460,33 @@ def analyze_conditioned_results(results: List[Dict]) -> Dict:
                 "mean_initial_pitch": float(
                     np.mean([r["initial_pitch"] for r in valid])
                 ),
+                "mean_initial_duration": float(
+                    np.mean([r.get("initial_duration", 0) for r in valid])
+                ),
                 "mean_generated_pitch": float(
                     np.mean([r["generated_mean_pitch"] for r in valid])
+                ),
+                "mean_generated_duration": float(
+                    np.mean([r["generated_mean_duration"] for r in valid])
                 ),
                 "std_generated_pitch": float(
                     np.std([r["generated_mean_pitch"] for r in valid])
                 ),
+                "std_generated_duration": float(
+                    np.std([r["generated_mean_duration"] for r in valid])
+                ),
                 "pitch_change": float(
                     np.mean(
                         [r["generated_mean_pitch"] - r["initial_pitch"] for r in valid]
+                    )
+                ),
+                "duration_change": float(
+                    np.mean(
+                        [
+                            r["generated_mean_duration"]
+                            - r.get("initial_duration", r["generated_mean_duration"])
+                            for r in valid
+                        ]
                     )
                 ),
             }
@@ -471,30 +505,46 @@ def analyze_conditioned_results(results: List[Dict]) -> Dict:
                     alpha = float(key.split("_")[-1])
 
                     comparison_key = f"{category}_alpha_{alpha}_vs_baseline"
+
+                    # Determine success criteria based on category type
+                    is_pitch_category = "pitch" in category
+                    is_duration_category = "duration" in category
+
+                    if is_pitch_category:
+                        success = (
+                            alpha > 0
+                            and steered["mean_generated_pitch"]
+                            > baseline["mean_generated_pitch"]
+                        ) or (
+                            alpha < 0
+                            and steered["mean_generated_pitch"]
+                            < baseline["mean_generated_pitch"]
+                        )
+                    elif is_duration_category:
+                        success = (
+                            alpha > 0
+                            and steered["mean_generated_duration"]
+                            > baseline["mean_generated_duration"]
+                        ) or (
+                            alpha < 0
+                            and steered["mean_generated_duration"]
+                            < baseline["mean_generated_duration"]
+                        )
+                    else:
+                        success = False
+
                     analysis["comparisons"][comparison_key] = {
                         "category": category,
                         "alpha": alpha,
                         "baseline_mean_pitch": baseline["mean_generated_pitch"],
+                        "baseline_mean_duration": baseline["mean_generated_duration"],
                         "steered_mean_pitch": steered["mean_generated_pitch"],
+                        "steered_mean_duration": steered["mean_generated_duration"],
                         "pitch_difference": steered["mean_generated_pitch"]
                         - baseline["mean_generated_pitch"],
-                        "success": (
-                            # For low_pitch songs with positive alpha, we want higher pitch
-                            (
-                                # category == "low_pitch" and
-                                alpha > 0
-                                and steered["mean_generated_pitch"]
-                                > baseline["mean_generated_pitch"]
-                            )
-                            or
-                            # For high_pitch songs with negative alpha, we want lower pitch
-                            (
-                                # category == "high_pitch" and
-                                alpha < 0
-                                and steered["mean_generated_pitch"]
-                                < baseline["mean_generated_pitch"]
-                            )
-                        ),
+                        "duration_difference": steered["mean_generated_duration"]
+                        - baseline["mean_generated_duration"],
+                        "success": success,
                     }
 
     return analysis
@@ -653,10 +703,20 @@ def main():
     print("=" * 80)
 
     for comp_key, comp in analysis["comparisons"].items():
-        print(f"\n{comp['category'].upper()} songs, alpha={comp['alpha']}")
-        print(f"  Baseline mean pitch: {comp['baseline_mean_pitch']:.1f}")
-        print(f"  Steered mean pitch:  {comp['steered_mean_pitch']:.1f}")
-        print(f"  Difference: {comp['pitch_difference']:+.1f}")
+        print(
+            f"\n{comp['category'].upper().replace('_', ' ')} songs, alpha={comp['alpha']}"
+        )
+        print(f"  Baseline:")
+        print(f"    Pitch:    {comp['baseline_mean_pitch']:.1f}")
+        print(f"    Duration: {comp['baseline_mean_duration']:.2f} ticks")
+        print(f"  Steered:")
+        print(f"    Pitch:    {comp['steered_mean_pitch']:.1f}")
+        print(f"    Duration: {comp['steered_mean_duration']:.2f} ticks")
+        print(f"  Change:")
+        print(f"    Pitch:    {comp['pitch_difference']:+.1f}")
+        print(
+            f"    Duration: {comp['duration_difference']:+.2f} ticks ({(comp['duration_difference']/comp['baseline_mean_duration']*100):+.1f}%)"
+        )
         print(f"  Success: {'✓' if comp['success'] else '✗'}")
 
     print("=" * 80)
