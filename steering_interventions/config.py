@@ -47,6 +47,12 @@ CONCEPTS = {
         "min_notes": 10,  # Minimum notes required for reliable detection
         "json_field": "pitch",  # Uses pitch for key detection
     },
+    "average_duration": {
+        "metric_name": "average_duration",
+        "high_threshold": 48,  # Long notes (4 beats) - PLACEHOLDER, run find_thresholds.py
+        "low_threshold": 12,  # Short notes (1 beat) - PLACEHOLDER, run find_thresholds.py
+        "json_field": "duration",
+    },
 }
 
 # Segmentation parameters

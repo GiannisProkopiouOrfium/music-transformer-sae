@@ -82,6 +82,21 @@ def calculate_note_density_metric(
     return len(notes) / n_beats
 
 
+def calculate_average_duration_metric(notes: List[Dict]) -> float:
+    """Calculate average duration from a list of notes.
+
+    Args:
+        notes: List of note dictionaries with 'duration' field
+
+    Returns:
+        Average duration in ticks
+    """
+    if not notes:
+        return 0.0
+    durations = [note.get("duration", 0) for note in notes]
+    return np.mean(durations)
+
+
 def get_segment_beats(notes: List[Dict], resolution: int = 12) -> int:
     """Calculate the number of beats covered by notes.
 
@@ -234,6 +249,8 @@ def calculate_metric(segment: Dict, concept: str) -> float:
         return calculate_average_pitch_metric(notes)
     elif concept == "note_density":
         return calculate_note_density_metric(notes, segment["n_beats"])
+    elif concept == "average_duration":
+        return calculate_average_duration_metric(notes)
     else:
         raise ValueError(f"Unknown concept: {concept}")
 
