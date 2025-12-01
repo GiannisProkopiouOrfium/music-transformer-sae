@@ -15,6 +15,7 @@ import sys
 from typing import Dict, List, Optional, Tuple
 import numpy as np
 import torch
+import scipy.stats as scipy_stats
 
 # Add parent directory to path
 sys.path.insert(0, str(pathlib.Path(__file__).parent.parent / "mmt"))
@@ -633,6 +634,403 @@ def analyze_conditioned_results(results: List[Dict]) -> Dict:
     return analysis
 
 
+def calculate_statistical_analysis(results: List[Dict], concept: str) -> Dict:
+    """Calculate comprehensive statistical analysis of steering effectiveness.
+
+    Args:
+        results: List of result dictionaries
+        concept: The concept being evaluated ("average_pitch" or "average_duration")
+
+    Returns:
+        Dictionary with statistical analysis
+    """
+    is_duration_concept = "duration" in concept
+
+    # Group by category and song
+    per_song_stats = {}
+    aggregate_stats = {"low": {}, "high": {}}
+
+    # Collect data per song
+    songs_by_category = {"low": set(), "high": set()}
+
+    for r in results:
+        if r.get("generated_n_notes", 0) == 0:
+            continue
+
+        song_name = r["song_name"]
+        category = "low" if "low" in r["category"] else "high"
+        alpha = r["alpha"]
+
+        songs_by_category[category].add(song_name)
+
+        # Initialize per-song dict
+        if song_name not in per_song_stats:
+            per_song_stats[song_name] = {
+                "category": category,
+                "alphas": [],
+                "values": [],
+                "initial": r.get(
+                    "initial_duration" if is_duration_concept else "initial_pitch", 0
+                ),
+            }
+
+        per_song_stats[song_name]["alphas"].append(alpha)
+        if is_duration_concept:
+            per_song_stats[song_name]["values"].append(r["generated_mean_duration"])
+        else:
+            per_song_stats[song_name]["values"].append(r["generated_mean_pitch"])
+
+    # Calculate per-song correlations
+    song_analyses = {}
+    for song_name, data in per_song_stats.items():
+        if len(data["alphas"]) < 3:  # Need at least 3 points
+            continue
+
+        alphas = np.array(data["alphas"])
+        values = np.array(data["values"])
+
+        # Sort by alpha
+        sort_idx = np.argsort(alphas)
+        alphas = alphas[sort_idx]
+        values = values[sort_idx]
+
+        # Pearson correlation
+        pearson_r, pearson_p = scipy_stats.pearsonr(alphas, values)
+
+        # Spearman correlation
+        spearman_r, spearman_p = scipy_stats.spearmanr(alphas, values)
+
+        # Linear regression
+        slope, intercept, r_value, p_value, std_err = scipy_stats.linregress(
+            alphas, values
+        )
+
+        # Check monotonicity
+        monotonic = all(values[i] <= values[i + 1] for i in range(len(values) - 1))
+
+        # Find baseline (alpha=0) and extreme values
+        baseline_idx = np.where(alphas == 0.0)[0]
+        baseline_value = (
+            values[baseline_idx[0]] if len(baseline_idx) > 0 else data["initial"]
+        )
+
+        min_alpha = alphas[0]
+        max_alpha = alphas[-1]
+        min_value = values[0]
+        max_value = values[-1]
+
+        song_analyses[song_name] = {
+            "category": data["category"],
+            "initial_value": data["initial"],
+            "n_alphas": len(alphas),
+            "alpha_range": [float(min_alpha), float(max_alpha)],
+            "value_range": [float(min_value), float(max_value)],
+            "baseline_value": float(baseline_value),
+            "pearson_r": float(pearson_r),
+            "pearson_p": float(pearson_p),
+            "spearman_r": float(spearman_r),
+            "spearman_p": float(spearman_p),
+            "linear_slope": float(slope),
+            "linear_r2": float(r_value**2),
+            "monotonic": bool(monotonic),
+            "min_change": float(min_value - baseline_value),
+            "max_change": float(max_value - baseline_value),
+        }
+
+    # Calculate aggregate statistics per category
+    for category in ["low", "high"]:
+        category_results = [
+            r
+            for r in results
+            if (
+                "low" in r["category"] if category == "low" else "high" in r["category"]
+            )
+            and r.get("generated_n_notes", 0) > 0
+        ]
+
+        if not category_results:
+            continue
+
+        # Collect all alpha-value pairs
+        alphas_all = []
+        values_all = []
+
+        for r in category_results:
+            alphas_all.append(r["alpha"])
+            if is_duration_concept:
+                values_all.append(r["generated_mean_duration"])
+            else:
+                values_all.append(r["generated_mean_pitch"])
+
+        alphas_all = np.array(alphas_all)
+        values_all = np.array(values_all)
+
+        # Overall correlation
+        pearson_r, pearson_p = scipy_stats.pearsonr(alphas_all, values_all)
+        spearman_r, spearman_p = scipy_stats.spearmanr(alphas_all, values_all)
+
+        # Linear regression
+        slope, intercept, r_value, p_value, std_err = scipy_stats.linregress(
+            alphas_all, values_all
+        )
+
+        # Group by alpha for effect size calculation
+        alpha_groups = {}
+        for r in category_results:
+            alpha = r["alpha"]
+            if alpha not in alpha_groups:
+                alpha_groups[alpha] = []
+            if is_duration_concept:
+                alpha_groups[alpha].append(r["generated_mean_duration"])
+            else:
+                alpha_groups[alpha].append(r["generated_mean_pitch"])
+
+        # Calculate Cohen's d for extreme alphas vs baseline
+        baseline_values = alpha_groups.get(0.0, [])
+        if baseline_values:
+            baseline_mean = np.mean(baseline_values)
+            baseline_std = (
+                np.std(baseline_values, ddof=1) if len(baseline_values) > 1 else 0
+            )
+            baseline_n = len(baseline_values)
+
+            # Find min and max non-zero alphas
+            non_zero_alphas = sorted([a for a in alpha_groups.keys() if a != 0.0])
+
+            effect_sizes = {}
+            for alpha in non_zero_alphas:
+                alpha_values = alpha_groups[alpha]
+                alpha_mean = np.mean(alpha_values)
+                alpha_std = np.std(alpha_values, ddof=1) if len(alpha_values) > 1 else 0
+                alpha_n = len(alpha_values)
+
+                # Cohen's d
+                pooled_std = np.sqrt(
+                    ((baseline_n - 1) * baseline_std**2 + (alpha_n - 1) * alpha_std**2)
+                    / (baseline_n + alpha_n - 2)
+                )
+                cohens_d = (
+                    (alpha_mean - baseline_mean) / pooled_std if pooled_std > 0 else 0
+                )
+
+                effect_sizes[alpha] = {
+                    "cohens_d": float(cohens_d),
+                    "mean": float(alpha_mean),
+                    "std": float(alpha_std),
+                    "n": int(alpha_n),
+                    "change_from_baseline": float(alpha_mean - baseline_mean),
+                }
+        else:
+            effect_sizes = {}
+
+        aggregate_stats[category] = {
+            "n_samples": len(category_results),
+            "n_songs": len(
+                [s for s, d in per_song_stats.items() if d["category"] == category]
+            ),
+            "pearson_r": float(pearson_r),
+            "pearson_p": float(pearson_p),
+            "spearman_r": float(spearman_r),
+            "spearman_p": float(spearman_p),
+            "linear_slope": float(slope),
+            "linear_r2": float(r_value**2),
+            "effect_sizes": effect_sizes,
+        }
+
+    return {
+        "per_song": song_analyses,
+        "aggregate": aggregate_stats,
+    }
+
+
+def print_statistical_summary(stats: Dict, concept: str) -> None:
+    """Print a formatted summary of statistical analysis.
+
+    Args:
+        stats: Statistical analysis dictionary
+        concept: The concept being evaluated
+    """
+    is_duration = "duration" in concept
+    metric_name = "Duration (ticks)" if is_duration else "Pitch"
+
+    print("\n" + "=" * 100)
+    print("STATISTICAL ANALYSIS SUMMARY")
+    print("=" * 100)
+
+    # Helper functions
+    def interpret_correlation(r, pval):
+        if pval > 0.05:
+            return "NOT SIGNIFICANT"
+        elif abs(r) >= 0.9:
+            return "VERY STRONG"
+        elif abs(r) >= 0.7:
+            return "STRONG"
+        elif abs(r) >= 0.5:
+            return "MODERATE"
+        elif abs(r) >= 0.3:
+            return "WEAK"
+        else:
+            return "VERY WEAK"
+
+    def interpret_effect_size(d):
+        abs_d = abs(d)
+        if abs_d >= 0.8:
+            return "LARGE"
+        elif abs_d >= 0.5:
+            return "MEDIUM"
+        elif abs_d >= 0.2:
+            return "SMALL"
+        else:
+            return "NEGLIGIBLE"
+
+    # Aggregate statistics
+    print("\nAGGREGATE STATISTICS (across all songs):")
+    print("-" * 100)
+
+    for category in ["low", "high"]:
+        cat_label = f"LOW {metric_name}" if category == "low" else f"HIGH {metric_name}"
+        cat_stats = stats["aggregate"].get(category, {})
+
+        if not cat_stats:
+            continue
+
+        print(f"\n{cat_label} Songs:")
+        print(
+            f"  Samples: {cat_stats['n_samples']} (from {cat_stats['n_songs']} songs)"
+        )
+        print(
+            f"  Pearson correlation:  r = {cat_stats['pearson_r']:+.4f}, p = {cat_stats['pearson_p']:.4f} "
+            f"[{interpret_correlation(cat_stats['pearson_r'], cat_stats['pearson_p'])}]"
+        )
+        print(
+            f"  Spearman correlation: ρ = {cat_stats['spearman_r']:+.4f}, p = {cat_stats['spearman_p']:.4f} "
+            f"[{interpret_correlation(cat_stats['spearman_r'], cat_stats['spearman_p'])}]"
+        )
+        print(
+            f"  Linear fit:           R² = {cat_stats['linear_r2']:.4f}, slope = {cat_stats['linear_slope']:+.4f}"
+        )
+
+        if cat_stats["effect_sizes"]:
+            print(f"\n  Effect Sizes (Cohen's d vs baseline):")
+            for alpha in sorted(cat_stats["effect_sizes"].keys()):
+                es = cat_stats["effect_sizes"][alpha]
+                print(
+                    f"    α = {alpha:+5.1f}: d = {es['cohens_d']:+.3f} [{interpret_effect_size(es['cohens_d'])}], "
+                    f"change = {es['change_from_baseline']:+.2f}"
+                )
+
+    # Per-song statistics
+    print("\n" + "-" * 100)
+    print("PER-SONG ANALYSIS:")
+    print("-" * 100)
+
+    # Sort by correlation strength
+    per_song = stats["per_song"]
+    sorted_songs = sorted(
+        per_song.items(), key=lambda x: abs(x[1]["pearson_r"]), reverse=True
+    )
+
+    for song_name, song_stats in sorted_songs:
+        cat_label = "LOW" if song_stats["category"] == "low" else "HIGH"
+
+        print(f"\n{song_name} [{cat_label}]:")
+        print(f"  Initial value: {song_stats['initial_value']:.2f}")
+        print(
+            f"  Alpha range: {song_stats['alpha_range']} → Value range: "
+            f"[{song_stats['value_range'][0]:.2f}, {song_stats['value_range'][1]:.2f}]"
+        )
+        print(
+            f"  Pearson:  r = {song_stats['pearson_r']:+.4f}, p = {song_stats['pearson_p']:.4f} "
+            f"[{interpret_correlation(song_stats['pearson_r'], song_stats['pearson_p'])}]"
+        )
+        print(
+            f"  Spearman: ρ = {song_stats['spearman_r']:+.4f}, p = {song_stats['spearman_p']:.4f}"
+        )
+        print(
+            f"  Linear:   R² = {song_stats['linear_r2']:.4f}, slope = {song_stats['linear_slope']:+.4f}"
+        )
+        print(f"  Monotonic: {'✓ YES' if song_stats['monotonic'] else '✗ NO'}")
+        print(
+            f"  Changes: min = {song_stats['min_change']:+.2f}, max = {song_stats['max_change']:+.2f}"
+        )
+
+    # Overall assessment
+    print("\n" + "=" * 100)
+    print("STEERING EFFECTIVENESS ASSESSMENT:")
+    print("=" * 100)
+
+    for category in ["low", "high"]:
+        cat_label = f"LOW {metric_name}" if category == "low" else f"HIGH {metric_name}"
+        cat_stats = stats["aggregate"].get(category, {})
+
+        if not cat_stats:
+            continue
+
+        pearson_r = cat_stats["pearson_r"]
+        pearson_p = cat_stats["pearson_p"]
+        r2 = cat_stats["linear_r2"]
+
+        # Expected direction
+        expected_positive = (
+            category == "low"
+        )  # low songs should increase with positive α
+        direction_correct = (pearson_r > 0) == expected_positive
+
+        print(f"\n{cat_label} Songs:")
+        print(
+            f"  Expected direction: {'Positive correlation' if expected_positive else 'Negative correlation'}"
+        )
+        print(
+            f"  Actual direction: {'Positive' if pearson_r > 0 else 'Negative'} (r = {pearson_r:+.3f})"
+        )
+        print(f"  Direction: {'✓ CORRECT' if direction_correct else '✗ INCORRECT'}")
+
+        strength = interpret_correlation(pearson_r, pearson_p)
+        print(f"  Correlation strength: {strength}")
+
+        if pearson_p <= 0.001:
+            print(f"  Statistical significance: ✓✓✓ HIGHLY SIGNIFICANT (p < 0.001)")
+        elif pearson_p <= 0.01:
+            print(f"  Statistical significance: ✓✓ VERY SIGNIFICANT (p < 0.01)")
+        elif pearson_p <= 0.05:
+            print(f"  Statistical significance: ✓ SIGNIFICANT (p < 0.05)")
+        else:
+            print(
+                f"  Statistical significance: ✗ NOT SIGNIFICANT (p = {pearson_p:.3f})"
+            )
+
+        if r2 > 0.8:
+            print(f"  Linearity: ✓✓✓ EXCELLENT linear fit (R² = {r2:.3f})")
+        elif r2 > 0.6:
+            print(f"  Linearity: ✓✓ GOOD linear fit (R² = {r2:.3f})")
+        elif r2 > 0.4:
+            print(f"  Linearity: ✓ MODERATE linear fit (R² = {r2:.3f})")
+        else:
+            print(f"  Linearity: ✗ POOR linear fit (R² = {r2:.3f})")
+
+        # Count monotonic songs
+        category_songs = [
+            s for s, d in stats["per_song"].items() if d["category"] == category
+        ]
+        monotonic_count = sum(
+            1 for s in category_songs if stats["per_song"][s]["monotonic"]
+        )
+
+        print(f"  Monotonic songs: {monotonic_count}/{len(category_songs)}")
+
+        # Overall verdict
+        if direction_correct and abs(pearson_r) > 0.7 and pearson_p < 0.01:
+            print(f"  ✓✓✓ VERDICT: EXCELLENT steering effectiveness")
+        elif direction_correct and abs(pearson_r) > 0.5 and pearson_p < 0.05:
+            print(f"  ✓✓ VERDICT: GOOD steering effectiveness")
+        elif direction_correct and pearson_p < 0.05:
+            print(f"  ✓ VERDICT: MODERATE steering effectiveness")
+        else:
+            print(f"  ✗ VERDICT: WEAK or ineffective steering")
+
+    print("\n" + "=" * 100)
+
+
 def generate_listening_priority_list(
     results: List[Dict], output_dir: pathlib.Path
 ) -> None:
@@ -878,12 +1276,27 @@ def main():
     logging.info("\nAnalyzing results...")
     analysis = analyze_conditioned_results(all_results)
 
+    # Statistical analysis
+    logging.info("\nPerforming statistical analysis...")
+    statistical_analysis = calculate_statistical_analysis(all_results, args.concept)
+
     # Save results
     results_file = args.output_dir / "conditioned_results.json"
     with open(results_file, "w") as f:
-        json.dump({"results": all_results, "analysis": analysis}, f, indent=2)
+        json.dump(
+            {
+                "results": all_results,
+                "analysis": analysis,
+                "statistical_analysis": statistical_analysis,
+            },
+            f,
+            indent=2,
+        )
 
     logging.info(f"Saved results to: {results_file}")
+
+    # Print statistical summary
+    print_statistical_summary(statistical_analysis, args.concept)
 
     # Generate listening priority list
     logging.info("\nGenerating listening priority list...")

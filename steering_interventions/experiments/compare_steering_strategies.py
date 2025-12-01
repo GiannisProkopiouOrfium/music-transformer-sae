@@ -148,6 +148,35 @@ def measure_pitch_from_tokens(tokens: np.ndarray, encoding: Dict) -> Dict:
         }
 
 
+def measure_duration_from_tokens(tokens: np.ndarray, encoding: Dict) -> Dict:
+    """Measure duration statistics from tokens."""
+    try:
+        music = representation.decode(tokens, encoding)
+        durations = []
+        for track in music.tracks:
+            for note in track.notes:
+                durations.append(note.duration)
+
+        if not durations:
+            return {"mean": 0.0, "std": 0.0, "n_notes": 0}
+
+        return {
+            "mean": float(np.mean(durations)),
+            "std": float(np.std(durations)),
+            "min": float(np.min(durations)),
+            "max": float(np.max(durations)),
+            "n_notes": len(durations),
+        }
+    except Exception as e:
+        logging.error(f"Error measuring duration: {e}")
+        return {
+            "mean": 0.0,
+            "std": 0.0,
+            "n_notes": 0,
+            "error": str(e),
+        }
+
+
 def evaluate_quality_metrics(tokens: np.ndarray, encoding: Dict) -> Dict:
     """Evaluate objective quality metrics."""
     try:
@@ -259,6 +288,7 @@ def generate_with_strategy(
 def evaluate_samples(samples: List[np.ndarray], encoding: Dict) -> Dict:
     """Evaluate a list of samples."""
     pitch_stats = [measure_pitch_from_tokens(s, encoding) for s in samples]
+    duration_stats = [measure_duration_from_tokens(s, encoding) for s in samples]
     quality_metrics = [evaluate_quality_metrics(s, encoding) for s in samples]
 
     return {
@@ -266,6 +296,10 @@ def evaluate_samples(samples: List[np.ndarray], encoding: Dict) -> Dict:
             "mean": float(np.nanmean([p["mean"] for p in pitch_stats])),
             "std": float(np.nanstd([p["mean"] for p in pitch_stats])),
             "diversity": float(np.nanmean([p["unique_pitches"] for p in pitch_stats])),
+        },
+        "duration": {
+            "mean": float(np.nanmean([d["mean"] for d in duration_stats])),
+            "std": float(np.nanstd([d["mean"] for d in duration_stats])),
         },
         "quality": {
             "pitch_class_entropy": float(
@@ -398,6 +432,7 @@ def main():
         results["all_to_all"][alpha] = eval_results
 
         logging.info(f"  Mean pitch: {eval_results['pitch']['mean']:.2f}")
+        logging.info(f"  Mean duration: {eval_results['duration']['mean']:.2f} ticks")
         logging.info(
             f"  Pitch class entropy: {eval_results['quality']['pitch_class_entropy']:.3f}"
         )

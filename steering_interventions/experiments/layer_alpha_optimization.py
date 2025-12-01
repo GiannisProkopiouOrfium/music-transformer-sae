@@ -137,6 +137,30 @@ def measure_pitch_from_tokens(tokens: np.ndarray, encoding: Dict) -> Dict:
         return {"mean": 0.0, "std": 0.0, "n_notes": 0, "error": str(e)}
 
 
+def measure_duration_from_tokens(tokens: np.ndarray, encoding: Dict) -> Dict:
+    """Measure duration statistics from tokens."""
+    try:
+        music = representation.decode(tokens, encoding)
+        durations = []
+        for track in music.tracks:
+            for note in track.notes:
+                durations.append(note.duration)
+
+        if not durations:
+            return {"mean": 0.0, "std": 0.0, "n_notes": 0}
+
+        return {
+            "mean": float(np.mean(durations)),
+            "std": float(np.std(durations)),
+            "min": float(np.min(durations)),
+            "max": float(np.max(durations)),
+            "n_notes": len(durations),
+        }
+    except Exception as e:
+        logging.error(f"Error measuring duration: {e}")
+        return {"mean": 0.0, "std": 0.0, "n_notes": 0, "error": str(e)}
+
+
 def evaluate_quality_metrics(tokens: np.ndarray, encoding: Dict) -> Dict:
     """Evaluate objective quality metrics (from evaluate.py)."""
     try:
@@ -241,6 +265,11 @@ def evaluate_configuration(
     for sample in samples:
         pitch_stats.append(measure_pitch_from_tokens(sample, encoding))
 
+    # Measure duration statistics
+    duration_stats = []
+    for sample in samples:
+        duration_stats.append(measure_duration_from_tokens(sample, encoding))
+
     # Measure quality metrics
     quality_metrics = []
     for sample in samples:
@@ -249,6 +278,8 @@ def evaluate_configuration(
     # Aggregate results
     mean_pitch = np.nanmean([s["mean"] for s in pitch_stats])
     std_pitch = np.nanstd([s["mean"] for s in pitch_stats])
+    mean_duration = np.nanmean([s["mean"] for s in duration_stats])
+    std_duration = np.nanstd([s["mean"] for s in duration_stats])
 
     mean_entropy = np.nanmean([m["pitch_class_entropy"] for m in quality_metrics])
     mean_scale = np.nanmean([m["scale_consistency"] for m in quality_metrics])
@@ -257,6 +288,8 @@ def evaluate_configuration(
     return {
         "mean_pitch": float(mean_pitch),
         "std_pitch": float(std_pitch),
+        "mean_duration": float(mean_duration),
+        "std_duration": float(std_duration),
         "pitch_class_entropy": float(mean_entropy),
         "scale_consistency": float(mean_scale),
         "groove_consistency": float(mean_groove),
@@ -358,6 +391,9 @@ def main():
 
                 logging.info(f"Mean pitch: {config_results['mean_pitch']:.2f}")
                 logging.info(
+                    f"Mean duration: {config_results['mean_duration']:.2f} ticks"
+                )
+                logging.info(
                     f"Pitch class entropy: {config_results['pitch_class_entropy']:.3f}"
                 )
                 logging.info(
@@ -377,14 +413,21 @@ def main():
                 degradation = calculate_degradation(metrics, baseline_metrics)
                 results[layer_name][alpha]["degradation"] = degradation
 
-    # Calculate pitch shifts from baseline
+    # Calculate pitch and duration shifts from baseline
     for layer_name in results:
         if 0.0 in results[layer_name]:
             baseline_pitch = results[layer_name][0.0]["mean_pitch"]
+            baseline_duration = results[layer_name][0.0]["mean_duration"]
             for alpha in results[layer_name]:
                 pitch_shift = results[layer_name][alpha]["mean_pitch"] - baseline_pitch
+                duration_shift = (
+                    results[layer_name][alpha]["mean_duration"] - baseline_duration
+                )
                 results[layer_name][alpha]["pitch_shift_from_baseline"] = float(
                     pitch_shift
+                )
+                results[layer_name][alpha]["duration_shift_from_baseline"] = float(
+                    duration_shift
                 )
 
     # Save results

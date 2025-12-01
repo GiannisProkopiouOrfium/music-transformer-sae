@@ -8,6 +8,7 @@ import pathlib
 sys.path.insert(0, str(pathlib.Path(__file__).parent))
 from test_multi_conditioned import *
 
+
 def main():
     """Run only scenario 2."""
     parser = argparse.ArgumentParser(
@@ -176,16 +177,18 @@ def main():
 
     # Analyze
     logging.info("\nAnalyzing results...")
-    
+
     # Calculate statistics
     valid = [r for r in results if r["generated_n_notes"] >= 10]
-    
+
     if valid:
         pitch_success = np.mean([r["pitch_steering_success"] for r in valid])
         mode_success = np.mean([r["mode_steering_success"] for r in valid])
         overall_success = np.mean([r["overall_success"] for r in valid])
         mean_pitch_change = np.mean([r["pitch_change"] for r in valid])
-        mean_degradation = np.mean([r["degradation"]["total_degradation"] for r in valid])
+        mean_degradation = np.mean(
+            [r["degradation"]["total_degradation"] for r in valid]
+        )
         mode_change_rate = np.mean([r["mode_changed"] for r in valid])
 
         # Save results
@@ -234,20 +237,35 @@ def main():
         print(f"Mean pitch change: {mean_pitch_change:+.1f} semitones")
         print(f"Mode change rate: {mode_change_rate*100:.1f}%")
         print(f"Mean degradation: {mean_degradation:.2f}")
-        
+
         # Find best example
-        best = max(valid, key=lambda x: (x["overall_success"], -x["degradation"]["total_degradation"]))
+        best = max(
+            valid,
+            key=lambda x: (
+                x["overall_success"],
+                -x["degradation"]["total_degradation"],
+            ),
+        )
         print(f"\n### Best Example ###")
         print(f"Song: {best['song_name']}")
-        print(f"α_pitch: {best['alpha_pitch']:+.1f}, α_modality: {best['alpha_modality']:+.1f}")
-        print(f"Pitch: {best['conditioning_pitch']:.1f} → {best['generated_pitch_mean']:.1f} (Δ{best['pitch_change']:+.1f})")
-        print(f"Mode: {best['conditioning_mode']} → {best['generated_mode']} (conf={best['generated_confidence']:.2f})")
-        print(f"Success: pitch={best['pitch_steering_success']}, mode={best['mode_steering_success']}, overall={best['overall_success']}")
+        print(
+            f"α_pitch: {best['alpha_pitch']:+.1f}, α_modality: {best['alpha_modality']:+.1f}"
+        )
+        print(
+            f"Pitch: {best['conditioning_pitch']:.1f} → {best['generated_pitch_mean']:.1f} (Δ{best['pitch_change']:+.1f})"
+        )
+        print(
+            f"Mode: {best['conditioning_mode']} → {best['generated_mode']} (conf={best['generated_confidence']:.2f})"
+        )
+        print(
+            f"Success: pitch={best['pitch_steering_success']}, mode={best['mode_steering_success']}, overall={best['overall_success']}"
+        )
         print(f"Degradation: {best['degradation']['total_degradation']:.2f}")
-        
+
         print("\n" + "=" * 80)
         print("✅ SCENARIO 2 COMPLETE!")
         print("=" * 80)
+
 
 if __name__ == "__main__":
     main()
