@@ -2,21 +2,21 @@
 """Multi-Concept Steered Generator for Dual Steering.
 
 Extends the single-concept SteeredGenerator to support simultaneous control
-of pitch and modality using composed steering vectors.
+of pitch and duration using composed steering vectors.
 
 Usage:
     from vector_composition import VectorComposer
 
     # Create composer
-    composer = VectorComposer(pitch_vectors, modality_vectors)
+    composer = VectorComposer(pitch_vectors, duration_vectors)
 
     # Generate with dual steering
     generator = MultiSteeringGenerator(
         model=model,
         composer=composer,
         alpha_pitch=1.5,
-        alpha_modality=2.0,
-        strategy="direct",  # or "gram_schmidt"
+        alpha_duration=2.0,
+        strategy="direct",  # or "gram_schmidt_duration", "gram_schmidt_pitch"
         intervention_position="last"
     )
 
@@ -46,14 +46,14 @@ InterventionPosition = Literal["last", "all"]
 
 
 class MultiSteeringGenerator:
-    """Generator with simultaneous pitch and modality steering."""
+    """Generator with simultaneous pitch and duration steering."""
 
     def __init__(
         self,
         model: torch.nn.Module,
         composer: VectorComposer,
         alpha_pitch: float,
-        alpha_modality: float,
+        alpha_duration: float,
         strategy: CompositionStrategy = "direct",
         intervention_position: InterventionPosition = "last",
         layer_range: Optional[List[int]] = None,
@@ -62,10 +62,10 @@ class MultiSteeringGenerator:
 
         Args:
             model: The transformer model to apply steering to
-            composer: VectorComposer with pitch and modality vectors
+            composer: VectorComposer with pitch and duration vectors
             alpha_pitch: Scaling factor for pitch steering
-            alpha_modality: Scaling factor for modality steering
-            strategy: Vector composition strategy ("direct" or "gram_schmidt")
+            alpha_duration: Scaling factor for duration steering
+            strategy: Vector composition strategy ("direct", "gram_schmidt_duration", or "gram_schmidt_pitch")
             intervention_position: Where to apply steering ("last" or "all" tokens)
             layer_range: Optional list of layer indices to apply steering to.
                         If None, applies to all layers.
@@ -73,12 +73,12 @@ class MultiSteeringGenerator:
         self.model = model
         self.composer = composer
         self.alpha_pitch = alpha_pitch
-        self.alpha_modality = alpha_modality
+        self.alpha_duration = alpha_duration
         self.strategy = strategy
         self.intervention_position = intervention_position
 
         # Compose vectors using specified strategy
-        self.composed_vectors = composer.compose(alpha_pitch, alpha_modality, strategy)
+        self.composed_vectors = composer.compose(alpha_pitch, alpha_duration, strategy)
 
         # Determine which layers to apply steering to
         if layer_range is None:
@@ -90,7 +90,7 @@ class MultiSteeringGenerator:
 
         logging.info(
             f"MultiSteeringGenerator initialized: strategy={strategy}, "
-            f"α_pitch={alpha_pitch}, α_modality={alpha_modality}, "
+            f"α_pitch={alpha_pitch}, α_duration={alpha_duration}, "
             f"position={intervention_position}, layers={len(self.target_layers)}"
         )
 
@@ -209,7 +209,7 @@ class MultiSteeringGenerator:
         return {
             "strategy": self.strategy,
             "alpha_pitch": self.alpha_pitch,
-            "alpha_modality": self.alpha_modality,
+            "alpha_duration": self.alpha_duration,
             "intervention_position": self.intervention_position,
             "target_layers": self.target_layers,
             "num_layers": len(self.target_layers),
@@ -234,9 +234,9 @@ class MultiSteeringGenerator:
 def create_multi_steering_generator(
     model: torch.nn.Module,
     pitch_vectors_path: str,
-    modality_vectors_path: str,
+    duration_vectors_path: str,
     alpha_pitch: float,
-    alpha_modality: float,
+    alpha_duration: float,
     strategy: CompositionStrategy = "direct",
     intervention_position: InterventionPosition = "last",
     layer_range: Optional[List[int]] = None,
@@ -246,9 +246,9 @@ def create_multi_steering_generator(
     Args:
         model: Transformer model
         pitch_vectors_path: Path to pitch steering vectors (.pt)
-        modality_vectors_path: Path to modality steering vectors (.pt)
+        duration_vectors_path: Path to duration steering vectors (.pt)
         alpha_pitch: Pitch scaling factor
-        alpha_modality: Modality scaling factor
+        alpha_duration: Duration scaling factor
         strategy: Composition strategy
         intervention_position: Where to apply steering
         layer_range: Optional layer indices to target
@@ -258,13 +258,13 @@ def create_multi_steering_generator(
     """
     from vector_composition import load_and_create_composer
 
-    composer = load_and_create_composer(pitch_vectors_path, modality_vectors_path)
+    composer = load_and_create_composer(pitch_vectors_path, duration_vectors_path)
 
     return MultiSteeringGenerator(
         model=model,
         composer=composer,
         alpha_pitch=alpha_pitch,
-        alpha_modality=alpha_modality,
+        alpha_duration=alpha_duration,
         strategy=strategy,
         intervention_position=intervention_position,
         layer_range=layer_range,
@@ -282,19 +282,19 @@ if __name__ == "__main__":
         help="Path to pitch vectors",
     )
     parser.add_argument(
-        "--modality_vectors",
-        default="steering_interventions/modality/outputs/steering_vectors/modality_steering_vectors.pt",
-        help="Path to modality vectors",
+        "--duration_vectors",
+        default="steering_interventions/outputs/steering_vectors/average_duration_steering_vectors.pt",
+        help="Path to duration vectors",
     )
     parser.add_argument(
         "--alpha_pitch", type=float, default=1.5, help="Pitch scaling factor"
     )
     parser.add_argument(
-        "--alpha_modality", type=float, default=2.0, help="Modality scaling factor"
+        "--alpha_duration", type=float, default=2.0, help="Duration scaling factor"
     )
     parser.add_argument(
         "--strategy",
-        choices=["direct", "gram_schmidt"],
+        choices=["direct", "gram_schmidt_duration", "gram_schmidt_pitch"],
         default="direct",
         help="Composition strategy",
     )
@@ -314,22 +314,22 @@ if __name__ == "__main__":
     # Create composer
     from vector_composition import load_and_create_composer
 
-    composer = load_and_create_composer(args.pitch_vectors, args.modality_vectors)
+    composer = load_and_create_composer(args.pitch_vectors, args.duration_vectors)
 
     print(f"\nComposer loaded with {len(composer.layers)} layers")
     print(f"Strategy: {args.strategy}")
-    print(f"Alpha values: pitch={args.alpha_pitch}, modality={args.alpha_modality}")
+    print(f"Alpha values: pitch={args.alpha_pitch}, duration={args.alpha_duration}")
 
     # Analyze composition
     analysis = composer.analyze_composition(
-        args.strategy, args.alpha_pitch, args.alpha_modality
+        args.strategy, args.alpha_pitch, args.alpha_duration
     )
 
     print("\nComposed vector statistics:")
     print(f"  Mean norm:              {analysis['mean_norm']:.4f}")
     print(f"  Std norm:               {analysis['std_norm']:.4f}")
     print(f"  Mean pitch contrib:     {analysis['mean_pitch_contrib']:.4f}")
-    print(f"  Mean modality contrib:  {analysis['mean_modality_contrib']:.4f}")
+    print(f"  Mean duration contrib:  {analysis['mean_duration_contrib']:.4f}")
 
     print("\n" + "=" * 60)
     print("Configuration validated successfully!")
