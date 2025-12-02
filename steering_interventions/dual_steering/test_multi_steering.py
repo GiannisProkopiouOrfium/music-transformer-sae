@@ -1,31 +1,31 @@
 #!/usr/bin/env python3
-"""Phase 3: Extended Dual-Steering Grid Search with Negative Alphas.
+"""Phase 3: Dual-Steering Grid Search for Pitch + Duration.
 
-Tests both composition strategies (direct and gram_schmidt) with an extended
-parameter grid including negative values to map the complete steering landscape.
+Tests all three composition strategies (direct, gram_schmidt_duration, gram_schmidt_pitch)
+with a symmetric alpha grid to map the complete steering landscape.
 
 Test matrix:
-- Strategies: direct, gram_schmidt (2 strategies)
-- Alpha pitch: [-2.0, -1.5, -1.0, -0.5, 0, 0.5, 1.0, 1.5, 2.0] (9 values)
-- Alpha modality: [-2.0, -1.5, -1.0, -0.5, 0, 0.5, 1.0, 1.5, 2.0] (9 values)
-- Total configs: 2 * 9 * 9 = 162 configs
+- Strategies: direct, gram_schmidt_duration, gram_schmidt_pitch (3 strategies)
+- Alpha pitch: [-1.5, -1.25, -1.0, -0.75, -0.5, -0.25, 0, 0.25, 0.5, 0.75, 1.0, 1.25, 1.5] (13 values)
+- Alpha duration: [-1.5, -1.25, -1.0, -0.75, -0.5, -0.25, 0, 0.25, 0.5, 0.75, 1.0, 1.25, 1.5] (13 values)
+- Total configs: 3 * 13 * 13 = 507 configs
 - Samples per config: 5
-- Total generations: 162 * 5 = 810 samples (~2-4 hours on single GPU)
+- Total generations: 507 * 5 = 2,535 samples (~8-10 hours on single GPU)
 
 Output:
 - Generated MIDI files with comprehensive metrics
 - JSON with detailed metrics per config
-- Heatmap visualizations (pitch, modality, quality)
+- Heatmap visualizations (pitch, duration, quality)
 - Pareto frontier and interaction analyses
 
 Usage:
     python dual_steering/test_multi_steering.py \\
         --model_checkpoint path/to/model.ckpt \\
-        --pitch_vectors steering_interventions/outputs/steering_vectors/average_pitch_steering_vectors.pt \\
-        --modality_vectors steering_interventions/modality/outputs/steering_vectors/modality_steering_vectors.pt \\
+        --pitch_vectors outputs/steering_vectors/average_pitch_steering_vectors.pt \\
+        --duration_vectors outputs/steering_vectors/average_duration_steering_vectors.pt \\
         --output_dir steering_interventions/dual_steering/outputs/phase3_grid_search \\
         --n_samples 5 \\
-        --strategies gram_schmidt
+        --strategies direct gram_schmidt_duration gram_schmidt_pitch
 """
 
 import argparse
@@ -51,15 +51,7 @@ import utils
 from multi_steered_generator import MultiSteeringGenerator
 from vector_composition import VectorComposer
 
-# Import music21
-try:
-    from music21 import note, stream
-
-    MUSIC21_AVAILABLE = True
-except ImportError:
-    MUSIC21_AVAILABLE = False
-    print("ERROR: music21 not available. Install with: pip install music21")
-    sys.exit(1)
+# Note: Duration measurement uses token[4] directly, no music21 needed
 
 # Ground truth metrics from paper
 GROUND_TRUTH_METRICS = {
@@ -93,44 +85,53 @@ def extract_pitches_from_tokens(tokens: np.ndarray, encoding: dict) -> list:
         return []
 
 
-def detect_key_from_tokens(tokens: np.ndarray, encoding: dict) -> tuple:
-    """Detect full key (tonic + mode) from tokens using music21.
+def measure_duration_from_tokens(tokens: np.ndarray, encoding: dict) -> Dict:
+    """Measure duration statistics from tokens.
+
+    Duration is stored in token[4] (5th dimension) representing note length in ticks.
 
     Args:
         tokens: Token array (seq_len, 6)
         encoding: Encoding dictionary
 
     Returns:
-        (tonic, mode, confidence): e.g., ("A", "minor", 0.85)
+        Dictionary with duration statistics: {mean, std, min, max, values}
     """
     try:
         note_type = encoding["type_code_map"]["note"]
-        pitches = []
+        durations = []
 
         for token in tokens:
-            if token[0] == note_type:
-                pitch_value = token[3]
-                pitches.append(pitch_value)
+            if token[0] == note_type:  # Only extract from note tokens
+                duration = token[4]  # Duration in ticks
+                durations.append(duration)
 
-        if len(pitches) < 10:
-            return ("unknown", "unknown", 0.0)
+        if len(durations) < 5:
+            return {
+                "mean": 0.0,
+                "std": 0.0,
+                "min": 0.0,
+                "max": 0.0,
+                "values": [],
+            }
 
-        s = stream.Stream()
-        for p in pitches:
-            s.append(note.Note(p))
-
-        key = s.analyze("key")
-
-        # Extract tonic name (e.g., "A", "C#", "Bb")
-        tonic = key.tonic.name
-        mode = key.mode
-        confidence = key.correlationCoefficient
-
-        return (tonic, mode, confidence)
+        return {
+            "mean": float(np.mean(durations)),
+            "std": float(np.std(durations)),
+            "min": float(np.min(durations)),
+            "max": float(np.max(durations)),
+            "values": durations,
+        }
 
     except Exception as e:
-        logging.warning(f"Key detection failed: {e}")
-        return ("unknown", "unknown", 0.0)
+        logging.error(f"Error measuring duration: {e}")
+        return {
+            "mean": 0.0,
+            "std": 0.0,
+            "min": 0.0,
+            "max": 0.0,
+            "values": [],
+        }
 
 
 def evaluate_quality_metrics(tokens: np.ndarray, encoding: dict) -> Dict:
@@ -198,7 +199,7 @@ def generate_and_evaluate(
     composer: VectorComposer,
     strategy: str,
     alpha_pitch: float,
-    alpha_modality: float,
+    alpha_duration: float,
     encoding: dict,
     device: torch.device,
     n_samples: int = 5,
@@ -209,9 +210,9 @@ def generate_and_evaluate(
     Args:
         model: Transformer model
         composer: VectorComposer instance
-        strategy: Composition strategy ("direct" or "gram_schmidt")
+        strategy: Composition strategy ("direct", "gram_schmidt_duration", or "gram_schmidt_pitch")
         alpha_pitch: Pitch scaling factor
-        alpha_modality: Modality scaling factor
+        alpha_duration: Duration scaling factor
         encoding: Encoding dictionary
         device: Torch device
         n_samples: Number of samples to generate
@@ -227,15 +228,14 @@ def generate_and_evaluate(
         model=model,
         composer=composer,
         alpha_pitch=alpha_pitch,
-        alpha_modality=alpha_modality,
+        alpha_duration=alpha_duration,
         strategy=strategy,
         intervention_position="last",
     )
 
     # Generate samples
     all_pitch_means = []
-    all_modes = []  # "major" or "minor"
-    all_mode_confidences = []
+    all_duration_stats = []  # List of duration stat dicts
     all_quality_metrics = []
     all_degradations = []
     valid_count = 0
@@ -270,10 +270,9 @@ def generate_and_evaluate(
                 pitch_mean = float(np.mean(pitches))
                 all_pitch_means.append(pitch_mean)
 
-                # Detect key/modality using music21
-                tonic, mode, confidence = detect_key_from_tokens(tokens, encoding)
-                all_modes.append(mode)
-                all_mode_confidences.append(confidence)
+                # Measure duration statistics
+                duration_stats = measure_duration_from_tokens(tokens, encoding)
+                all_duration_stats.append(duration_stats)
 
                 # Evaluate quality metrics
                 quality = evaluate_quality_metrics(tokens, encoding)
@@ -293,14 +292,14 @@ def generate_and_evaluate(
         return {
             "strategy": strategy,
             "alpha_pitch": alpha_pitch,
-            "alpha_modality": alpha_modality,
+            "alpha_duration": alpha_duration,
             "valid_samples": 0,
             "pitch_control": {"mean": 0.0, "std": 0.0},
-            "modality_control": {
-                "major_count": 0,
-                "minor_count": 0,
-                "major_percentage": 0.0,
-                "avg_confidence": 0.0,
+            "duration_control": {
+                "mean": 0.0,
+                "std": 0.0,
+                "min": 0.0,
+                "max": 0.0,
             },
             "quality_metrics": {
                 "pitch_class_entropy": {"mean": np.nan, "std": np.nan},
@@ -316,20 +315,21 @@ def generate_and_evaluate(
             "success_rate": 0.0,
         }
 
-    # Calculate modality statistics
-    confident_modes = [m for m, c in zip(all_modes, all_mode_confidences) if c >= 0.5]
-    major_count = sum(1 for m in confident_modes if m == "major")
-    minor_count = sum(1 for m in confident_modes if m == "minor")
-    total_confident = major_count + minor_count
+    # Aggregate duration statistics across all samples
+    if all_duration_stats:
+        duration_means = [d["mean"] for d in all_duration_stats if d["mean"] > 0]
+        duration_stds = [d["std"] for d in all_duration_stats if d["std"] > 0]
+        duration_mins = [d["min"] for d in all_duration_stats if d["min"] > 0]
+        duration_maxs = [d["max"] for d in all_duration_stats if d["max"] > 0]
 
-    major_percentage = (
-        100 * major_count / total_confident if total_confident > 0 else 0.0
-    )
-    avg_confidence = (
-        float(np.mean([c for c in all_mode_confidences if c >= 0.5]))
-        if confident_modes
-        else 0.0
-    )
+        duration_summary = {
+            "mean": float(np.mean(duration_means)) if duration_means else 0.0,
+            "std": float(np.mean(duration_stds)) if duration_stds else 0.0,
+            "min": float(np.mean(duration_mins)) if duration_mins else 0.0,
+            "max": float(np.mean(duration_maxs)) if duration_maxs else 0.0,
+        }
+    else:
+        duration_summary = {"mean": 0.0, "std": 0.0, "min": 0.0, "max": 0.0}
 
     # Aggregate quality metrics
     quality_summary = {}
@@ -356,18 +356,13 @@ def generate_and_evaluate(
     return {
         "strategy": strategy,
         "alpha_pitch": alpha_pitch,
-        "alpha_modality": alpha_modality,
+        "alpha_duration": alpha_duration,
         "valid_samples": valid_count,
         "pitch_control": {
             "mean": float(np.mean(all_pitch_means)),
             "std": float(np.std(all_pitch_means)),
         },
-        "modality_control": {
-            "major_count": major_count,
-            "minor_count": minor_count,
-            "major_percentage": major_percentage,
-            "avg_confidence": avg_confidence,
-        },
+        "duration_control": duration_summary,
         "quality_metrics": quality_summary,
         "degradation": degradation_summary,
         "success_rate": valid_count / n_samples,
@@ -395,18 +390,18 @@ def main():
         help="Path to pitch steering vectors",
     )
     parser.add_argument(
-        "--modality_vectors",
+        "--duration_vectors",
         type=pathlib.Path,
         default=pathlib.Path(
-            "steering_interventions/modality/outputs/steering_vectors/modality_steering_vectors.pt"
+            "outputs/steering_vectors/average_duration_steering_vectors.pt"
         ),
-        help="Path to modality steering vectors",
+        help="Path to duration steering vectors",
     )
     parser.add_argument(
         "--output_dir",
         type=pathlib.Path,
         default=pathlib.Path(
-            "steering_interventions/dual_steering/outputs/phase2_validation"
+            "steering_interventions/dual_steering/outputs/phase3_grid_search"
         ),
         help="Output directory",
     )
@@ -418,20 +413,20 @@ def main():
         "--alphas_pitch",
         type=float,
         nargs="+",
-        default=[-2.5, -2.0, -1.5, -1.0, -0.5, 0.0, 0.5, 1.0, 1.5, 2.0, 2.5],
+        default=[-1.5, -1.25, -1.0, -0.75, -0.5, -0.25, 0.0, 0.25, 0.5, 0.75, 1.0, 1.25, 1.5],
         help="Pitch alpha values to test",
     )
     parser.add_argument(
-        "--alphas_modality",
+        "--alphas_duration",
         type=float,
         nargs="+",
-        default=[-2.5, -2.0, -1.5, -1.0, -0.5, 0.0, 0.5, 1.0, 1.5, 2.0, 2.5],
-        help="Modality alpha values to test",
+        default=[-1.5, -1.25, -1.0, -0.75, -0.5, -0.25, 0.0, 0.25, 0.5, 0.75, 1.0, 1.25, 1.5],
+        help="Duration alpha values to test",
     )
     parser.add_argument(
         "--strategies",
         nargs="+",
-        default=["direct", "gram_schmidt"],
+        default=["direct", "gram_schmidt_duration", "gram_schmidt_pitch"],
         help="Strategies to test",
     )
     parser.add_argument(
@@ -450,7 +445,7 @@ def main():
         level=logging.INFO,
         format="%(asctime)s - %(levelname)s - %(message)s",
         handlers=[
-            logging.FileHandler(args.output_dir / "phase2_validation.log"),
+            logging.FileHandler(args.output_dir / "phase3_grid_search.log"),
             logging.StreamHandler(),
         ],
     )
@@ -504,15 +499,15 @@ def main():
     from vector_composition import load_and_create_composer
 
     composer = load_and_create_composer(
-        str(args.pitch_vectors), str(args.modality_vectors)
+        str(args.pitch_vectors), str(args.duration_vectors)
     )
 
     # Generate test matrix
     test_configs = []
     for strategy in args.strategies:
         for alpha_pitch in args.alphas_pitch:
-            for alpha_modality in args.alphas_modality:
-                test_configs.append((strategy, alpha_pitch, alpha_modality))
+            for alpha_duration in args.alphas_duration:
+                test_configs.append((strategy, alpha_pitch, alpha_duration))
 
     logging.info(f"Testing {len(test_configs)} configurations")
     logging.info(
@@ -523,11 +518,11 @@ def main():
     results = []
     start_time = time.time()
 
-    for strategy, alpha_pitch, alpha_modality in tqdm(
+    for strategy, alpha_pitch, alpha_duration in tqdm(
         test_configs, desc="Testing configurations"
     ):
         logging.info(
-            f"\nTesting: strategy={strategy}, α_pitch={alpha_pitch}, α_modality={alpha_modality}"
+            f"\nTesting: strategy={strategy}, α_pitch={alpha_pitch}, α_duration={alpha_duration}"
         )
 
         result = generate_and_evaluate(
@@ -535,7 +530,7 @@ def main():
             composer=composer,
             strategy=strategy,
             alpha_pitch=alpha_pitch,
-            alpha_modality=alpha_modality,
+            alpha_duration=alpha_duration,
             encoding=encoding,
             device=device,
             n_samples=args.n_samples,
@@ -554,7 +549,7 @@ def main():
                 f"  Pitch mean: {result['pitch_control']['mean']:.2f} ± {result['pitch_control']['std']:.2f}"
             )
             logging.info(
-                f"  Major percentage: {result['modality_control']['major_percentage']:.1f}% (conf: {result['modality_control']['avg_confidence']:.2f})"
+                f"  Duration mean: {result['duration_control']['mean']:.1f} ticks (std: {result['duration_control']['std']:.1f})"
             )
             logging.info(
                 f"  Quality degradation: {result['degradation']['total_degradation']['mean']:.2f}"
@@ -563,7 +558,7 @@ def main():
     elapsed_time = time.time() - start_time
 
     # Save results
-    results_file = args.output_dir / "phase2_results.json"
+    results_file = args.output_dir / "phase3_results.json"
     with open(results_file, "w") as f:
         json.dump(
             {
@@ -571,7 +566,7 @@ def main():
                     "n_samples": args.n_samples,
                     "seq_len": args.seq_len,
                     "alphas_pitch": args.alphas_pitch,
-                    "alphas_modality": args.alphas_modality,
+                    "alphas_duration": args.alphas_duration,
                     "strategies": args.strategies,
                     "total_configs": len(test_configs),
                     "elapsed_time_seconds": elapsed_time,
@@ -589,13 +584,13 @@ def main():
 
     # Print summary
     print("\n" + "=" * 80)
-    print("PHASE 2 VALIDATION COMPLETE")
+    print("PHASE 3: PITCH+DURATION GRID SEARCH COMPLETE")
     print("=" * 80)
     print(
         f"\nTested {len(test_configs)} configurations in {elapsed_time/60:.1f} minutes"
     )
     print(f"\nResults saved to: {results_file}")
-    print("\nNext step: Run analyze_strategy_results.py to compare strategies")
+    print("\nNext step: Analyze results to identify best strategy and alpha ranges")
     print("=" * 80)
 
 
