@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Phase 0: Analyze Steering Vector Orthogonality.
 
-This script analyzes the relationship between pitch and modality steering vectors
+This script analyzes the relationship between pitch and duration steering vectors
 to determine whether orthogonalization is necessary for effective dual-concept steering.
 
 Key metrics:
@@ -19,8 +19,8 @@ Key metrics:
 Usage:
     python dual_steering/analyze_vector_orthogonality.py \\
         --pitch_vectors steering_interventions/outputs/steering_vectors/average_pitch_steering_vectors.pt \\
-        --modality_vectors steering_interventions/modality/outputs/steering_vectors/modality_steering_vectors.pt \\
-        --output_dir steering_interventions/dual_steering/outputs/orthogonality_analysis
+        --duration_vectors steering_interventions/outputs/steering_vectors/average_duration_steering_vectors.pt \\
+        --output_dir steering_interventions/dual_steering/outputs/orthogonality_analysis_pitch_duration
 """
 
 import argparse
@@ -82,28 +82,28 @@ def projection_magnitude(v_source: torch.Tensor, v_target: torch.Tensor) -> floa
 
 
 def analyze_vector_pair(
-    pitch_vec: torch.Tensor, modality_vec: torch.Tensor, layer_idx: int
+    pitch_vec: torch.Tensor, duration_vec: torch.Tensor, layer_idx: int
 ) -> Dict:
-    """Analyze relationship between pitch and modality vectors for one layer.
+    """Analyze relationship between pitch and duration vectors for one layer.
 
     Args:
         pitch_vec: Pitch steering vector
-        modality_vec: Modality steering vector
+        duration_vec: Duration steering vector
         layer_idx: Layer index
 
     Returns:
         Dictionary with analysis results
     """
     # Cosine similarity
-    cos_sim = cosine_similarity(pitch_vec, modality_vec)
+    cos_sim = cosine_similarity(pitch_vec, duration_vec)
 
     # Projection magnitudes (bidirectional)
-    proj_modality_onto_pitch = projection_magnitude(modality_vec, pitch_vec)
-    proj_pitch_onto_modality = projection_magnitude(pitch_vec, modality_vec)
+    proj_duration_onto_pitch = projection_magnitude(duration_vec, pitch_vec)
+    proj_pitch_onto_duration = projection_magnitude(pitch_vec, duration_vec)
 
     # Vector norms
     pitch_norm = float(pitch_vec.flatten().norm())
-    modality_norm = float(modality_vec.flatten().norm())
+    duration_norm = float(duration_vec.flatten().norm())
 
     # Angle in degrees
     angle_deg = float(np.arccos(np.clip(cos_sim, -1, 1)) * 180 / np.pi)
@@ -112,11 +112,11 @@ def analyze_vector_pair(
         "layer": layer_idx,
         "cosine_similarity": cos_sim,
         "angle_degrees": angle_deg,
-        "projection_modality_onto_pitch": proj_modality_onto_pitch,
-        "projection_pitch_onto_modality": proj_pitch_onto_modality,
+        "projection_duration_onto_pitch": proj_duration_onto_pitch,
+        "projection_pitch_onto_duration": proj_pitch_onto_duration,
         "pitch_norm": pitch_norm,
-        "modality_norm": modality_norm,
-        "norm_ratio": modality_norm / (pitch_norm + 1e-8),
+        "duration_norm": duration_norm,
+        "norm_ratio": duration_norm / (pitch_norm + 1e-8),
     }
 
 
@@ -156,15 +156,15 @@ def visualize_analysis(
     # Extract metrics
     cos_sims = [results[layer]["cosine_similarity"] for layer in layers]
     angles = [results[layer]["angle_degrees"] for layer in layers]
-    proj_m2p = [results[layer]["projection_modality_onto_pitch"] for layer in layers]
-    proj_p2m = [results[layer]["projection_pitch_onto_modality"] for layer in layers]
+    proj_d2p = [results[layer]["projection_duration_onto_pitch"] for layer in layers]
+    proj_p2d = [results[layer]["projection_pitch_onto_duration"] for layer in layers]
     pitch_norms = [results[layer]["pitch_norm"] for layer in layers]
-    modality_norms = [results[layer]["modality_norm"] for layer in layers]
+    duration_norms = [results[layer]["duration_norm"] for layer in layers]
 
     # Create figure with subplots
     fig, axes = plt.subplots(2, 3, figsize=(18, 10))
     fig.suptitle(
-        "Steering Vector Orthogonality Analysis: Pitch vs Modality",
+        "Steering Vector Orthogonality Analysis: Pitch vs Duration",
         fontsize=16,
         fontweight="bold",
     )
@@ -197,20 +197,20 @@ def visualize_analysis(
     ax = axes[0, 2]
     ax.plot(
         layers,
-        proj_m2p,
+        proj_d2p,
         "o-",
         linewidth=2,
         markersize=8,
-        label="Modality → Pitch",
+        label="Duration → Pitch",
         color="#F18F01",
     )
     ax.plot(
         layers,
-        proj_p2m,
+        proj_p2d,
         "s-",
         linewidth=2,
         markersize=8,
-        label="Pitch → Modality",
+        label="Pitch → Duration",
         color="#C73E1D",
     )
     ax.axhline(y=0.3, color="orange", linestyle="--", alpha=0.7, label="Low threshold")
@@ -234,11 +234,11 @@ def visualize_analysis(
     )
     ax.plot(
         layers,
-        modality_norms,
+        duration_norms,
         "s-",
         linewidth=2,
         markersize=8,
-        label="Modality",
+        label="Duration",
         color="#A23B72",
     )
     ax.set_xlabel("Layer", fontsize=12)
@@ -252,7 +252,7 @@ def visualize_analysis(
     cos_matrix = np.array(cos_sims).reshape(1, -1)
     im = ax.imshow(cos_matrix, cmap="RdBu_r", aspect="auto", vmin=-1, vmax=1)
     ax.set_yticks([0])
-    ax.set_yticklabels(["Pitch vs\nModality"])
+    ax.set_yticklabels(["Pitch vs\nDuration"])
     ax.set_xticks(range(n_layers))
     ax.set_xticklabels(layers)
     ax.set_xlabel("Layer", fontsize=12)
@@ -269,8 +269,8 @@ def visualize_analysis(
         level, _ = classify_interference_level(
             results[layer]["cosine_similarity"],
             max(
-                results[layer]["projection_modality_onto_pitch"],
-                results[layer]["projection_pitch_onto_modality"],
+                results[layer]["projection_duration_onto_pitch"],
+                results[layer]["projection_pitch_onto_duration"],
             ),
         )
         classifications.append(level)
@@ -332,8 +332,8 @@ def print_summary(results: Dict, overall_recommendation: str):
     cos_sims = [abs(results[layer]["cosine_similarity"]) for layer in layers]
     proj_mags = [
         max(
-            results[layer]["projection_modality_onto_pitch"],
-            results[layer]["projection_pitch_onto_modality"],
+            results[layer]["projection_duration_onto_pitch"],
+            results[layer]["projection_pitch_onto_duration"],
         )
         for layer in layers
     ]
@@ -368,7 +368,7 @@ def print_summary(results: Dict, overall_recommendation: str):
     for layer in layers:
         r = results[layer]
         proj_max = max(
-            r["projection_modality_onto_pitch"], r["projection_pitch_onto_modality"]
+            r["projection_duration_onto_pitch"], r["projection_pitch_onto_duration"]
         )
         level, rec = classify_interference_level(r["cosine_similarity"], proj_max)
 
@@ -432,7 +432,7 @@ def determine_overall_recommendation(results: Dict) -> str:
     for layer in layers:
         r = results[layer]
         proj_max = max(
-            r["projection_modality_onto_pitch"], r["projection_pitch_onto_modality"]
+            r["projection_duration_onto_pitch"], r["projection_pitch_onto_duration"]
         )
         level, _ = classify_interference_level(r["cosine_similarity"], proj_max)
 
@@ -478,7 +478,7 @@ def determine_overall_recommendation(results: Dict) -> str:
 def main():
     """Main entry point."""
     parser = argparse.ArgumentParser(
-        description="Analyze orthogonality between pitch and modality steering vectors"
+        description="Analyze orthogonality between pitch and duration steering vectors"
     )
     parser.add_argument(
         "--pitch_vectors",
@@ -487,16 +487,16 @@ def main():
         help="Path to pitch steering vectors (.pt file)",
     )
     parser.add_argument(
-        "--modality_vectors",
+        "--duration_vectors",
         type=pathlib.Path,
         required=True,
-        help="Path to modality steering vectors (.pt file)",
+        help="Path to duration steering vectors (.pt file)",
     )
     parser.add_argument(
         "--output_dir",
         type=pathlib.Path,
         default=pathlib.Path(
-            "steering_interventions/dual_steering/outputs/orthogonality_analysis"
+            "steering_interventions/dual_steering/outputs/orthogonality_analysis_pitch_duration"
         ),
         help="Output directory for results",
     )
@@ -517,27 +517,27 @@ def main():
     logging.info(f"Loading pitch vectors from: {args.pitch_vectors}")
     pitch_vectors, pitch_metadata = load_steering_vectors(args.pitch_vectors)
 
-    logging.info(f"Loading modality vectors from: {args.modality_vectors}")
-    modality_vectors, modality_metadata = load_steering_vectors(args.modality_vectors)
+    logging.info(f"Loading duration vectors from: {args.duration_vectors}")
+    duration_vectors, duration_metadata = load_steering_vectors(args.duration_vectors)
 
     # Verify layers match
     pitch_layers = set(pitch_vectors.keys())
-    modality_layers = set(modality_vectors.keys())
+    duration_layers = set(duration_vectors.keys())
 
-    if pitch_layers != modality_layers:
+    if pitch_layers != duration_layers:
         logging.warning(
             f"Layer mismatch: pitch has {len(pitch_layers)} layers, "
-            f"modality has {len(modality_layers)} layers"
+            f"duration has {len(duration_layers)} layers"
         )
 
-    common_layers = sorted(pitch_layers & modality_layers)
+    common_layers = sorted(pitch_layers & duration_layers)
     logging.info(f"Analyzing {len(common_layers)} common layers")
 
     # Analyze each layer
     results = {}
     for layer in common_layers:
         results[layer] = analyze_vector_pair(
-            pitch_vectors[layer], modality_vectors[layer], layer
+            pitch_vectors[layer], duration_vectors[layer], layer
         )
 
     # Determine overall recommendation
@@ -567,7 +567,7 @@ def main():
             {
                 "metadata": {
                     "pitch_concept": pitch_metadata.get("concept", "unknown"),
-                    "modality_concept": modality_metadata.get("concept", "unknown"),
+                    "duration_concept": duration_metadata.get("concept", "unknown"),
                     "num_layers": len(common_layers),
                 },
                 "overall_recommendation": overall_recommendation,
