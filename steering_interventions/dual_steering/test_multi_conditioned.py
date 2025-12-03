@@ -42,6 +42,7 @@ from typing import Dict, List, Tuple
 
 import numpy as np
 import torch
+from tqdm import tqdm
 
 sys.path.insert(0, str(pathlib.Path(__file__).parent.parent.parent / "mmt"))
 sys.path.insert(0, str(pathlib.Path(__file__).parent.parent))
@@ -516,6 +517,10 @@ def conditioned_generate_and_evaluate(
         f"Total combinations: {len(alpha_pitch_list) * len(alpha_duration_list)}"
     )
 
+    # Calculate total iterations for progress bar
+    total_iterations = len(song_list) * len(alpha_pitch_list) * len(alpha_duration_list)
+    pbar = tqdm(total=total_iterations, desc=f"{scenario}", unit="generation")
+
     for song_idx, (filepath, cond_pitch, cond_duration) in enumerate(song_list):
         logging.info(f"\n{'='*70}")
         logging.info(
@@ -539,6 +544,22 @@ def conditioned_generate_and_evaluate(
         for alpha_pitch in alpha_pitch_list:
             for alpha_duration in alpha_duration_list:
                 try:
+                    # Check if already generated (for resuming)
+                    if output_dir is not None:
+                        save_dir = (
+                            output_dir
+                            / scenario
+                            / strategy
+                            / f"ap{alpha_pitch:+.1f}_ad{alpha_duration:+.1f}"
+                        )
+                        result_marker = save_dir / f"{filepath.stem}.npy"
+                        if result_marker.exists():
+                            logging.info(
+                                f"  α_p={alpha_pitch:+.1f}, α_d={alpha_duration:+.1f}: SKIPPING (already generated)"
+                            )
+                            pbar.update(1)  # Update progress bar
+                            continue
+
                     # Create generator
                     generator = MultiSteeringGenerator(
                         model=model,
@@ -671,29 +692,37 @@ def conditioned_generate_and_evaluate(
                                 torch.cat((conditioning, output), 1).cpu().numpy()[0]
                             )
 
+                            # Only save .npy (tokens) to save space
+                            # MIDI/WAV can be generated later from .npy files
                             np.save(save_dir / f"{filepath.stem}.npy", full_seq)
 
-                            # Save as MIDI/WAV
-                            try:
-                                music = representation.decode(full_seq, encoding)
-                                music.write(str(save_dir / f"{filepath.stem}.mid"))
-                                music.write_audio(
-                                    str(save_dir / f"{filepath.stem}.wav")
-                                )
-                            except Exception as e:
-                                logging.error(f"Error saving audio: {e}")
+                            # Skip MIDI/WAV generation to save space
+                            # Uncomment below to generate audio files:
+                            # try:
+                            #     music = representation.decode(full_seq, encoding)
+                            #     music.write(str(save_dir / f"{filepath.stem}.mid"))
+                            #     music.write_audio(str(save_dir / f"{filepath.stem}.wav"))
+                            # except Exception as e:
+                            #     logging.error(f"Error saving audio: {e}")
+
+                        pbar.update(1)  # Update progress bar
 
                 except Exception as e:
                     logging.error(
                         f"Generation failed for α_p={alpha_pitch}, α_d={alpha_duration}: {e}"
                     )
+                    pbar.update(1)  # Update progress bar even on error
                     continue
 
+    pbar.close()  # Close progress bar
     return results
 
 
 def extract_listening_list(results: List[Dict], top_n: int = 20) -> List[Dict]:
     """Extract best context-fighting examples ranked by audibility + quality.
+
+    Ensures balanced representation from all scenarios by selecting top examples
+    from each scenario proportionally.
 
     Scoring criteria:
     - Steering magnitude (how much did pitch/duration change?)
@@ -705,12 +734,17 @@ def extract_listening_list(results: List[Dict], top_n: int = 20) -> List[Dict]:
         top_n: Number of examples to include
 
     Returns:
-        Ranked list of best examples
+        Ranked list of best examples with scenario diversity
     """
     scored_results = []
 
     for r in results:
         if r["generated_n_notes"] < 10:
+            continue
+
+        # Exclude baseline examples (alpha 0.0 for either concept)
+        # We want both concepts actively steered
+        if abs(r["alpha_pitch"]) < 1e-9 or abs(r["alpha_duration"]) < 1e-9:
             continue
 
         # Calculate audibility score
@@ -735,10 +769,36 @@ def extract_listening_list(results: List[Dict], top_n: int = 20) -> List[Dict]:
             }
         )
 
-    # Sort by listening score
-    scored_results.sort(key=lambda x: x["listening_score"], reverse=True)
+    # Group by scenario
+    scenarios = {r["scenario"] for r in scored_results}
+    n_scenarios = len(scenarios)
 
-    return scored_results[:top_n]
+    if n_scenarios == 0:
+        return []
+
+    # Ensure each scenario gets at least top_n // n_scenarios examples
+    per_scenario = max(1, top_n // n_scenarios)
+    listening_list = []
+
+    for scenario in sorted(scenarios):
+        scenario_results = [r for r in scored_results if r["scenario"] == scenario]
+        scenario_results.sort(key=lambda x: x["listening_score"], reverse=True)
+
+        # Add top examples from this scenario
+        listening_list.extend(scenario_results[:per_scenario])
+
+    # Fill remaining slots with best overall examples not yet included
+    remaining_slots = top_n - len(listening_list)
+    if remaining_slots > 0:
+        included_ids = {id(r) for r in listening_list}
+        remaining_candidates = [r for r in scored_results if id(r) not in included_ids]
+        remaining_candidates.sort(key=lambda x: x["listening_score"], reverse=True)
+        listening_list.extend(remaining_candidates[:remaining_slots])
+
+    # Final sort by score
+    listening_list.sort(key=lambda x: x["listening_score"], reverse=True)
+
+    return listening_list[:top_n]
 
 
 def analyze_conditioned_results(results: List[Dict]) -> Dict:
