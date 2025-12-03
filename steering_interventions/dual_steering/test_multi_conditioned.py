@@ -1,16 +1,16 @@
 #!/usr/bin/env python3
-"""Phase 4: Conditioned Dual-Steering Testing.
+"""Phase 4: Conditioned Dual-Steering Testing for Pitch + Duration.
 
 Tests dual-steering ability to override strong conditioning context from extreme songs.
 
 Test scenarios (ALL FIGHT BOTH CONCEPTS):
-1. Low pitch + minor → steer high + major (fight both)
-2. High pitch + major → steer low + minor (fight both)
-3. Low pitch + major → steer high + minor (fight both)
-4. High pitch + minor → steer low + major (fight both)
+1. Low pitch + short duration → steer high + long (fight both)
+2. High pitch + long duration → steer low + short (fight both)
+3. Low pitch + long duration → steer high + short (fight both with opposite)
+4. High pitch + short duration → steer low + long (fight both with opposite)
 
 For each scenario:
-- Find extreme conditioning songs
+- Find extreme conditioning songs (extreme pitch and duration combinations)
 - Extract first N beats as conditioning
 - Generate with various alpha combinations
 - Measure steering success vs baseline
@@ -22,14 +22,14 @@ Output:
 - Generated MIDI/WAV files
 
 Usage:
-    python dual_steering/test_multi_conditioned.py \\
-        --model_checkpoint path/to/model.ckpt \\
-        --pitch_vectors steering_interventions/outputs/steering_vectors/average_pitch_steering_vectors.pt \\
-        --modality_vectors steering_interventions/modality/outputs/steering_vectors/modality_steering_vectors.pt \\
+    python steering_interventions/dual_steering/test_multi_conditioned.py \\
+        --model_checkpoint exp/sod/checkpoints/best_model.pt \\
+        --pitch_vectors outputs/steering_vectors/average_pitch_steering_vectors.pt \\
+        --duration_vectors outputs/steering_vectors/average_duration_steering_vectors.pt \\
         --output_dir steering_interventions/dual_steering/outputs/phase4_conditioned \\
         --n_songs 5 \\
         --conditioning_beats 8 \\
-        --strategies gram_schmidt direct
+        --strategies gram_schmidt_pitch
 """
 
 import argparse
@@ -52,15 +52,7 @@ import muspy
 import representation
 import utils
 
-# Import music21
-try:
-    from music21 import note, stream
-
-    MUSIC21_AVAILABLE = True
-except ImportError:
-    MUSIC21_AVAILABLE = False
-    print("ERROR: music21 not available. Install with: pip install music21")
-    sys.exit(1)
+# No music21 needed - using token-based duration measurement
 
 # Ground truth metrics from paper
 GROUND_TRUTH_METRICS = {
@@ -108,30 +100,53 @@ def extract_pitches_from_tokens(tokens: np.ndarray, encoding: dict) -> list:
         return []
 
 
-def detect_key_from_tokens(tokens: np.ndarray, encoding: dict) -> tuple:
-    """Detect key (tonic + mode) from tokens using music21."""
+def measure_duration_from_tokens(tokens: np.ndarray, encoding: dict) -> Dict:
+    """Measure duration statistics from tokens (token[4] = duration in ticks).
+
+    Args:
+        tokens: Token array (seq_len, 6)
+        encoding: Encoding dictionary
+
+    Returns:
+        Dictionary with duration statistics
+    """
     try:
         note_type = encoding["type_code_map"]["note"]
-        pitches = []
+        durations = []
 
         for token in tokens:
             if token[0] == note_type:
-                pitch_value = token[3]
-                pitches.append(pitch_value)
+                duration_value = token[4]
+                durations.append(duration_value)
 
-        if len(pitches) < 10:
-            return ("unknown", "unknown", 0.0)
+        if len(durations) < 10:
+            return {
+                "mean": np.nan,
+                "std": np.nan,
+                "min": np.nan,
+                "max": np.nan,
+                "n_notes": len(durations),
+            }
 
-        s = stream.Stream()
-        for p in pitches:
-            s.append(note.Note(p))
-
-        key = s.analyze("key")
-        return (key.tonic.name, key.mode, key.correlationCoefficient)
-
+        return {
+            "mean": float(np.mean(durations)),
+            "std": float(np.std(durations)),
+            "min": float(np.min(durations)),
+            "max": float(np.max(durations)),
+            "n_notes": len(durations),
+        }
     except Exception as e:
-        logging.warning(f"Key detection failed: {e}")
-        return ("unknown", "unknown", 0.0)
+        logging.error(f"Error measuring duration: {e}")
+        return {
+            "mean": np.nan,
+            "std": np.nan,
+            "min": np.nan,
+            "max": np.nan,
+            "n_notes": 0,
+        }
+
+
+# Key detection removed - using duration measurement instead
 
 
 def evaluate_quality_metrics(tokens: np.ndarray, encoding: dict) -> Dict:
@@ -182,12 +197,13 @@ def find_extreme_songs(
     encoding: Dict,
     n_songs: int = 5,
     conditioning_beats: int = 8,
-    min_confidence: float = 0.7,
+    min_duration_threshold: float = 15.0,  # Minimum mean duration for "long"
+    max_duration_threshold: float = 8.0,  # Maximum mean duration for "short"
     cache_file: pathlib.Path = None,
-) -> Dict[str, List[Tuple[pathlib.Path, float, str, float]]]:
-    """Find songs with extreme pitch and modality characteristics.
+) -> Dict[str, List[Tuple[pathlib.Path, float, float]]]:
+    """Find songs with extreme pitch and duration characteristics.
 
-    Ranks ALL songs by pitch and modality, then selects top N from each category.
+    Ranks ALL songs by pitch and duration, then selects top N from each category.
     Results are cached to avoid re-scanning on subsequent runs.
 
     Args:
@@ -195,19 +211,20 @@ def find_extreme_songs(
         encoding: Encoding dictionary
         n_songs: Number of songs per category
         conditioning_beats: Beats to analyze for classification
-        min_confidence: Minimum modality detection confidence (default: 0.5)
+        min_duration_threshold: Minimum mean duration (ticks) to classify as "long"
+        max_duration_threshold: Maximum mean duration (ticks) to classify as "short"
         cache_file: Path to cache file (if None, uses notes_dir/extreme_songs_cache.json)
 
     Returns:
         Dictionary with 4 categories:
-        - "low_pitch_minor": (filepath, mean_pitch, mode, confidence)
-        - "low_pitch_major": (filepath, mean_pitch, mode, confidence)
-        - "high_pitch_minor": (filepath, mean_pitch, mode, confidence)
-        - "high_pitch_major": (filepath, mean_pitch, mode, confidence)
+        - "low_pitch_short_duration": [(filepath, mean_pitch, mean_duration)]
+        - "low_pitch_long_duration": [(filepath, mean_pitch, mean_duration)]
+        - "high_pitch_short_duration": [(filepath, mean_pitch, mean_duration)]
+        - "high_pitch_long_duration": [(filepath, mean_pitch, mean_duration)]
     """
     # Setup cache file
     if cache_file is None:
-        cache_file = notes_dir / "extreme_songs_cache.json"
+        cache_file = notes_dir / "extreme_songs_duration_cache.json"
 
     # Try to load from cache
     if cache_file.exists():
@@ -219,27 +236,28 @@ def find_extreme_songs(
             # Verify cache parameters match
             if (
                 cached_data["conditioning_beats"] == conditioning_beats
-                and cached_data["min_confidence"] == min_confidence
+                and cached_data["min_duration_threshold"] == min_duration_threshold
+                and cached_data["max_duration_threshold"] == max_duration_threshold
             ):
                 # Convert cached data back to proper format
                 result = {}
                 for category, songs in cached_data["extreme_songs"].items():
                     result[category] = [
-                        (pathlib.Path(path), pitch, mode, conf)
-                        for path, pitch, mode, conf in songs[:n_songs]
+                        (pathlib.Path(path), pitch, duration)
+                        for path, pitch, duration in songs[:n_songs]
                     ]
 
                 logging.info("✅ Loaded from cache successfully")
                 for category, songs in result.items():
                     if songs:
-                        pitches = [p for _, p, _, _ in songs]
-                        confidences = [c for _, _, _, c in songs]
+                        pitches = [p for _, p, _ in songs]
+                        durations = [d for _, _, d in songs]
                         logging.info(f"  {category.upper()}: {len(songs)} songs")
                         logging.info(
                             f"    Pitch range: {min(pitches):.1f} - {max(pitches):.1f}"
                         )
                         logging.info(
-                            f"    Confidence range: {min(confidences):.2f} - {max(confidences):.2f}"
+                            f"    Duration range: {min(durations):.1f} - {max(durations):.1f}"
                         )
                 return result
             else:
@@ -251,19 +269,24 @@ def find_extreme_songs(
     logging.info(f"Scanning {notes_dir} for songs with extreme characteristics...")
 
     candidates = {
-        "low_pitch_minor": [],
-        "low_pitch_major": [],
-        "high_pitch_minor": [],
-        "high_pitch_major": [],
+        "low_pitch_short_duration": [],
+        "low_pitch_long_duration": [],
+        "high_pitch_short_duration": [],
+        "high_pitch_long_duration": [],
     }
 
     # Scan for .npy files
+    scanned_count = 0
     for subfolder in notes_dir.iterdir():
         if not subfolder.is_dir():
             continue
 
         for filepath in subfolder.glob("*.npy"):
             try:
+                scanned_count += 1
+                if scanned_count % 100 == 0:
+                    logging.info(f"  Scanned {scanned_count} songs...")
+
                 tokens = load_song_tokens(filepath, encoding)
 
                 # Extract first N beats
@@ -284,63 +307,76 @@ def find_extreme_songs(
                     continue
                 mean_pitch = float(np.mean(pitches))
 
-                # Get modality
-                _, mode, confidence = detect_key_from_tokens(cond_tokens, encoding)
-
-                # Only require valid mode detection with minimum confidence
-                if mode not in ["major", "minor"] or confidence < min_confidence:
+                # Get duration
+                duration_stats = measure_duration_from_tokens(cond_tokens, encoding)
+                if duration_stats["n_notes"] < 10:
                     continue
+                mean_duration = duration_stats["mean"]
 
-                # Classify into categories (no hard thresholds, just categorize)
-                if mode == "minor":
-                    candidates["low_pitch_minor"].append(
-                        (filepath, mean_pitch, mode, confidence)
-                    )
-                    candidates["high_pitch_minor"].append(
-                        (filepath, mean_pitch, mode, confidence)
-                    )
-                else:  # major
-                    candidates["low_pitch_major"].append(
-                        (filepath, mean_pitch, mode, confidence)
-                    )
-                    candidates["high_pitch_major"].append(
-                        (filepath, mean_pitch, mode, confidence)
-                    )
+                # Classify into all 4 categories (let sorting find extremes)
+                candidates["low_pitch_short_duration"].append(
+                    (filepath, mean_pitch, mean_duration)
+                )
+                candidates["low_pitch_long_duration"].append(
+                    (filepath, mean_pitch, mean_duration)
+                )
+                candidates["high_pitch_short_duration"].append(
+                    (filepath, mean_pitch, mean_duration)
+                )
+                candidates["high_pitch_long_duration"].append(
+                    (filepath, mean_pitch, mean_duration)
+                )
 
             except Exception as e:
                 logging.debug(f"Error processing {filepath.name}: {e}")
 
-    # Rank and select top N per category
-    for category in candidates:
-        if "low_pitch" in category:
-            # Sort by lowest pitch (ascending), then by highest confidence
-            candidates[category].sort(key=lambda x: (x[1], -x[3]))
-        else:  # high_pitch
-            # Sort by highest pitch (descending), then by highest confidence
-            candidates[category].sort(key=lambda x: (-x[1], -x[3]))
+    logging.info(f"  Scanned {scanned_count} songs total")
 
-        # Take top N
-        candidates[category] = candidates[category][:n_songs]
+    # Rank and select top N per category
+    # Low pitch + short duration: low pitch first, then short duration
+    candidates["low_pitch_short_duration"].sort(key=lambda x: (x[1], x[2]))
+    candidates["low_pitch_short_duration"] = candidates["low_pitch_short_duration"][
+        :n_songs
+    ]
+
+    # Low pitch + long duration: low pitch first, then long duration
+    candidates["low_pitch_long_duration"].sort(key=lambda x: (x[1], -x[2]))
+    candidates["low_pitch_long_duration"] = candidates["low_pitch_long_duration"][
+        :n_songs
+    ]
+
+    # High pitch + short duration: high pitch first, then short duration
+    candidates["high_pitch_short_duration"].sort(key=lambda x: (-x[1], x[2]))
+    candidates["high_pitch_short_duration"] = candidates["high_pitch_short_duration"][
+        :n_songs
+    ]
+
+    # High pitch + long duration: high pitch first, then long duration
+    candidates["high_pitch_long_duration"].sort(key=lambda x: (-x[1], -x[2]))
+    candidates["high_pitch_long_duration"] = candidates["high_pitch_long_duration"][
+        :n_songs
+    ]
 
     # Log results
     for category, songs in candidates.items():
         logging.info(f"\n{category.upper()}: {len(songs)} songs")
         if songs:
-            pitches = [p for _, p, _, _ in songs]
-            confidences = [c for _, _, _, c in songs]
+            pitches = [p for _, p, _ in songs]
+            durations = [d for _, _, d in songs]
             logging.info(f"  Pitch range: {min(pitches):.1f} - {max(pitches):.1f}")
             logging.info(
-                f"  Confidence range: {min(confidences):.2f} - {max(confidences):.2f}"
+                f"  Duration range: {min(durations):.1f} - {max(durations):.1f} ticks"
             )
 
     # Save to cache for future runs
     try:
         cache_data = {
             "conditioning_beats": conditioning_beats,
-            "min_confidence": min_confidence,
+            "min_duration_threshold": min_duration_threshold,
+            "max_duration_threshold": max_duration_threshold,
             "extreme_songs": {
                 category: [
-                    (str(path), pitch, mode, conf) for path, pitch, mode, conf in songs
+                    (str(path), pitch, duration) for path, pitch, duration in songs
                 ]
                 for category, songs in candidates.items()
             },
@@ -376,67 +412,67 @@ def extract_conditioning_prefix(tokens: np.ndarray, n_beats: int = 8) -> torch.T
 def filter_alphas_for_scenario(
     scenario: str,
     alpha_pitch_list: List[float],
-    alpha_modality_list: List[float],
+    alpha_duration_list: List[float],
 ) -> Tuple[List[float], List[float]]:
     """Filter alpha values based on scenario to test only relevant combinations.
 
-    Rules:
-    1. low_pitch_minor_to_high_major: positive pitch + positive modality + baseline
-    2. high_pitch_major_to_low_minor: positive pitch + positive modality + baseline
-    3. low_pitch_major_to_high_minor: positive pitch + negative modality + baseline
-    4. high_pitch_minor_to_low_major: negative pitch + positive modality + baseline
+    Rules based on validation grid findings:
+    1. low_pitch_short_duration_to_high_long: positive pitch + positive duration + baseline
+    2. high_pitch_long_duration_to_low_short: negative pitch + negative duration + baseline
+    3. low_pitch_long_duration_to_high_short: positive pitch + negative duration + baseline
+    4. high_pitch_short_duration_to_low_long: negative pitch + positive duration + baseline
 
     Args:
         scenario: Scenario name
         alpha_pitch_list: Full list of pitch alphas
-        alpha_modality_list: Full list of modality alphas
+        alpha_duration_list: Full list of duration alphas
 
     Returns:
-        (filtered_pitch_alphas, filtered_modality_alphas)
+        (filtered_pitch_alphas, filtered_duration_alphas)
     """
     # Always include baseline (0.0)
     baseline = [0.0]
 
-    if scenario == "low_pitch_minor_to_high_major":
+    if scenario == "low_pitch_short_duration_to_high_long":
         # Fight both: need positive for both
         pitch_alphas = baseline + [a for a in alpha_pitch_list if a > 0]
-        modality_alphas = baseline + [a for a in alpha_modality_list if a > 0]
+        duration_alphas = baseline + [a for a in alpha_duration_list if a > 0]
 
-    elif scenario == "high_pitch_major_to_low_minor":
-        # Fight both: need positive for both (steering vectors are directional)
+    elif scenario == "high_pitch_long_duration_to_low_short":
+        # Fight both: need negative for both
         pitch_alphas = baseline + [a for a in alpha_pitch_list if a < 0]
-        modality_alphas = baseline + [a for a in alpha_modality_list if a < 0]
+        duration_alphas = baseline + [a for a in alpha_duration_list if a < 0]
 
-    elif scenario == "low_pitch_major_to_high_minor":
-        # Fight pitch (positive), fight modality (negative)
+    elif scenario == "low_pitch_long_duration_to_high_short":
+        # Fight pitch (positive), fight duration opposite (negative)
         pitch_alphas = baseline + [a for a in alpha_pitch_list if a > 0]
-        modality_alphas = baseline + [a for a in alpha_modality_list if a < 0]
+        duration_alphas = baseline + [a for a in alpha_duration_list if a < 0]
 
-    elif scenario == "high_pitch_minor_to_low_major":
-        # Fight pitch (negative), fight modality (positive)
+    elif scenario == "high_pitch_short_duration_to_low_long":
+        # Fight pitch (negative), fight duration opposite (positive)
         pitch_alphas = baseline + [a for a in alpha_pitch_list if a < 0]
-        modality_alphas = baseline + [a for a in alpha_modality_list if a > 0]
+        duration_alphas = baseline + [a for a in alpha_duration_list if a > 0]
 
     else:
         # Fallback: use all alphas
         pitch_alphas = alpha_pitch_list
-        modality_alphas = alpha_modality_list
+        duration_alphas = alpha_duration_list
 
     # Remove duplicates and sort
-    pitch_alphas = sorted(list(set(pitch_alphas)))
-    modality_alphas = sorted(list(set(modality_alphas)))
+    pitch_alphas = sorted(set(pitch_alphas))
+    duration_alphas = sorted(set(duration_alphas))
 
-    return pitch_alphas, modality_alphas
+    return pitch_alphas, duration_alphas
 
 
 def conditioned_generate_and_evaluate(
     model,
     composer,
     strategy: str,
-    song_list: List[Tuple[pathlib.Path, float, str, float]],
+    song_list: List[Tuple[pathlib.Path, float, float]],
     scenario: str,
     alpha_pitch_list: List[float],
-    alpha_modality_list: List[float],
+    alpha_duration_list: List[float],
     encoding: dict,
     device: torch.device,
     conditioning_beats: int = 8,
@@ -448,11 +484,11 @@ def conditioned_generate_and_evaluate(
     Args:
         model: Transformer model
         composer: VectorComposer instance
-        strategy: "direct" or "gram_schmidt"
-        song_list: List of (filepath, pitch, mode, confidence)
-        scenario: Scenario name (e.g., "low_pitch_minor_to_high_major")
+        strategy: Composition strategy (e.g., "gram_schmidt_pitch")
+        song_list: List of (filepath, mean_pitch, mean_duration)
+        scenario: Scenario name (e.g., "low_pitch_short_duration_to_high_long")
         alpha_pitch_list: Pitch alpha values to test
-        alpha_modality_list: Modality alpha values to test
+        alpha_duration_list: Duration alpha values to test
         encoding: Encoding dictionary
         device: Torch device
         conditioning_beats: Beats for conditioning
@@ -468,27 +504,25 @@ def conditioned_generate_and_evaluate(
     eos = encoding["type_code_map"]["end-of-song"]
 
     # Filter alphas based on scenario to test only relevant combinations
-    alpha_pitch_list, alpha_modality_list = filter_alphas_for_scenario(
-        scenario, alpha_pitch_list, alpha_modality_list
+    alpha_pitch_list, alpha_duration_list = filter_alphas_for_scenario(
+        scenario, alpha_pitch_list, alpha_duration_list
     )
 
     logging.info(f"Testing {len(alpha_pitch_list)} pitch alphas: {alpha_pitch_list}")
     logging.info(
-        f"Testing {len(alpha_modality_list)} modality alphas: {alpha_modality_list}"
+        f"Testing {len(alpha_duration_list)} duration alphas: {alpha_duration_list}"
     )
     logging.info(
-        f"Total combinations: {len(alpha_pitch_list) * len(alpha_modality_list)}"
+        f"Total combinations: {len(alpha_pitch_list) * len(alpha_duration_list)}"
     )
 
-    for song_idx, (filepath, cond_pitch, cond_mode, cond_confidence) in enumerate(
-        song_list
-    ):
+    for song_idx, (filepath, cond_pitch, cond_duration) in enumerate(song_list):
         logging.info(f"\n{'='*70}")
         logging.info(
             f"Song {song_idx+1}/{len(song_list)}: {filepath.name} | Scenario: {scenario}"
         )
         logging.info(
-            f"Conditioning: pitch={cond_pitch:.1f}, mode={cond_mode}, conf={cond_confidence:.2f}"
+            f"Conditioning: pitch={cond_pitch:.1f}, duration={cond_duration:.1f} ticks"
         )
         logging.info(f"{'='*70}")
 
@@ -503,14 +537,14 @@ def conditioned_generate_and_evaluate(
 
         # Test alpha combinations
         for alpha_pitch in alpha_pitch_list:
-            for alpha_modality in alpha_modality_list:
+            for alpha_duration in alpha_duration_list:
                 try:
                     # Create generator
                     generator = MultiSteeringGenerator(
                         model=model,
                         composer=composer,
                         alpha_pitch=alpha_pitch,
-                        alpha_modality=alpha_modality,
+                        alpha_duration=alpha_duration,
                         strategy=strategy,
                         intervention_position="last",
                     )
@@ -526,21 +560,24 @@ def conditioned_generate_and_evaluate(
                     )
 
                     # Convert to numpy (generated portion only)
-                    # Note: output from model.generate() already excludes conditioning
                     generated_tokens = output.cpu().numpy()[0]
 
                     # Extract pitches
                     pitches = extract_pitches_from_tokens(generated_tokens, encoding)
 
-                    if len(pitches) >= 10:
+                    # Extract durations
+                    duration_stats = measure_duration_from_tokens(
+                        generated_tokens, encoding
+                    )
+
+                    if len(pitches) >= 10 and duration_stats["n_notes"] >= 10:
                         # Pitch statistics
                         gen_pitch_mean = float(np.mean(pitches))
                         gen_pitch_std = float(np.std(pitches))
 
-                        # Detect key/modality
-                        _, gen_mode, gen_confidence = detect_key_from_tokens(
-                            generated_tokens, encoding
-                        )
+                        # Duration statistics
+                        gen_duration_mean = duration_stats["mean"]
+                        gen_duration_std = duration_stats["std"]
 
                         # Quality metrics
                         quality = evaluate_quality_metrics(generated_tokens, encoding)
@@ -552,52 +589,59 @@ def conditioned_generate_and_evaluate(
 
                         # Calculate steering success
                         pitch_change = gen_pitch_mean - cond_pitch
-                        mode_changed = gen_mode != cond_mode
+                        duration_change = gen_duration_mean - cond_duration
 
                         # Determine if steering succeeded based on scenario
                         pitch_success = False
-                        mode_success = False
+                        duration_success = False
 
                         # Check pitch steering (based on directional change)
                         if "low_pitch" in scenario and "to_high" in scenario:
-                            # Want to increase pitch: success if generated pitch is higher
+                            # Want to increase pitch
                             pitch_success = gen_pitch_mean > cond_pitch
                         elif "high_pitch" in scenario and "to_low" in scenario:
-                            # Want to decrease pitch: success if generated pitch is lower
+                            # Want to decrease pitch
                             pitch_success = gen_pitch_mean < cond_pitch
 
-                        # Check modality steering (based on target mode achievement)
-                        if "to_high_major" in scenario or "to_low_major" in scenario:
-                            # Want major mode: success if generated mode is major with good confidence
-                            mode_success = gen_mode == "major" and gen_confidence >= 0.5
-                        elif "to_high_minor" in scenario or "to_low_minor" in scenario:
-                            # Want minor mode: success if generated mode is minor with good confidence
-                            mode_success = gen_mode == "minor" and gen_confidence >= 0.5
+                        # Check duration steering
+                        if (
+                            "short_duration" in scenario
+                            and "to" in scenario
+                            and "long" in scenario
+                        ):
+                            # Want to increase duration
+                            duration_success = gen_duration_mean > cond_duration
+                        elif (
+                            "long_duration" in scenario
+                            and "to" in scenario
+                            and "short" in scenario
+                        ):
+                            # Want to decrease duration
+                            duration_success = gen_duration_mean < cond_duration
 
                         result = {
                             "song_name": filepath.stem,
                             "scenario": scenario,
                             "strategy": strategy,
                             "alpha_pitch": alpha_pitch,
-                            "alpha_modality": alpha_modality,
+                            "alpha_duration": alpha_duration,
                             # Conditioning
                             "conditioning_pitch": cond_pitch,
-                            "conditioning_mode": cond_mode,
-                            "conditioning_confidence": cond_confidence,
+                            "conditioning_duration": cond_duration,
                             "conditioning_beats": conditioning_beats,
                             "conditioning_tokens": conditioning.shape[1],
                             # Generated
                             "generated_pitch_mean": gen_pitch_mean,
                             "generated_pitch_std": gen_pitch_std,
-                            "generated_mode": gen_mode,
-                            "generated_confidence": gen_confidence,
+                            "generated_duration_mean": gen_duration_mean,
+                            "generated_duration_std": gen_duration_std,
                             "generated_n_notes": len(pitches),
                             # Steering effect
                             "pitch_change": pitch_change,
-                            "mode_changed": mode_changed,
+                            "duration_change": duration_change,
                             "pitch_steering_success": pitch_success,
-                            "mode_steering_success": mode_success,
-                            "overall_success": pitch_success and mode_success,
+                            "duration_steering_success": duration_success,
+                            "overall_success": pitch_success and duration_success,
                             # Quality
                             "quality_metrics": quality,
                             "degradation": degradation,
@@ -606,9 +650,9 @@ def conditioned_generate_and_evaluate(
                         results.append(result)
 
                         logging.info(
-                            f"  α_p={alpha_pitch:+.1f}, α_m={alpha_modality:+.1f}: "
+                            f"  α_p={alpha_pitch:+.1f}, α_d={alpha_duration:+.1f}: "
                             f"pitch={gen_pitch_mean:.1f} (Δ{pitch_change:+.1f}), "
-                            f"mode={gen_mode} (conf={gen_confidence:.2f}), "
+                            f"dur={gen_duration_mean:.1f} (Δ{duration_change:+.1f}), "
                             f"deg={degradation['total_degradation']:.2f}"
                         )
 
@@ -618,13 +662,11 @@ def conditioned_generate_and_evaluate(
                                 output_dir
                                 / scenario
                                 / strategy
-                                / f"ap{alpha_pitch:+.1f}_am{alpha_modality:+.1f}"
+                                / f"ap{alpha_pitch:+.1f}_ad{alpha_duration:+.1f}"
                             )
                             save_dir.mkdir(parents=True, exist_ok=True)
 
                             # Save full sequence (conditioning + generated)
-                            # Note: output from model.generate() contains only generated tokens, not conditioning
-                            # full_seq = torch.cat((conditioning, output), 1)[0].cpu().numpy()
                             full_seq = (
                                 torch.cat((conditioning, output), 1).cpu().numpy()[0]
                             )
@@ -643,7 +685,7 @@ def conditioned_generate_and_evaluate(
 
                 except Exception as e:
                     logging.error(
-                        f"Generation failed for α_p={alpha_pitch}, α_m={alpha_modality}: {e}"
+                        f"Generation failed for α_p={alpha_pitch}, α_d={alpha_duration}: {e}"
                     )
                     continue
 
@@ -654,9 +696,9 @@ def extract_listening_list(results: List[Dict], top_n: int = 20) -> List[Dict]:
     """Extract best context-fighting examples ranked by audibility + quality.
 
     Scoring criteria:
-    - Steering magnitude (how much did pitch/mode change?)
+    - Steering magnitude (how much did pitch/duration change?)
     - Quality preservation (low degradation)
-    - Confidence (high confidence in detected mode)
+    - Both concepts changed successfully
 
     Args:
         results: All generation results
@@ -673,15 +715,15 @@ def extract_listening_list(results: List[Dict], top_n: int = 20) -> List[Dict]:
 
         # Calculate audibility score
         pitch_magnitude = abs(r["pitch_change"]) / 10.0  # Normalize by 10 semitones
-        mode_change_score = 1.0 if r["mode_changed"] else 0.0
-        confidence_score = r["generated_confidence"]
+        duration_magnitude = abs(r["duration_change"]) / 10.0  # Normalize by 10 ticks
+        success_score = 1.0 if r["overall_success"] else 0.0
 
         # Calculate quality score (inverse of degradation)
         degradation = r["degradation"]["total_degradation"]
         quality_score = max(0, 1.0 - degradation / 10.0)  # Normalize by 10
 
         # Combined score
-        audibility = (pitch_magnitude + mode_change_score + confidence_score) / 3.0
+        audibility = (pitch_magnitude + duration_magnitude + success_score) / 3.0
         overall_score = 0.6 * audibility + 0.4 * quality_score
 
         scored_results.append(
@@ -716,7 +758,7 @@ def analyze_conditioned_results(results: List[Dict]) -> Dict:
     }
 
     # Group by scenario
-    for scenario in set(r["scenario"] for r in results):
+    for scenario in {r["scenario"] for r in results}:
         scenario_results = [r for r in results if r["scenario"] == scenario]
         valid = [r for r in scenario_results if r["generated_n_notes"] >= 10]
 
@@ -726,19 +768,19 @@ def analyze_conditioned_results(results: List[Dict]) -> Dict:
                 "pitch_success_rate": np.mean(
                     [r["pitch_steering_success"] for r in valid]
                 ),
-                "mode_success_rate": np.mean(
-                    [r["mode_steering_success"] for r in valid]
+                "duration_success_rate": np.mean(
+                    [r["duration_steering_success"] for r in valid]
                 ),
                 "overall_success_rate": np.mean([r["overall_success"] for r in valid]),
                 "mean_degradation": np.mean(
                     [r["degradation"]["total_degradation"] for r in valid]
                 ),
                 "mean_pitch_change": np.mean([r["pitch_change"] for r in valid]),
-                "mode_change_rate": np.mean([r["mode_changed"] for r in valid]),
+                "mean_duration_change": np.mean([r["duration_change"] for r in valid]),
             }
 
     # Group by strategy
-    for strategy in set(r["strategy"] for r in results):
+    for strategy in {r["strategy"] for r in results}:
         strategy_results = [r for r in results if r["strategy"] == strategy]
         valid = [r for r in strategy_results if r["generated_n_notes"] >= 10]
 
@@ -752,7 +794,7 @@ def analyze_conditioned_results(results: List[Dict]) -> Dict:
             }
 
     # Find best alpha configs per scenario
-    for scenario in set(r["scenario"] for r in results):
+    for scenario in {r["scenario"] for r in results}:
         scenario_results = [
             r
             for r in results
@@ -772,7 +814,7 @@ def analyze_conditioned_results(results: List[Dict]) -> Dict:
             best = scenario_results[0]
             analysis["best_configs"][scenario] = {
                 "alpha_pitch": best["alpha_pitch"],
-                "alpha_modality": best["alpha_modality"],
+                "alpha_duration": best["alpha_duration"],
                 "strategy": best["strategy"],
                 "success_rate": best["overall_success"],
                 "degradation": best["degradation"]["total_degradation"],
@@ -798,12 +840,12 @@ def main():
         help="Pitch steering vectors",
     )
     parser.add_argument(
-        "--modality_vectors",
+        "--duration_vectors",
         type=pathlib.Path,
         default=pathlib.Path(
-            "steering_interventions/modality/outputs/steering_vectors/modality_steering_vectors.pt"
+            "outputs/steering_vectors/average_duration_steering_vectors.pt"
         ),
-        help="Modality steering vectors",
+        help="Duration steering vectors",
     )
     parser.add_argument(
         "--output_dir",
@@ -823,20 +865,20 @@ def main():
     parser.add_argument(
         "--alphas_pitch",
         type=str,
-        default="-2.5,-2.0,-1.5,0.0,1.5,2.0,2.5",
-        help="Pitch alphas (optimized from Phase 3)",
+        default="0.25,1.0,1.25,-1.25",
+        help="Pitch alphas (based on validation grid findings)",
     )
     parser.add_argument(
-        "--alphas_modality",
+        "--alphas_duration",
         type=str,
-        default="-2.5,-2.0,-1.5,0.0,1.5,2.0,2.5",
-        help="Modality alphas (optimized from Phase 3)",
+        default="0.75,-1.25",
+        help="Duration alphas (based on validation grid findings)",
     )
     parser.add_argument(
         "--strategies",
         nargs="+",
-        default=["gram_schmidt", "direct"],
-        help="Strategies to test",
+        default=["gram_schmidt_pitch"],
+        help="Strategies to test (gram_schmidt_pitch recommended)",
     )
     parser.add_argument("--gpu", type=int, default=None, help="GPU number")
     parser.add_argument(
@@ -902,15 +944,15 @@ def main():
     from vector_composition import load_and_create_composer
 
     composer = load_and_create_composer(
-        str(args.pitch_vectors), str(args.modality_vectors)
+        str(args.pitch_vectors), str(args.duration_vectors)
     )
 
     # Parse alphas
     alphas_pitch = [float(a.strip()) for a in args.alphas_pitch.split(",")]
-    alphas_modality = [float(a.strip()) for a in args.alphas_modality.split(",")]
+    alphas_duration = [float(a.strip()) for a in args.alphas_duration.split(",")]
 
     logging.info(
-        f"Testing {len(alphas_pitch)} pitch alphas × {len(alphas_modality)} modality alphas"
+        f"Testing {len(alphas_pitch)} pitch alphas × {len(alphas_duration)} duration alphas"
     )
 
     # Find extreme songs
@@ -941,24 +983,24 @@ def main():
     # Define test scenarios
     scenarios = [
         {
-            "name": "low_pitch_minor_to_high_major",
-            "songs": extreme_songs["low_pitch_minor"],
-            "description": "Low pitch + minor → steer high + major (fight both)",
+            "name": "low_pitch_short_duration_to_high_long",
+            "songs": extreme_songs["low_pitch_short_duration"],
+            "description": "Low pitch + short duration → steer high + long (fight both)",
         },
         {
-            "name": "high_pitch_major_to_low_minor",
-            "songs": extreme_songs["high_pitch_major"],
-            "description": "High pitch + major → steer low + minor (fight both)",
+            "name": "high_pitch_long_duration_to_low_short",
+            "songs": extreme_songs["high_pitch_long_duration"],
+            "description": "High pitch + long duration → steer low + short (fight both)",
         },
         {
-            "name": "low_pitch_major_to_high_minor",
-            "songs": extreme_songs["low_pitch_major"],
-            "description": "Low pitch + major → steer high + minor (fight both)",
+            "name": "low_pitch_long_duration_to_high_short",
+            "songs": extreme_songs["low_pitch_long_duration"],
+            "description": "Low pitch + long duration → steer high + short (fight both opposite)",
         },
         {
-            "name": "high_pitch_minor_to_low_major",
-            "songs": extreme_songs["high_pitch_minor"],
-            "description": "High pitch + minor → steer low + major (fight both)",
+            "name": "high_pitch_short_duration_to_low_long",
+            "songs": extreme_songs["high_pitch_short_duration"],
+            "description": "High pitch + short duration → steer low + long (fight both opposite)",
         },
     ]
 
@@ -983,7 +1025,7 @@ def main():
                 song_list=scenario["songs"],
                 scenario=scenario["name"],
                 alpha_pitch_list=alphas_pitch,
-                alpha_modality_list=alphas_modality,
+                alpha_duration_list=alphas_duration,
                 encoding=encoding,
                 device=device,
                 conditioning_beats=args.conditioning_beats,
@@ -1013,13 +1055,13 @@ def main():
                     "conditioning_beats": args.conditioning_beats,
                     "continuation_len": args.continuation_len,
                     "alphas_pitch": alphas_pitch,
-                    "alphas_modality": alphas_modality,
+                    "alphas_duration": alphas_duration,
                     "strategies": args.strategies,
                     "total_generations": len(all_results),
                     "elapsed_time_seconds": elapsed_time,
                 },
                 "extreme_songs": {
-                    k: [(str(f), p, m, c) for f, p, m, c in v]
+                    k: [(str(f), p, d) for f, p, d in v]
                     for k, v in extreme_songs.items()
                 },
                 "results": all_results,
@@ -1038,9 +1080,9 @@ def main():
             {
                 "top_examples": listening_list,
                 "selection_criteria": {
-                    "audibility": "Magnitude of pitch/mode change",
+                    "audibility": "Magnitude of pitch/duration change",
                     "quality": "Low degradation from ground truth",
-                    "confidence": "High modality detection confidence",
+                    "success": "Both concepts successfully steered",
                 },
             },
             f,
@@ -1062,9 +1104,10 @@ def main():
         print(f"\n{scenario}:")
         print(f"  Overall success: {stats['overall_success_rate']*100:.1f}%")
         print(f"  Pitch success: {stats['pitch_success_rate']*100:.1f}%")
-        print(f"  Mode success: {stats['mode_success_rate']*100:.1f}%")
+        print(f"  Duration success: {stats['duration_success_rate']*100:.1f}%")
         print(f"  Mean degradation: {stats['mean_degradation']:.2f}")
         print(f"  Mean pitch change: {stats['mean_pitch_change']:+.1f} semitones")
+        print(f"  Mean duration change: {stats['mean_duration_change']:+.1f} ticks")
 
     print("\n### Best Strategy ###")
     for strategy, stats in analysis["summary_by_strategy"].items():
@@ -1076,7 +1119,7 @@ def main():
     for scenario, best_config in analysis["best_configs"].items():
         print(f"\n{scenario}:")
         print(f"  α_pitch: {best_config['alpha_pitch']:+.1f}")
-        print(f"  α_modality: {best_config['alpha_modality']:+.1f}")
+        print(f"  α_duration: {best_config['alpha_duration']:+.1f}")
         print(f"  Strategy: {best_config['strategy']}")
         print(f"  Success: {best_config['success_rate']*100:.1f}%")
         print(f"  Degradation: {best_config['degradation']:.2f}")
@@ -1086,12 +1129,14 @@ def main():
         print(f"\n{i}. {example['song_name']} - {example['scenario']}")
         print(f"   Strategy: {example['strategy']}")
         print(
-            f"   α_p={example['alpha_pitch']:+.1f}, α_m={example['alpha_modality']:+.1f}"
+            f"   α_p={example['alpha_pitch']:+.1f}, α_d={example['alpha_duration']:+.1f}"
         )
         print(
             f"   Pitch: {example['conditioning_pitch']:.1f} → {example['generated_pitch_mean']:.1f} (Δ{example['pitch_change']:+.1f})"
         )
-        print(f"   Mode: {example['conditioning_mode']} → {example['generated_mode']}")
+        print(
+            f"   Duration: {example['conditioning_duration']:.1f} → {example['generated_duration_mean']:.1f} (Δ{example['duration_change']:+.1f})"
+        )
         print(
             f"   Score: {example['listening_score']:.3f} (audibility={example['audibility_score']:.2f}, quality={example['quality_score']:.2f})"
         )
