@@ -198,13 +198,20 @@ def find_extreme_songs(
     encoding: Dict,
     n_songs: int = 5,
     conditioning_beats: int = 8,
-    min_duration_threshold: float = 15.0,  # Minimum mean duration for "long"
-    max_duration_threshold: float = 8.0,  # Maximum mean duration for "short"
+    pitch_high_threshold: float = 67.6,  # From config.py
+    pitch_low_threshold: float = 60.0,  # From config.py
+    duration_high_threshold: float = 14.5,  # From config.py - "long" notes
+    duration_low_threshold: float = 6.5,  # From config.py - "short" notes
     cache_file: pathlib.Path = None,
 ) -> Dict[str, List[Tuple[pathlib.Path, float, float]]]:
     """Find songs with extreme pitch and duration characteristics.
 
-    Ranks ALL songs by pitch and duration, then selects top N from each category.
+    Scans all songs and classifies them into 4 categories using config thresholds:
+    - Low pitch: mean_pitch < pitch_low_threshold
+    - High pitch: mean_pitch > pitch_high_threshold
+    - Short duration: mean_duration < duration_low_threshold
+    - Long duration: mean_duration > duration_high_threshold
+
     Results are cached to avoid re-scanning on subsequent runs.
 
     Args:
@@ -212,8 +219,10 @@ def find_extreme_songs(
         encoding: Encoding dictionary
         n_songs: Number of songs per category
         conditioning_beats: Beats to analyze for classification
-        min_duration_threshold: Minimum mean duration (ticks) to classify as "long"
-        max_duration_threshold: Maximum mean duration (ticks) to classify as "short"
+        pitch_high_threshold: Threshold for high pitch (from config.py)
+        pitch_low_threshold: Threshold for low pitch (from config.py)
+        duration_high_threshold: Threshold for long duration (from config.py)
+        duration_low_threshold: Threshold for short duration (from config.py)
         cache_file: Path to cache file (if None, uses notes_dir/extreme_songs_cache.json)
 
     Returns:
@@ -237,8 +246,10 @@ def find_extreme_songs(
             # Verify cache parameters match
             if (
                 cached_data["conditioning_beats"] == conditioning_beats
-                and cached_data["min_duration_threshold"] == min_duration_threshold
-                and cached_data["max_duration_threshold"] == max_duration_threshold
+                and cached_data["pitch_high_threshold"] == pitch_high_threshold
+                and cached_data["pitch_low_threshold"] == pitch_low_threshold
+                and cached_data["duration_high_threshold"] == duration_high_threshold
+                and cached_data["duration_low_threshold"] == duration_low_threshold
             ):
                 # Convert cached data back to proper format
                 result = {}
@@ -314,45 +325,68 @@ def find_extreme_songs(
                     continue
                 mean_duration = duration_stats["mean"]
 
-                # Classify into all 4 categories (let sorting find extremes)
-                candidates["low_pitch_short_duration"].append(
-                    (filepath, mean_pitch, mean_duration)
-                )
-                candidates["low_pitch_long_duration"].append(
-                    (filepath, mean_pitch, mean_duration)
-                )
-                candidates["high_pitch_short_duration"].append(
-                    (filepath, mean_pitch, mean_duration)
-                )
-                candidates["high_pitch_long_duration"].append(
-                    (filepath, mean_pitch, mean_duration)
-                )
+                # Classify into categories using thresholds
+                # Low pitch + short duration
+                if (
+                    mean_pitch < pitch_low_threshold
+                    and mean_duration < duration_low_threshold
+                ):
+                    candidates["low_pitch_short_duration"].append(
+                        (filepath, mean_pitch, mean_duration)
+                    )
+
+                # Low pitch + long duration
+                if (
+                    mean_pitch < pitch_low_threshold
+                    and mean_duration > duration_high_threshold
+                ):
+                    candidates["low_pitch_long_duration"].append(
+                        (filepath, mean_pitch, mean_duration)
+                    )
+
+                # High pitch + short duration
+                if (
+                    mean_pitch > pitch_high_threshold
+                    and mean_duration < duration_low_threshold
+                ):
+                    candidates["high_pitch_short_duration"].append(
+                        (filepath, mean_pitch, mean_duration)
+                    )
+
+                # High pitch + long duration
+                if (
+                    mean_pitch > pitch_high_threshold
+                    and mean_duration > duration_high_threshold
+                ):
+                    candidates["high_pitch_long_duration"].append(
+                        (filepath, mean_pitch, mean_duration)
+                    )
 
             except Exception as e:
                 logging.debug(f"Error processing {filepath.name}: {e}")
 
     logging.info(f"  Scanned {scanned_count} songs total")
 
-    # Rank and select top N per category
-    # Low pitch + short duration: low pitch first, then short duration
+    # For each category, sort by extremeness and take top N
+    # Low pitch + short duration: most extreme = lowest pitch, shortest duration
     candidates["low_pitch_short_duration"].sort(key=lambda x: (x[1], x[2]))
     candidates["low_pitch_short_duration"] = candidates["low_pitch_short_duration"][
         :n_songs
     ]
 
-    # Low pitch + long duration: low pitch first, then long duration
+    # Low pitch + long duration: most extreme = lowest pitch, longest duration
     candidates["low_pitch_long_duration"].sort(key=lambda x: (x[1], -x[2]))
     candidates["low_pitch_long_duration"] = candidates["low_pitch_long_duration"][
         :n_songs
     ]
 
-    # High pitch + short duration: high pitch first, then short duration
+    # High pitch + short duration: most extreme = highest pitch, shortest duration
     candidates["high_pitch_short_duration"].sort(key=lambda x: (-x[1], x[2]))
     candidates["high_pitch_short_duration"] = candidates["high_pitch_short_duration"][
         :n_songs
     ]
 
-    # High pitch + long duration: high pitch first, then long duration
+    # High pitch + long duration: most extreme = highest pitch, longest duration
     candidates["high_pitch_long_duration"].sort(key=lambda x: (-x[1], -x[2]))
     candidates["high_pitch_long_duration"] = candidates["high_pitch_long_duration"][
         :n_songs
@@ -373,8 +407,10 @@ def find_extreme_songs(
     try:
         cache_data = {
             "conditioning_beats": conditioning_beats,
-            "min_duration_threshold": min_duration_threshold,
-            "max_duration_threshold": max_duration_threshold,
+            "pitch_high_threshold": pitch_high_threshold,
+            "pitch_low_threshold": pitch_low_threshold,
+            "duration_high_threshold": duration_high_threshold,
+            "duration_low_threshold": duration_low_threshold,
             "extreme_songs": {
                 category: [
                     (str(path), pitch, duration) for path, pitch, duration in songs
@@ -1023,11 +1059,25 @@ def main():
     # Setup cache file path
     cache_file = args.output_dir / "extreme_songs_cache.json"
 
+    # Load thresholds from config
+    pitch_high = config.CONCEPTS["average_pitch"]["high_threshold"]
+    pitch_low = config.CONCEPTS["average_pitch"]["low_threshold"]
+    duration_high = config.CONCEPTS["average_duration"]["high_threshold"]
+    duration_low = config.CONCEPTS["average_duration"]["low_threshold"]
+
+    logging.info("Using thresholds from config.py:")
+    logging.info(f"  Pitch: low < {pitch_low}, high > {pitch_high}")
+    logging.info(f"  Duration: short < {duration_low}, long > {duration_high}")
+
     extreme_songs = find_extreme_songs(
         config.NOTES_DIR,
         encoding,
         args.n_songs,
         args.conditioning_beats,
+        pitch_high_threshold=pitch_high,
+        pitch_low_threshold=pitch_low,
+        duration_high_threshold=duration_high,
+        duration_low_threshold=duration_low,
         cache_file=cache_file,
     )
 
