@@ -19,7 +19,9 @@ from pathlib import Path
 from typing import Dict, List, Tuple
 
 
-def load_results(filepath: str = "phase3_results.json") -> Tuple[Dict, List[Dict]]:
+def load_results(
+    filepath: str = "steering_interventions/dual_steering_dp/outputs/validation_grid_orthogonal/phase3_results.json",
+) -> Tuple[Dict, List[Dict]]:
     """Load phase3 results."""
     with open(filepath) as f:
         data = json.load(f)

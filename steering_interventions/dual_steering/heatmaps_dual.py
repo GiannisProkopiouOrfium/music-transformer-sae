@@ -4,7 +4,7 @@ import numpy as np
 import matplotlib.pyplot as plt
 
 with open(
-    "steering_interventions/dual_steering/outputs/full_grid_gram_schmidt_pitch/phase3_results.json"
+    "steering_interventions/dual_steering_dp/outputs/validation_grid_orthogonal/phase3_results.json"
 ) as f:
     data = json.load(f)
 
