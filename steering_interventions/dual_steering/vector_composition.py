@@ -208,7 +208,9 @@ class VectorComposer:
             duration_norm_sq = torch.dot(v_duration, v_duration)
 
             if duration_norm_sq > 1e-8:
-                projection = (torch.dot(v_pitch, v_duration) / duration_norm_sq) * v_duration
+                projection = (
+                    torch.dot(v_pitch, v_duration) / duration_norm_sq
+                ) * v_duration
                 v_pitch_orth = v_pitch - projection
             else:
                 # Edge case: duration vector is near-zero, use original pitch
