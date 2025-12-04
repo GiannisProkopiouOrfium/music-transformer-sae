@@ -34,6 +34,7 @@ import numpy as np
 from tqdm import tqdm
 
 sys.path.insert(0, str(pathlib.Path(__file__).parent.parent.parent / "mmt"))
+sys.path.insert(0, str(pathlib.Path(__file__).parent.parent))
 
 import config
 import representation
