@@ -155,3 +155,11 @@ Gemfile.lock
 # Experiment
 /exp
 /data
+
+*.md
+feature_*
+*.wav
+*.png
+enhanced_*
+interpretation/analysis_results/detailed_interpretations.json
+interpretation/openai_results/interpretation_summary.json
