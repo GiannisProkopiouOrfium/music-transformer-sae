@@ -32,9 +32,7 @@ def parse_args(args=None, namespace=None):
     parser.add_argument(
         "-i", "--in_dir", type=pathlib.Path, help="input data directory"
     )
-    parser.add_argument(
-        "-o", "--out_dir", type=pathlib.Path, help="output directory"
-    )
+    parser.add_argument("-o", "--out_dir", type=pathlib.Path, help="output directory")
     parser.add_argument(
         "-ns",
         "--n_samples",
@@ -86,12 +84,8 @@ def parse_args(args=None, namespace=None):
     )
     # Others
     parser.add_argument("-g", "--gpu", type=int, help="gpu number")
-    parser.add_argument(
-        "-j", "--jobs", default=1, type=int, help="number of jobs"
-    )
-    parser.add_argument(
-        "-q", "--quiet", action="store_true", help="show warnings only"
-    )
+    parser.add_argument("-j", "--jobs", default=1, type=int, help="number of jobs")
+    parser.add_argument("-q", "--quiet", action="store_true", help="show warnings only")
     return parser.parse_args(args=args, namespace=namespace)
 
 
@@ -106,66 +100,64 @@ def save_pianoroll(filename, music, size=None, **kwargs):
 
 def save_result(filename, data, sample_dir, encoding):
     """Save the results in multiple formats."""
-    # Save as a numpy array
-    np.save(sample_dir / "npy" / f"{filename}.npy", data)
+    # # Save as a numpy array
+    # np.save(sample_dir / "npy" / f"{filename}.npy", data)
 
-    # Save as a CSV file
-    representation.save_csv_codes(sample_dir / "csv" / f"{filename}.csv", data)
+    # # Save as a CSV file
+    # representation.save_csv_codes(sample_dir / "csv" / f"{filename}.csv", data)
 
-    # Save as a TXT file
-    representation.save_txt(
-        sample_dir / "txt" / f"{filename}.txt", data, encoding
-    )
+    # # Save as a TXT file
+    # representation.save_txt(sample_dir / "txt" / f"{filename}.txt", data, encoding)
 
     # Convert to a MusPy Music object
     music = representation.decode(data, encoding)
 
-    # Save as a MusPy JSON file
-    music.save(sample_dir / "json" / f"{filename}.json")
+    # # Save as a MusPy JSON file
+    # music.save(sample_dir / "json" / f"{filename}.json")
 
     # Save as a piano roll
-    save_pianoroll(
-        sample_dir / "png" / f"{filename}.png", music, (20, 5), preset="frame"
-    )
+    # save_pianoroll(
+    #     sample_dir / "png" / f"{filename}.png", music, (20, 5), preset="frame"
+    # )
 
-    # Save as a MIDI file
-    music.write(sample_dir / "mid" / f"{filename}.mid")
+    # # Save as a MIDI file
+    # music.write(sample_dir / "mid" / f"{filename}.mid")
 
     # Save as a WAV file
+    # sample_dir / "wav" / f"{filename}.wav"
     music.write(
-        sample_dir / "wav" / f"{filename}.wav",
-        options="-o synth.polyphony=4096",
+        f"{sample_dir}/wav/{filename}.wav",
+        # options="-o synth.polyphony=4096",
     )
+    print(f"Saved WAV to {sample_dir}/wav/{filename}.wav")
 
     # Save also as a MP3 file
-    subprocess.check_output(
-        ["ffmpeg", "-loglevel", "error", "-y", "-i"]
-        + [str(sample_dir / "wav" / f"{filename}.wav")]
-        + ["-b:a", "192k"]
-        + [str(sample_dir / "mp3" / f"{filename}.mp3")]
-    )
+    # subprocess.check_output(
+    #     ["ffmpeg", "-loglevel", "error", "-y", "-i"]
+    #     + [str(sample_dir / "wav" / f"{filename}.wav")]
+    #     + ["-b:a", "192k"]
+    #     + [str(sample_dir / "mp3" / f"{filename}.mp3")]
+    # )
 
     # Trim the music
-    music.trim(music.resolution * 64)
+    # music.trim(music.resolution * 64)
 
     # Save the trimmed version as a piano roll
-    save_pianoroll(
-        sample_dir / "png-trimmed" / f"{filename}.png", music, (10, 5)
-    )
+    # save_pianoroll(sample_dir / "png-trimmed" / f"{filename}.png", music, (10, 5))
 
-    # Save as a WAV file
-    music.write(
-        sample_dir / "wav-trimmed" / f"{filename}.wav",
-        options="-o synth.polyphony=4096",
-    )
+    # # Save as a WAV file
+    # music.write(
+    #     sample_dir / "wav-trimmed" / f"{filename}.wav",
+    #     options="-o synth.polyphony=4096",
+    # )
 
-    # Save also as a MP3 file
-    subprocess.check_output(
-        ["ffmpeg", "-loglevel", "error", "-y", "-i"]
-        + [str(sample_dir / "wav-trimmed" / f"{filename}.wav")]
-        + ["-b:a", "192k"]
-        + [str(sample_dir / "mp3-trimmed" / f"{filename}.mp3")]
-    )
+    # # Save also as a MP3 file
+    # subprocess.check_output(
+    #     ["ffmpeg", "-loglevel", "error", "-y", "-i"]
+    #     + [str(sample_dir / "wav-trimmed" / f"{filename}.wav")]
+    #     + ["-b:a", "192k"]
+    #     + [str(sample_dir / "mp3-trimmed" / f"{filename}.mp3")]
+    # )
 
 
 def main():
@@ -176,9 +168,7 @@ def main():
     # Set default arguments
     if args.dataset is not None:
         if args.names is None:
-            args.names = pathlib.Path(
-                f"data/{args.dataset}/processed/test-names.txt"
-            )
+            args.names = pathlib.Path(f"data/{args.dataset}/processed/test-names.txt")
         if args.in_dir is None:
             args.in_dir = pathlib.Path(f"data/{args.dataset}/processed/notes/")
         if args.out_dir is None:
@@ -205,9 +195,7 @@ def main():
     utils.save_args(args.out_dir / "generate-args.json", args)
 
     # Load training configurations
-    logging.info(
-        f"Loading training arguments from: {args.out_dir / 'train-args.json'}"
-    )
+    logging.info(f"Loading training arguments from: {args.out_dir / 'train-args.json'}")
     train_args = utils.load_json(args.out_dir / "train-args.json")
     logging.info(f"Using loaded arguments:\n{pprint.pformat(train_args)}")
 
@@ -227,9 +215,18 @@ def main():
     (sample_dir / "mp3-trimmed").mkdir(exist_ok=True)
 
     # Get the specified device
-    device = torch.device(
-        f"cuda:{args.gpu}" if args.gpu is not None else "cpu"
-    )
+    # device = torch.device(
+    #     f"cuda:{args.gpu}" if args.gpu is not None else "cpu"
+    # )
+    # To this:
+    if args.gpu is not None:
+        if torch.backends.mps.is_available():
+            device = torch.device("mps")
+        else:
+            device = torch.device("cpu")
+            print("Warning: MPS not available, using CPU")
+    else:
+        device = torch.device("cpu")
     logging.info(f"Using device: {device}")
 
     # Load the encoding
@@ -318,9 +315,7 @@ def main():
             generated_np = torch.cat((tgt_start, generated), 1).cpu().numpy()
 
             # Save the results
-            save_result(
-                f"{i}_unconditioned", generated_np[0], sample_dir, encoding
-            )
+            save_result(f"{i}_unconditioned", generated_np[0], sample_dir, encoding)
 
             # ------------------------------
             # Instrument-informed generation

@@ -1,4 +1,5 @@
 """Data loader."""
+
 import argparse
 import logging
 import pathlib
@@ -67,9 +68,7 @@ def parse_args(args=None, namespace=None):
         type=int,
         help="number of jobs (deafult to `min(batch_size, 8)`)",
     )
-    parser.add_argument(
-        "-q", "--quiet", action="store_true", help="show warnings only"
-    )
+    parser.add_argument("-q", "--quiet", action="store_true", help="show warnings only")
     return parser.parse_args(args=args, namespace=namespace)
 
 
@@ -109,6 +108,7 @@ class MusicDataset(torch.utils.data.Dataset):
     ):
         super().__init__()
         self.data_dir = pathlib.Path(data_dir)
+        print(filename)
         with open(filename) as f:
             self.names = [line.strip() for line in f if line]
         self.encoding = encoding
@@ -190,9 +190,7 @@ def main():
     # Set default arguments
     if args.dataset is not None:
         if args.names is None:
-            args.names = pathlib.Path(
-                f"data/{args.dataset}/processed/names.txt"
-            )
+            args.names = pathlib.Path(f"data/{args.dataset}/processed/names.txt")
         if args.in_dir is None:
             args.in_dir = pathlib.Path(f"data/{args.dataset}/processed/notes")
     if args.jobs is None:
@@ -240,9 +238,7 @@ def main():
                     continue
                 logging.info(f"Shape of {key}: {value.shape}")
             logging.info(f"Name: {batch['name'][0]}")
-    logging.info(
-        f"Successfully loaded {n_batches} batches ({n_samples} samples)."
-    )
+    logging.info(f"Successfully loaded {n_batches} batches ({n_samples} samples).")
 
     # Log sequence length statistics
     logging.info(f"Avg sequence length: {np.mean(seq_lens):2f}")
