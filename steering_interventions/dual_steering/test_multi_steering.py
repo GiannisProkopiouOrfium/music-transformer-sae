@@ -233,6 +233,21 @@ def generate_and_evaluate(
         intervention_position="last",
     )
 
+    # Determine scenario folder based on alpha signs
+    if alpha_pitch > 0 and alpha_duration > 0:
+        scenario = "high_long"
+    elif alpha_pitch > 0 and alpha_duration < 0:
+        scenario = "high_short"
+    elif alpha_pitch < 0 and alpha_duration < 0:
+        scenario = "low_short"
+    elif alpha_pitch < 0 and alpha_duration > 0:
+        scenario = "low_long"
+    else:
+        scenario = "neutral"
+
+    # Dictionary to store per-sample metrics
+    sample_metrics = []
+
     # Generate samples
     all_pitch_means = []
     all_duration_stats = []  # List of duration stat dicts
@@ -255,6 +270,17 @@ def generate_and_evaluate(
                 filter_logits_fn="top_k",
                 filter_thres=0.9,
             )
+
+            # Combine start and generated
+            full_seq = torch.cat((primer, output), 1).cpu().numpy()[0]
+
+            # Save npy file with the necessary data
+            save_dir = pathlib.Path(f"flamingo_exp/dual/unconditional/{scenario}")
+            save_dir.mkdir(parents=True, exist_ok=True)
+            sample_filepath = (
+                save_dir / f"sample_alpha_p{alpha_pitch}_d{alpha_duration}_num_{i}.npy"
+            )
+            np.save(sample_filepath, full_seq)
 
             # Convert to numpy
             tokens = output[0].cpu().numpy()
@@ -283,9 +309,38 @@ def generate_and_evaluate(
                     degradation = calculate_degradation(quality, GROUND_TRUTH_METRICS)
                     all_degradations.append(degradation)
 
+                # Store per-sample metrics
+                sample_metrics.append(
+                    {
+                        "filepath": str(sample_filepath),
+                        "strategy": strategy,
+                        "alpha_pitch": alpha_pitch,
+                        "alpha_duration": alpha_duration,
+                        "sample_num": i,
+                        "mean_pitch": pitch_mean,
+                        "mean_duration": duration_stats["mean"],
+                        "duration_std": duration_stats["std"],
+                        "n_notes": len(pitches),
+                        "pitch_class_entropy": quality.get(
+                            "pitch_class_entropy", np.nan
+                        ),
+                        "scale_consistency": quality.get("scale_consistency", np.nan),
+                        "groove_consistency": quality.get("groove_consistency", np.nan),
+                    }
+                )
+
         except Exception as e:
             logging.error(f"Generation failed for sample {i}: {e}")
             continue
+
+    # Save sample metrics to JSON file
+    if sample_metrics:
+        metrics_file = (
+            save_dir / f"sample_metrics_p{alpha_pitch}_d{alpha_duration}.json"
+        )
+        with open(metrics_file, "w") as f:
+            json.dump(sample_metrics, f, indent=2)
+        logging.info(f"Saved sample metrics to {metrics_file}")
 
     # Aggregate metrics
     if valid_count == 0:
