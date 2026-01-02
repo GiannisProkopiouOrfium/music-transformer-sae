@@ -11,6 +11,7 @@ import argparse
 import logging
 import pathlib
 import sys
+import json
 
 import numpy as np
 import torch
@@ -177,6 +178,7 @@ def test_steering(
     target_layers=None,
     seq_len=512,
     n_samples=3,
+    concept=None,
 ):
     """Test steering with different alpha values.
 
@@ -202,6 +204,9 @@ def test_steering(
     eos = encoding["type_code_map"]["end-of-song"]
 
     generator = SteeredGenerator(model, steering_vectors, encoding)
+
+    # Dictionary to store per-sample metrics
+    sample_metrics = []
 
     for alpha in alphas:
         logging.info(f"Testing alpha={alpha}")
@@ -231,6 +236,12 @@ def test_steering(
             # Combine start and generated
             full_seq = torch.cat((start_tokens, generated), 1).cpu().numpy()[0]
 
+            # Save npy file
+            save_dir = pathlib.Path(f"flamingo_exp/single/unconditional/{concept}")
+            save_dir.mkdir(parents=True, exist_ok=True)
+            sample_filepath = save_dir / f"sample_alpha_{alpha}_num_{i}.npy"
+            np.save(sample_filepath, full_seq)
+
             # Extract velocities, pitches, and durations
             velocities = extract_velocities_from_tokens(full_seq, encoding)
             pitches = extract_pitches_from_tokens(full_seq, encoding)
@@ -238,6 +249,28 @@ def test_steering(
 
             # Evaluate quality metrics
             quality_metrics = evaluate_quality_metrics(full_seq, encoding)
+
+            # Store per-sample metrics
+            sample_metrics.append(
+                {
+                    "filepath": str(sample_filepath),
+                    "alpha": alpha,
+                    "sample_num": i,
+                    "mean_velocity": np.mean(velocities) if velocities else 0.0,
+                    "mean_pitch": np.mean(pitches) if pitches else 0.0,
+                    "mean_duration": np.mean(durations) if durations else 0.0,
+                    "n_notes": len(pitches),
+                    "pitch_class_entropy": quality_metrics.get(
+                        "pitch_class_entropy", np.nan
+                    ),
+                    "scale_consistency": quality_metrics.get(
+                        "scale_consistency", np.nan
+                    ),
+                    "groove_consistency": quality_metrics.get(
+                        "groove_consistency", np.nan
+                    ),
+                }
+            )
 
             if velocities:
                 alpha_velocities.extend(velocities)
@@ -318,6 +351,12 @@ def test_steering(
                 "duration_max": 0,
                 "n_notes": 0,
             }
+
+    # Save sample metrics to JSON file
+    metrics_file = save_dir / "sample_metrics.json"
+    with open(metrics_file, "w") as f:
+        json.dump(sample_metrics, f, indent=2)
+    logging.info(f"Saved sample metrics to {metrics_file}")
 
     return results
 
@@ -446,6 +485,7 @@ def main():
         target_layers=target_layers,
         seq_len=args.seq_len,
         n_samples=args.n_samples,
+        concept=args.concept,
     )
 
     # Print results
