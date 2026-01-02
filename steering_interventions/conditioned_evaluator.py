@@ -401,6 +401,7 @@ def conditioned_generate_and_evaluate(
     eos = encoding["type_code_map"]["end-of-song"]
 
     results = []
+    sample_metrics = []  # Track metrics per sample
 
     for i, (filepath, initial_pitch) in enumerate(song_list):
         logging.info(f"\n{'='*60}")
@@ -495,11 +496,46 @@ def conditioned_generate_and_evaluate(
 
         # Save if output_dir provided
         if output_dir is not None:
-            save_dir = output_dir / category / f"alpha_{alpha}"
+            save_dir = output_dir / category
             save_dir.mkdir(parents=True, exist_ok=True)
 
             # Save tokens
-            np.save(save_dir / f"{filepath.stem}.npy", full_seq)
+            sample_filepath = (
+                save_dir / f"sample_category_{category}_alpha_{alpha}_{i}.npy"
+            )
+            np.save(sample_filepath, full_seq)
+
+            # Store per-sample metrics
+            sample_metrics.append(
+                {
+                    "filepath": str(sample_filepath),
+                    "song_name": filepath.stem,
+                    "category": category,
+                    "alpha": alpha,
+                    "sample_num": i,
+                    "initial_pitch": float(initial_pitch),
+                    "initial_duration": float(conditioning_duration),
+                    "generated_mean_pitch": metrics["mean"],
+                    "generated_std_pitch": metrics["std"],
+                    "generated_mean_duration": metrics["duration_mean"],
+                    "generated_std_duration": metrics["duration_std"],
+                    "generated_n_notes": metrics["n_notes"],
+                    "pitch_change": float(metrics["mean"] - initial_pitch),
+                    "duration_change": float(
+                        metrics["duration_mean"] - conditioning_duration
+                    ),
+                    "pitch_class_entropy": quality_metrics.get(
+                        "pitch_class_entropy", np.nan
+                    ),
+                    "scale_consistency": quality_metrics.get(
+                        "scale_consistency", np.nan
+                    ),
+                    "groove_consistency": quality_metrics.get(
+                        "groove_consistency", np.nan
+                    ),
+                    "total_degradation": degradation.get("total_degradation", np.nan),
+                }
+            )
 
             # Save audio
             try:
@@ -508,6 +544,13 @@ def conditioned_generate_and_evaluate(
                 music.write_audio(str(save_dir / f"{filepath.stem}.wav"))
             except Exception as e:
                 logging.error(f"Error saving audio: {e}")
+
+    # Save sample metrics to JSON file for this category and alpha
+    if output_dir is not None and sample_metrics:
+        metrics_file = output_dir / category / "sample_metrics.json"
+        with open(metrics_file, "w") as f:
+            json.dump(sample_metrics, f, indent=2)
+        logging.info(f"Saved sample metrics to {metrics_file}")
 
     return results
 
@@ -1242,35 +1285,45 @@ def main():
 
         # Low category songs
         logging.info(f"\nProcessing {low_category.upper().replace('_', ' ')} songs...")
-        low_results = conditioned_generate_and_evaluate(
-            model,
-            steering_vectors,
-            encoding,
-            device,
-            low_songs,
-            low_category,
-            alpha,
-            args.conditioning_beats,
-            args.continuation_len,
-            args.output_dir,
-        )
-        all_results.extend(low_results)
+        if alpha >= 0:
+            logging.info(
+                f"Expecting increase in {args.concept.replace('_', ' ')} for positive alpha"
+            )
+            low_results = conditioned_generate_and_evaluate(
+                model,
+                steering_vectors,
+                encoding,
+                device,
+                low_songs,
+                low_category,
+                alpha,
+                args.conditioning_beats,
+                args.continuation_len,
+                args.output_dir,
+            )
+            all_results.extend(low_results)
 
-        # High category songs
-        logging.info(f"\nProcessing {high_category.upper().replace('_', ' ')} songs...")
-        high_results = conditioned_generate_and_evaluate(
-            model,
-            steering_vectors,
-            encoding,
-            device,
-            high_songs,
-            high_category,
-            alpha,
-            args.conditioning_beats,
-            args.continuation_len,
-            args.output_dir,
-        )
-        all_results.extend(high_results)
+        if alpha <= 0:
+            logging.info(
+                f"Expecting decrease in {args.concept.replace('_', ' ')} for negative alpha"
+            )
+            # High category songs
+            logging.info(
+                f"\nProcessing {high_category.upper().replace('_', ' ')} songs..."
+            )
+            high_results = conditioned_generate_and_evaluate(
+                model,
+                steering_vectors,
+                encoding,
+                device,
+                high_songs,
+                high_category,
+                alpha,
+                args.conditioning_beats,
+                args.continuation_len,
+                args.output_dir,
+            )
+            all_results.extend(high_results)
 
     # Analyze
     logging.info("\nAnalyzing results...")
