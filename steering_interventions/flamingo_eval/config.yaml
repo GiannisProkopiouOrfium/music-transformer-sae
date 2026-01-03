@@ -32,6 +32,17 @@ sample_selection:
 
 # Music Flamingo evaluation settings
 music_flamingo:
+  # API method: "gradio" or "transformers"
+  # - gradio: Uses HuggingFace Spaces API (no GPU needed, but has quota limits)
+  # - transformers: Local inference (requires GPU, downloads ~10GB model)
+  api_method: "transformers"
+
+  # HuggingFace token (optional)
+  # - For gradio: Higher priority in queue, increased quota
+  # - For transformers: Only needed for private models or if you hit download rate limits
+  # Get token from: https://huggingface.co/settings/tokens
+  hf_token: ""
+
   # Number of independent runs per sample (for self-consistency)
   num_runs: 3
 

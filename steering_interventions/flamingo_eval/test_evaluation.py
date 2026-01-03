@@ -67,14 +67,57 @@ def main():
         config = yaml.safe_load(f)
 
     # Initialize Music Flamingo client
-    print(f"\nInitializing Music Flamingo client...")
-    try:
-        from gradio_client import Client
+    api_method = config["music_flamingo"]["api_method"]
+    print(f"\nInitializing Music Flamingo ({api_method} method)...")
 
-        model = Client("nvidia/music-flamingo")
-        print(f"✅ Client initialized successfully")
+    try:
+        if api_method == "gradio":
+            from gradio_client import Client, handle_file
+
+            hf_token = config["music_flamingo"].get("hf_token", "").strip()
+
+            if hf_token:
+                print("Using HuggingFace token for authentication")
+                model = Client("nvidia/music-flamingo", hf_token=hf_token)
+            else:
+                print("Using anonymous access (limited quota)")
+                model = Client("nvidia/music-flamingo")
+
+            # Store handle_file as method for query function
+            model.handle_file = handle_file
+
+            print(f"✅ Client initialized successfully")
+
+        elif api_method == "transformers":
+            import torch
+            from transformers import (
+                AudioFlamingo3ForConditionalGeneration,
+                AutoProcessor,
+            )
+
+            model_id = "nvidia/music-flamingo-hf"
+            device = config["music_flamingo"].get("device", "cuda:0")
+            dtype = torch.float16
+
+            print(f"Loading model from {model_id}...")
+            print("⚠️ This will download ~10GB of model weights")
+
+            processor = AutoProcessor.from_pretrained(model_id)
+            transformer_model = AudioFlamingo3ForConditionalGeneration.from_pretrained(
+                model_id, device_map="auto", torch_dtype=dtype
+            )
+
+            model = {"processor": processor, "model": transformer_model}
+
+            print(f"✅ Model loaded on {device}")
+
+        else:
+            raise ValueError(
+                f"Unknown api_method: {api_method}. Use 'gradio' or 'transformers'"
+            )
+
     except Exception as e:
-        print(f"❌ Failed to initialize client: {e}")
+        print(f"❌ Failed to initialize: {e}")
         return 1
 
     # Test each category

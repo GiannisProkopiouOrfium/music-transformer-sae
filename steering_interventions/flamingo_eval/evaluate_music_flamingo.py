@@ -29,13 +29,14 @@ from typing import Dict, List, Optional, Tuple
 import yaml
 from tqdm import tqdm
 
-# Music Flamingo API via Gradio Client
-from gradio_client import Client, handle_file
-
 # Retry configuration
 MAX_RETRIES = 5
 BASE_DELAY = 2  # seconds
 MAX_DELAY = 60  # seconds
+
+# Import will be done dynamically based on api_method
+# from gradio_client import Client, handle_file  # For Gradio API
+# from transformers import AudioFlamingo3ForConditionalGeneration, AutoProcessor  # For Transformers
 
 
 def load_config(config_path: pathlib.Path) -> dict:
@@ -63,16 +64,16 @@ def query_music_flamingo(
     audio_path: pathlib.Path,
     system_prompt: str,
     user_prompt: str,
-    model,  # Gradio Client instance
+    model,  # Gradio Client or Transformers model
     config: dict,
 ) -> str:
     """Query Music Flamingo model with audio and prompt (with retry logic).
 
     Args:
         audio_path: Path to WAV file
-        system_prompt: System message (currently ignored by Gradio API)
+        system_prompt: System message (may be ignored depending on API method)
         user_prompt: User prompt template
-        model: Gradio Client instance
+        model: Gradio Client instance or Transformers model
         config: Music Flamingo config from YAML
 
     Returns:
@@ -81,20 +82,68 @@ def query_music_flamingo(
     Raises:
         Exception: If all retries fail
     """
+    api_method = config["music_flamingo"]["api_method"]
+
     for attempt in range(MAX_RETRIES):
         try:
-            # Query Music Flamingo via Gradio API
-            result = model.predict(
-                audio_path=handle_file(str(audio_path)),
-                youtube_url="",
-                prompt_text=user_prompt,
-                api_name="/infer",
-            )
+            if api_method == "gradio":
+                # Query via Gradio API
+                result = model.predict(
+                    audio_path=model.handle_file(str(audio_path)),
+                    youtube_url="",
+                    prompt_text=user_prompt,
+                    api_name="/infer",
+                )
 
-            if result:
-                return result
+                if result:
+                    return result
+                else:
+                    raise ValueError("Empty response from API")
+
+            elif api_method == "transformers":
+                # Query via HuggingFace Transformers (local inference)
+                processor = model["processor"]
+                transformer_model = model["model"]
+
+                conversation = [
+                    {
+                        "role": "user",
+                        "content": [
+                            {"type": "text", "text": user_prompt},
+                            {"type": "audio", "path": str(audio_path)},
+                        ],
+                    }
+                ]
+
+                inputs = processor.apply_chat_template(
+                    conversation,
+                    tokenize=True,
+                    add_generation_prompt=True,
+                    return_dict=True,
+                ).to(transformer_model.device, dtype=transformer_model.dtype)
+
+                outputs = transformer_model.generate(
+                    **inputs,
+                    max_new_tokens=config["music_flamingo"].get("max_tokens", 256),
+                    temperature=config["music_flamingo"].get("temperature", 0.7),
+                )
+
+                decoded_outputs = processor.batch_decode(
+                    outputs[:, inputs.input_ids.shape[1] :],
+                    skip_special_tokens=True,
+                )
+
+                result = decoded_outputs[0] if decoded_outputs else ""
+
+                if result:
+                    return result
+                else:
+                    raise ValueError("Empty response from model")
+
             else:
-                raise ValueError("Empty response from API")
+                raise ValueError(
+                    f"Unknown api_method: {api_method}. Use 'gradio' or 'transformers'"
+                )
 
         except Exception as e:
             delay = min(BASE_DELAY * (2**attempt), MAX_DELAY)
@@ -522,12 +571,62 @@ def main():
 
     # Initialize Music Flamingo model
     if not args.dry_run:
-        logging.info("Initializing Music Flamingo Gradio Client...")
+        api_method = config["music_flamingo"]["api_method"]
+        logging.info(f"Initializing Music Flamingo ({api_method} method)...")
+
         try:
-            model = Client("nvidia/music-flamingo")
-            logging.info("✅ Music Flamingo client initialized successfully")
+            if api_method == "gradio":
+                # Import Gradio Client
+                from gradio_client import Client, handle_file
+
+                hf_token = config["music_flamingo"].get("hf_token", "").strip()
+
+                if hf_token:
+                    logging.info("Using HuggingFace token for authentication")
+                    model = Client("nvidia/music-flamingo", hf_token=hf_token)
+                else:
+                    logging.info("Using anonymous access (limited quota)")
+                    model = Client("nvidia/music-flamingo")
+
+                # Store handle_file as method for query function
+                model.handle_file = handle_file
+
+                logging.info("✅ Music Flamingo Gradio client initialized")
+
+            elif api_method == "transformers":
+                # Import Transformers
+                import torch
+                from transformers import (
+                    AudioFlamingo3ForConditionalGeneration,
+                    AutoProcessor,
+                )
+
+                model_id = "nvidia/music-flamingo-hf"
+                device = config["music_flamingo"].get("device", "cuda:0")
+                dtype = torch.float16
+
+                logging.info(f"Loading model from {model_id}...")
+                logging.info("⚠️ This will download ~10GB of model weights")
+
+                processor = AutoProcessor.from_pretrained(model_id)
+                transformer_model = (
+                    AudioFlamingo3ForConditionalGeneration.from_pretrained(
+                        model_id, device_map="auto", torch_dtype=dtype
+                    )
+                )
+
+                # Package both processor and model
+                model = {"processor": processor, "model": transformer_model}
+
+                logging.info(f"✅ Music Flamingo Transformers model loaded on {device}")
+
+            else:
+                raise ValueError(
+                    f"Unknown api_method: {api_method}. Use 'gradio' or 'transformers'"
+                )
+
         except Exception as e:
-            logging.error(f"Failed to initialize Music Flamingo client: {e}")
+            logging.error(f"Failed to initialize Music Flamingo: {e}")
             sys.exit(1)
     else:
         model = None
