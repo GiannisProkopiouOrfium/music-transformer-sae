@@ -241,17 +241,19 @@ def evaluate_sample_category_1(
                 config["music_flamingo"],
             )
             responses.append(response)
-            
+
             logging.info(f"Run {run_idx+1} response: {response}")
 
             # Parse rating
             rating = parse_response(response, prompt_config["parse_regex"])
             logging.info(f"Run {run_idx+1} parsed rating: {rating}")
-            
+
             if rating:
                 ratings.append(rating)
             else:
-                logging.warning(f"Run {run_idx+1} - Failed to parse rating. Regex: {prompt_config['parse_regex']}")
+                logging.warning(
+                    f"Run {run_idx+1} - Failed to parse rating. Regex: {prompt_config['parse_regex']}"
+                )
 
         except Exception as e:
             logging.error(f"Error in run {run_idx+1}: {e}")
@@ -259,9 +261,11 @@ def evaluate_sample_category_1(
 
     # Majority vote
     final_rating, vote_count, is_unanimous = majority_vote(ratings)
-    
+
     logging.info(f"Category 1 - All ratings: {ratings}")
-    logging.info(f"Category 1 - Final rating: {final_rating}, Vote count: {vote_count}/{num_runs}")
+    logging.info(
+        f"Category 1 - Final rating: {final_rating}, Vote count: {vote_count}/{num_runs}"
+    )
 
     result = {
         **sample,
@@ -307,16 +311,31 @@ def evaluate_sample_category_2(
             )
             responses.append(response)
 
+            logging.info(f"Run {run_idx+1} response: {response}")
+
             # Parse both ratings
             pitch_rating = parse_response(response, prompt_config["parse_pitch_regex"])
             duration_rating = parse_response(
                 response, prompt_config["parse_duration_regex"]
             )
 
+            logging.info(
+                f"Run {run_idx+1} parsed pitch: {pitch_rating}, duration: {duration_rating}"
+            )
+
             if pitch_rating:
                 pitch_ratings.append(pitch_rating)
+            else:
+                logging.warning(
+                    f"Run {run_idx+1} - Failed to parse pitch. Regex: {prompt_config['parse_pitch_regex']}"
+                )
+
             if duration_rating:
                 duration_ratings.append(duration_rating)
+            else:
+                logging.warning(
+                    f"Run {run_idx+1} - Failed to parse duration. Regex: {prompt_config['parse_duration_regex']}"
+                )
 
         except Exception as e:
             logging.error(f"Error in run {run_idx+1}: {e}")
@@ -325,6 +344,13 @@ def evaluate_sample_category_2(
     # Majority vote for each concept
     final_pitch, pitch_votes, pitch_unanimous = majority_vote(pitch_ratings)
     final_duration, duration_votes, duration_unanimous = majority_vote(duration_ratings)
+
+    logging.info(
+        f"Category 2 - Pitch ratings: {pitch_ratings}, Final: {final_pitch} ({pitch_votes}/{num_runs})"
+    )
+    logging.info(
+        f"Category 2 - Duration ratings: {duration_ratings}, Final: {final_duration} ({duration_votes}/{num_runs})"
+    )
 
     result = {
         **sample,
@@ -379,10 +405,18 @@ def evaluate_sample_category_3(
             )
             responses.append(response)
 
+            logging.info(f"Run {run_idx+1} response: {response}")
+
             # Parse direction
             direction = parse_response(response, prompt_config["parse_regex"])
+            logging.info(f"Run {run_idx+1} parsed direction: {direction}")
+
             if direction:
                 directions.append(direction.upper())
+            else:
+                logging.warning(
+                    f"Run {run_idx+1} - Failed to parse direction. Regex: {prompt_config['parse_regex']}"
+                )
 
             # Parse confidence (optional)
             if "parse_confidence_regex" in prompt_config:
@@ -400,6 +434,11 @@ def evaluate_sample_category_3(
     final_direction, vote_count, is_unanimous = majority_vote(directions)
     final_confidence, _, _ = (
         majority_vote(confidences) if confidences else (None, 0, False)
+    )
+
+    logging.info(f"Category 3 - All directions: {directions}")
+    logging.info(
+        f"Category 3 - Final direction: {final_direction}, Vote count: {vote_count}/{num_runs}"
     )
 
     result = {
@@ -450,16 +489,31 @@ def evaluate_sample_category_4(
             )
             responses.append(response)
 
+            logging.info(f"Run {run_idx+1} response: {response}")
+
             # Parse both directions
             pitch_dir = parse_response(response, prompt_config["parse_pitch_regex"])
             duration_dir = parse_response(
                 response, prompt_config["parse_duration_regex"]
             )
 
+            logging.info(
+                f"Run {run_idx+1} parsed pitch direction: {pitch_dir}, duration direction: {duration_dir}"
+            )
+
             if pitch_dir:
                 pitch_directions.append(pitch_dir.upper())
+            else:
+                logging.warning(
+                    f"Run {run_idx+1} - Failed to parse pitch direction. Regex: {prompt_config['parse_pitch_regex']}"
+                )
+
             if duration_dir:
                 duration_directions.append(duration_dir.upper())
+            else:
+                logging.warning(
+                    f"Run {run_idx+1} - Failed to parse duration direction. Regex: {prompt_config['parse_duration_regex']}"
+                )
 
             # Parse confidences (optional)
             if "parse_pitch_confidence_regex" in prompt_config:
@@ -492,6 +546,13 @@ def evaluate_sample_category_4(
         majority_vote(duration_confidences)
         if duration_confidences
         else (None, 0, False)
+    )
+
+    logging.info(
+        f"Category 4 - Pitch directions: {pitch_directions}, Final: {final_pitch_dir} ({pitch_votes}/{num_runs})"
+    )
+    logging.info(
+        f"Category 4 - Duration directions: {duration_directions}, Final: {final_duration_dir} ({duration_votes}/{num_runs})"
     )
 
     result = {

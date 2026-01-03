@@ -79,10 +79,13 @@ prompts:
       4 = Mid-to-high register
       5 = Very high register (piccolo or soprano range)
 
-      Provide only the numeric rating (1-5) and a brief 1-sentence justification.
+      IMPORTANT: Provide a brief justification first, then end your response with the rating in this EXACT format:
+      {"rating": "X"}
+      Where X is a number from 1-5.
+      Example: The music uses mostly mid-range notes around C4. {"rating": "3"}
 
-    # Parse expected format: "Rating: X\nJustification: ..."
-    parse_regex: "(?i)rating?:?\\s*(\\d)"
+    # Parse regex: Extract rating from JSON format
+    parse_regex: '\{\s*"rating"\s*:\s*"(\d)"\s*\}'
 
   category_1_duration:
     system: "You are an expert music analyst. Provide objective assessments of musical characteristics."
@@ -104,9 +107,12 @@ prompts:
       4 = Moderate-to-long notes
       5 = Very long, sustained notes (legato, like organ chords or string pads)
 
-      Provide only the numeric rating (1-5) and a brief 1-sentence justification.
+      IMPORTANT: Provide a brief justification first, then end your response with the rating in this EXACT format:
+      {"rating": "X"}
+      Where X is a number from 1-5.
+      Example: Notes are moderately sustained with balanced articulation. {"rating": "3"}
 
-    parse_regex: "(?i)rating?:?\\s*(\\d)"
+    parse_regex: '\{\s*"rating"\s*:\s*"(\d)"\s*\}'
 
   # Category II: Unconditional Dual Steering
   category_2_dual:
@@ -137,13 +143,13 @@ prompts:
       3 = Moderate note lengths
       5 = Very long, sustained notes (legato)
 
-      Provide both ratings in this format:
-      Pitch: X
-      Duration: Y
-      Brief justification: [one sentence for each]
+      IMPORTANT: Provide brief justification for each, then end your response with ratings in this EXACT format:
+      {"pitch": "X", "duration": "Y"}
+      Where X and Y are numbers from 1-5.
+      Example: The pitch is in mid-range around C4. Notes are sustained and legato. {"pitch": "3", "duration": "4"}
 
-    parse_pitch_regex: "(?i)pitch:?\\s*(\\d)"
-    parse_duration_regex: "(?i)duration:?\\s*(\\d)"
+    parse_pitch_regex: '\{[^}]*"pitch"\s*:\s*"(\d)"[^}]*\}'
+    parse_duration_regex: '\{[^}]*"duration"\s*:\s*"(\d)"[^}]*\}'
 
   # Category III: Conditional Single Steering
   category_3_pitch:
@@ -162,19 +168,16 @@ prompts:
       </think>
 
       Identify the direction of pitch change from introduction to main body:
-
-      Respond with EXACTLY ONE of these three options:
       - "UP" if the main body has higher pitch than the introduction
       - "DOWN" if the main body has lower pitch than the introduction  
       - "CONSTANT" if the pitch register stayed roughly the same
 
-      Format:
-      Direction: [UP/DOWN/CONSTANT]
-      Confidence: [HIGH/MEDIUM/LOW]
-      Justification: [one sentence explaining the change]
+      IMPORTANT: Provide brief justification first, then end your response with this EXACT format:
+      {"direction": "UP/DOWN/CONSTANT", "confidence": "HIGH/MEDIUM/LOW"}
+      Example: The intro is in bass range, main body shifts to mid-range. {"direction": "UP", "confidence": "HIGH"}
 
-    parse_regex: "(?i)direction:?\\s*(UP|DOWN|CONSTANT)"
-    parse_confidence_regex: "(?i)confidence:?\\s*(HIGH|MEDIUM|LOW)"
+    parse_regex: '\{[^}]*"direction"\s*:\s*"(UP|DOWN|CONSTANT)"[^}]*\}'
+    parse_confidence_regex: '\{[^}]*"confidence"\s*:\s*"(HIGH|MEDIUM|LOW)"[^}]*\}'
 
   category_3_duration:
     system: "You are an expert music analyst. Provide objective assessments of musical characteristics."
@@ -192,19 +195,16 @@ prompts:
       </think>
 
       Identify the direction of duration change from introduction to main body:
-
-      Respond with EXACTLY ONE of these three options:
       - "LONGER" if the main body has more sustained notes than the introduction
       - "SHORTER" if the main body has shorter, more detached notes
       - "CONSTANT" if the note duration stayed roughly the same
 
-      Format:
-      Direction: [LONGER/SHORTER/CONSTANT]
-      Confidence: [HIGH/MEDIUM/LOW]
-      Justification: [one sentence explaining the change]
+      IMPORTANT: Provide brief justification first, then end your response with this EXACT format:
+      {"direction": "LONGER/SHORTER/CONSTANT", "confidence": "HIGH/MEDIUM/LOW"}
+      Example: Intro has staccato notes, main body becomes more legato. {"direction": "LONGER", "confidence": "MEDIUM"}
 
-    parse_regex: "(?i)direction:?\\s*(LONGER|SHORTER|CONSTANT)"
-    parse_confidence_regex: "(?i)confidence:?\\s*(HIGH|MEDIUM|LOW)"
+    parse_regex: '\{[^}]*"direction"\s*:\s*"(LONGER|SHORTER|CONSTANT)"[^}]*\}'
+    parse_confidence_regex: '\{[^}]*"confidence"\s*:\s*"(HIGH|MEDIUM|LOW)"[^}]*\}'
 
   # Category IV: Conditional Dual Steering
   category_4_dual:
@@ -230,17 +230,14 @@ prompts:
       B) DURATION CHANGE (introduction → main body):
       - "LONGER" / "SHORTER" / "CONSTANT"
 
-      Format:
-      Pitch direction: [UP/DOWN/CONSTANT]
-      Duration direction: [LONGER/SHORTER/CONSTANT]
-      Confidence (pitch): [HIGH/MEDIUM/LOW]
-      Confidence (duration): [HIGH/MEDIUM/LOW]
-      Justification: [one sentence for each characteristic]
+      IMPORTANT: Provide brief justification for each change, then end your response with this EXACT format:
+      {"pitch_direction": "UP/DOWN/CONSTANT", "duration_direction": "LONGER/SHORTER/CONSTANT", "pitch_confidence": "HIGH/MEDIUM/LOW", "duration_confidence": "HIGH/MEDIUM/LOW"}
+      Example: Intro is low and staccato, main body shifts higher with sustained notes. {"pitch_direction": "UP", "duration_direction": "LONGER", "pitch_confidence": "HIGH", "duration_confidence": "MEDIUM"}
 
-    parse_pitch_regex: "(?i)pitch\\s+direction:?\\s*(UP|DOWN|CONSTANT)"
-    parse_duration_regex: "(?i)duration\\s+direction:?\\s*(LONGER|SHORTER|CONSTANT)"
-    parse_pitch_confidence_regex: "(?i)confidence\\s*\\(pitch\\):?\\s*(HIGH|MEDIUM|LOW)"
-    parse_duration_confidence_regex: "(?i)confidence\\s*\\(duration\\):?\\s*(HIGH|MEDIUM|LOW)"
+    parse_pitch_regex: '\{[^}]*"pitch_direction"\s*:\s*"(UP|DOWN|CONSTANT)"[^}]*\}'
+    parse_duration_regex: '\{[^}]*"duration_direction"\s*:\s*"(LONGER|SHORTER|CONSTANT)"[^}]*\}'
+    parse_pitch_confidence_regex: '\{[^}]*"pitch_confidence"\s*:\s*"(HIGH|MEDIUM|LOW)"[^}]*\}'
+    parse_duration_confidence_regex: '\{[^}]*"duration_confidence"\s*:\s*"(HIGH|MEDIUM|LOW)"[^}]*\}'
 
 # Statistical analysis settings
 analysis:
