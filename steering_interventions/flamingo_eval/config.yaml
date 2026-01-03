@@ -4,13 +4,13 @@
 # Paths
 paths:
   # Base directory containing all experimental data
-  data_root: "steering_interventions/flamingo_exp"
+  data_root: "flamingo_exp"
 
   # Output directory for prepared audio and results
-  output_root: "steering_interventions/flamingo_eval"
+  output_root: "=flamingo_eval"
 
   # Encoding file for token decoding
-  encoding_file: "data/sod/processed/notes/encoding.json"
+  encoding_file: "../data/sod/processed/notes/encoding.json"
 
   # Model checkpoint (if needed for re-generation)
   model_checkpoint: "exp/sod/checkpoints/best_model.pt"
