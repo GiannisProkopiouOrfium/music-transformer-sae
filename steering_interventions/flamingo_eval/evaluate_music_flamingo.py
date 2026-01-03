@@ -126,7 +126,7 @@ def query_music_flamingo(
                 ).to(transformer_model.device, dtype=transformer_model.dtype)
 
                 logging.info("Generating response...")
-                
+
                 # Generation parameters
                 generate_kwargs = {
                     "max_new_tokens": music_flamingo_config.get("max_tokens", 256),
@@ -134,7 +134,7 @@ def query_music_flamingo(
                     "temperature": music_flamingo_config.get("temperature", 0.7),
                     "top_p": music_flamingo_config.get("top_p", 0.9),
                 }
-                
+
                 outputs = transformer_model.generate(**inputs, **generate_kwargs)
 
                 logging.info("Decoding output...")
@@ -241,11 +241,17 @@ def evaluate_sample_category_1(
                 config["music_flamingo"],
             )
             responses.append(response)
+            
+            logging.info(f"Run {run_idx+1} response: {response}")
 
             # Parse rating
             rating = parse_response(response, prompt_config["parse_regex"])
+            logging.info(f"Run {run_idx+1} parsed rating: {rating}")
+            
             if rating:
                 ratings.append(rating)
+            else:
+                logging.warning(f"Run {run_idx+1} - Failed to parse rating. Regex: {prompt_config['parse_regex']}")
 
         except Exception as e:
             logging.error(f"Error in run {run_idx+1}: {e}")
@@ -253,6 +259,9 @@ def evaluate_sample_category_1(
 
     # Majority vote
     final_rating, vote_count, is_unanimous = majority_vote(ratings)
+    
+    logging.info(f"Category 1 - All ratings: {ratings}")
+    logging.info(f"Category 1 - Final rating: {final_rating}, Vote count: {vote_count}/{num_runs}")
 
     result = {
         **sample,

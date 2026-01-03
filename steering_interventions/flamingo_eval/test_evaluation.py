@@ -141,8 +141,28 @@ def main():
                 result = evaluate_sample_category_4(sample, config, model, output_root)
 
             print(f"\n✅ SUCCESS for {cat}")
+
+            # Show detailed results
+            if "responses" in result:
+                print(f"\nResponses ({len(result['responses'])}):")
+                for i, resp in enumerate(result["responses"], 1):
+                    print(f"  Run {i}: {resp[:150]}{'...' if len(resp) > 150 else ''}")
+
+            if "parsed_ratings" in result:
+                print(f"\nParsed ratings: {result['parsed_ratings']}")
+            elif "parsed_pitch_ratings" in result:
+                print(f"\nParsed pitch ratings: {result['parsed_pitch_ratings']}")
+                print(f"Parsed duration ratings: {result['parsed_duration_ratings']}")
+            elif "parsed_directions" in result:
+                print(f"\nParsed directions: {result['parsed_directions']}")
+            elif "parsed_pitch_directions" in result:
+                print(f"\nParsed pitch directions: {result['parsed_pitch_directions']}")
+                print(
+                    f"Parsed duration directions: {result['parsed_duration_directions']}"
+                )
+
             print(
-                f"Final rating: {result.get('final_rating', result.get('final_pitch_rating', 'N/A'))}"
+                f"\nFinal rating: {result.get('final_rating', result.get('final_pitch_rating', result.get('final_direction', result.get('final_pitch_direction', 'N/A'))))}"
             )
             results.append({"category": cat, "success": True, "result": result})
 
