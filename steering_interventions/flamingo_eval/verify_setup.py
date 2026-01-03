@@ -12,7 +12,7 @@ def verify_directory_structure():
     print("STEP 1: Verifying Directory Structure")
     print("=" * 70)
 
-    base_path = pathlib.Path("steering_interventions/flamingo_exp")
+    base_path = pathlib.Path("flamingo_exp")
 
     expected_dirs = [
         "dual/unconditional/low_long",
@@ -47,7 +47,7 @@ def verify_sample_files():
     print("STEP 2: Verifying Sample Files")
     print("=" * 70)
 
-    base_path = pathlib.Path("steering_interventions/flamingo_exp")
+    base_path = pathlib.Path("flamingo_exp")
 
     checks = [
         ("dual/unconditional/neutral", "*.npy", "NPY files in neutral folder"),
@@ -92,9 +92,7 @@ def verify_baseline_files():
     print("STEP 3: Verifying Baseline Files")
     print("=" * 70)
 
-    neutral_path = pathlib.Path(
-        "steering_interventions/flamingo_exp/dual/unconditional/neutral"
-    )
+    neutral_path = pathlib.Path("flamingo_exp/dual/unconditional/neutral")
 
     if not neutral_path.exists():
         print("❌ Neutral folder not found")
@@ -121,7 +119,7 @@ def verify_config_file():
     print("STEP 4: Verifying Configuration")
     print("=" * 70)
 
-    config_path = pathlib.Path("steering_interventions/flamingo_eval/config.yaml")
+    config_path = pathlib.Path("flamingo_eval/config.yaml")
 
     if not config_path.exists():
         print("❌ config.yaml not found")
@@ -157,9 +155,9 @@ def verify_scripts():
     print("=" * 70)
 
     scripts = [
-        "steering_interventions/flamingo_eval/prepare_audios.py",
-        "steering_interventions/flamingo_eval/evaluate_music_flamingo.py",
-        "steering_interventions/flamingo_eval/analyze_results.py",
+        "flamingo_eval/prepare_audios.py",
+        "flamingo_eval/evaluate_music_flamingo.py",
+        "flamingo_eval/analyze_results.py",
     ]
 
     all_exist = True
@@ -206,17 +204,11 @@ def main():
         print("\n🎉 All checks passed! Ready to run the pipeline.\n")
         print("Next steps:")
         print(
-            "  1. Install dependencies: pip install -r steering_interventions/flamingo_eval/requirements.txt"
+            "  1. Install dependencies: pip install -r flamingo_eval/requirements.txt"
         )
-        print(
-            "  2. Run Step 1: python steering_interventions/flamingo_eval/prepare_audios.py"
-        )
-        print(
-            "  3. Run Step 2: python steering_interventions/flamingo_eval/evaluate_music_flamingo.py"
-        )
-        print(
-            "  4. Run Step 3: python steering_interventions/flamingo_eval/analyze_results.py"
-        )
+        print("  2. Run Step 1: python flamingo_eval/prepare_audios.py")
+        print("  3. Run Step 2: python flamingo_eval/evaluate_music_flamingo.py")
+        print("  4. Run Step 3: python flamingo_eval/analyze_results.py")
         print()
         return 0
     else:
