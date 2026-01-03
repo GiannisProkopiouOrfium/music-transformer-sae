@@ -80,12 +80,12 @@ prompts:
       5 = Very high register (most notes above MIDI 67)
 
       IMPORTANT: Provide a brief justification first, then end your response with the rating inside XML tags in this EXACT format:
-      <answer>{"rating": "X"}</answer>
+      <answer>{"pitch": "X"}</answer>
       Where X is a number from 1-5.
-      Example: The music uses mostly mid-range notes around MIDI 63-64. <answer>{"rating": "3"}</answer>
+      Example: The music uses mostly mid-range notes around MIDI 63-64. <answer>{"pitch": "3"}</answer>
 
     # Parse regex: Extract rating from XML-tagged JSON format
-    parse_regex: '<answer>\s*\{\s*"rating"\s*:\s*"(\d)"\s*\}\s*</answer>'
+    parse_regex: '<answer>\s*\{\s*"pitch"\s*:\s*"(\d)"\s*\}\s*</answer>'
 
   category_1_duration:
     system: "You are an expert music analyst. Provide objective assessments of musical characteristics."
@@ -108,12 +108,11 @@ prompts:
       5 = Very long, sustained notes (around 14.5 beats or more, legato)
 
       IMPORTANT: Provide a brief justification first, then end your response with the rating inside XML tags in this EXACT format:
-      <answer>{"rating": "X"}</answer>
+      <answer>{"duration": "X"}</answer>
       Where X is a number from 1-5.
-      Example: Notes are moderately sustained around 11 beats with balanced articulation. <answer>{"rating": "3"}</answer>
+      Example: Notes are moderately sustained around 11 beats with balanced articulation. <answer>{"duration": "3"}</answer>
 
-    parse_regex: '<answer>\s*\{\s*"rating"\s*:\s*"(\d)"\s*\}\s*</answer>'
-
+    parse_regex: '<answer>\s*\{\s*"duration"\s*:\s*"(\d)"\s*\}\s*</answer>'
   # Category II: Unconditional Dual Steering
   category_2_dual:
     system: "You are an expert music analyst. Provide objective assessments of musical characteristics."
@@ -177,11 +176,10 @@ prompts:
       - "CONSTANT" if the pitch register stayed roughly the same (within 2-3 MIDI notes)
 
       IMPORTANT: Provide brief justification first, then end your response inside XML tags in this EXACT format:
-      <answer>{"direction": "UP/DOWN/CONSTANT", "confidence": "HIGH/MEDIUM/LOW"}</answer>
-      Example: The intro uses notes around MIDI 60-62, main body shifts to MIDI 64-66. <answer>{"direction": "UP", "confidence": "HIGH"}</answer>
+      <answer>{"direction": "UP/DOWN/CONSTANT"}</answer>
+      Example: The intro uses notes around MIDI 60-62, main body shifts to MIDI 64-66. <answer>{"direction": "UP"}</answer>
 
     parse_regex: '<answer>\s*\{[^}]*"direction"\s*:\s*"(UP|DOWN|CONSTANT)"[^}]*\}\s*</answer>'
-    parse_confidence_regex: '<answer>\s*\{[^}]*"confidence"\s*:\s*"(HIGH|MEDIUM|LOW)"[^}]*\}\s*</answer>'
 
   category_3_duration:
     system: "You are an expert music analyst. Provide objective assessments of musical characteristics."
@@ -204,11 +202,10 @@ prompts:
       - "CONSTANT" if note durations stayed roughly the same (within 2-3 beats)
 
       IMPORTANT: Provide brief justification first, then end your response inside XML tags in this EXACT format:
-      <answer>{"direction": "LONGER/SHORTER/CONSTANT", "confidence": "HIGH/MEDIUM/LOW"}</answer>
-      Example: Intro has staccato notes around 7 beats, main body becomes more legato around 12 beats. <answer>{"direction": "LONGER", "confidence": "MEDIUM"}</answer>
+      <answer>{"direction": "LONGER/SHORTER/CONSTANT"}</answer>
+      Example: Intro has staccato notes around 7 beats, main body becomes more legato around 12 beats. <answer>{"direction": "LONGER"}</answer>
 
     parse_regex: '<answer>\s*\{[^}]*"direction"\s*:\s*"(LONGER|SHORTER|CONSTANT)"[^}]*\}\s*</answer>'
-    parse_confidence_regex: '<answer>\s*\{[^}]*"confidence"\s*:\s*"(HIGH|MEDIUM|LOW)"[^}]*\}\s*</answer>'
 
   # Category IV: Conditional Dual Steering
   category_4_dual:
@@ -235,13 +232,11 @@ prompts:
       - "LONGER" / "SHORTER" / "CONSTANT"
 
       IMPORTANT: Provide brief justification for each change, then end your response inside XML tags in this EXACT format:
-      <answer>{"pitch_direction": "UP/DOWN/CONSTANT", "duration_direction": "LONGER/SHORTER/CONSTANT", "pitch_confidence": "HIGH/MEDIUM/LOW", "duration_confidence": "HIGH/MEDIUM/LOW"}</answer>
-      Example: Intro uses MIDI 60-62 with 8-beat notes, main body shifts to MIDI 65-67 with 13-beat sustained notes. <answer>{"pitch_direction": "UP", "duration_direction": "LONGER", "pitch_confidence": "HIGH", "duration_confidence": "MEDIUM"}</answer>
+      <answer>{"pitch_direction": "UP/DOWN/CONSTANT", "duration_direction": "LONGER/SHORTER/CONSTANT"}</answer>
+      Example: Intro uses MIDI 60-62 with 8-beat notes, main body shifts to MIDI 65-67 with 13-beat sustained notes. <answer>{"pitch_direction": "UP", "duration_direction": "LONGER"}</answer>
 
     parse_pitch_regex: '<answer>\s*\{[^}]*"pitch_direction"\s*:\s*"(UP|DOWN|CONSTANT)"[^}]*\}\s*</answer>'
     parse_duration_regex: '<answer>\s*\{[^}]*"duration_direction"\s*:\s*"(LONGER|SHORTER|CONSTANT)"[^}]*\}\s*</answer>'
-    parse_pitch_confidence_regex: '<answer>\s*\{[^}]*"pitch_confidence"\s*:\s*"(HIGH|MEDIUM|LOW)"[^}]*\}\s*</answer>'
-    parse_duration_confidence_regex: '<answer>\s*\{[^}]*"duration_confidence"\s*:\s*"(HIGH|MEDIUM|LOW)"[^}]*\}\s*</answer>'
 
 # Statistical analysis settings
 analysis:

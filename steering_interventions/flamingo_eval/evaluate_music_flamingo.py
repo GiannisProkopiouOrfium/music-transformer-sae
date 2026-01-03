@@ -392,7 +392,6 @@ def evaluate_sample_category_3(
     num_runs = config["music_flamingo"]["num_runs"]
     responses = []
     directions = []
-    confidences = []
 
     for run_idx in range(num_runs):
         try:
@@ -418,23 +417,12 @@ def evaluate_sample_category_3(
                     f"Run {run_idx+1} - Failed to parse direction. Regex: {prompt_config['parse_regex']}"
                 )
 
-            # Parse confidence (optional)
-            if "parse_confidence_regex" in prompt_config:
-                confidence = parse_response(
-                    response, prompt_config["parse_confidence_regex"]
-                )
-                if confidence:
-                    confidences.append(confidence.upper())
-
         except Exception as e:
             logging.error(f"Error in run {run_idx+1}: {e}")
             responses.append(f"ERROR: {e}")
 
     # Majority vote
     final_direction, vote_count, is_unanimous = majority_vote(directions)
-    final_confidence, _, _ = (
-        majority_vote(confidences) if confidences else (None, 0, False)
-    )
 
     logging.info(f"Category 3 - All directions: {directions}")
     logging.info(
@@ -445,9 +433,7 @@ def evaluate_sample_category_3(
         **sample,
         "responses": responses,
         "parsed_directions": directions,
-        "parsed_confidences": confidences if confidences else None,
         "final_direction": final_direction,
-        "final_confidence": final_confidence,
         "vote_count": vote_count,
         "total_runs": num_runs,
         "is_unanimous": is_unanimous,
@@ -475,8 +461,6 @@ def evaluate_sample_category_4(
     responses = []
     pitch_directions = []
     duration_directions = []
-    pitch_confidences = []
-    duration_confidences = []
 
     for run_idx in range(num_runs):
         try:
@@ -515,21 +499,6 @@ def evaluate_sample_category_4(
                     f"Run {run_idx+1} - Failed to parse duration direction. Regex: {prompt_config['parse_duration_regex']}"
                 )
 
-            # Parse confidences (optional)
-            if "parse_pitch_confidence_regex" in prompt_config:
-                pitch_conf = parse_response(
-                    response, prompt_config["parse_pitch_confidence_regex"]
-                )
-                if pitch_conf:
-                    pitch_confidences.append(pitch_conf.upper())
-
-            if "parse_duration_confidence_regex" in prompt_config:
-                duration_conf = parse_response(
-                    response, prompt_config["parse_duration_confidence_regex"]
-                )
-                if duration_conf:
-                    duration_confidences.append(duration_conf.upper())
-
         except Exception as e:
             logging.error(f"Error in run {run_idx+1}: {e}")
             responses.append(f"ERROR: {e}")
@@ -538,14 +507,6 @@ def evaluate_sample_category_4(
     final_pitch_dir, pitch_votes, pitch_unanimous = majority_vote(pitch_directions)
     final_duration_dir, duration_votes, duration_unanimous = majority_vote(
         duration_directions
-    )
-    final_pitch_conf, _, _ = (
-        majority_vote(pitch_confidences) if pitch_confidences else (None, 0, False)
-    )
-    final_duration_conf, _, _ = (
-        majority_vote(duration_confidences)
-        if duration_confidences
-        else (None, 0, False)
     )
 
     logging.info(
@@ -560,14 +521,8 @@ def evaluate_sample_category_4(
         "responses": responses,
         "parsed_pitch_directions": pitch_directions,
         "parsed_duration_directions": duration_directions,
-        "parsed_pitch_confidences": pitch_confidences if pitch_confidences else None,
-        "parsed_duration_confidences": (
-            duration_confidences if duration_confidences else None
-        ),
         "final_pitch_direction": final_pitch_dir,
         "final_duration_direction": final_duration_dir,
-        "final_pitch_confidence": final_pitch_conf,
-        "final_duration_confidence": final_duration_conf,
         "pitch_vote_count": pitch_votes,
         "duration_vote_count": duration_votes,
         "total_runs": num_runs,
