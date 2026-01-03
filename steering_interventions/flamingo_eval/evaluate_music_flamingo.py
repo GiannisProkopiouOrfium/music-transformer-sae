@@ -65,7 +65,7 @@ def query_music_flamingo(
     system_prompt: str,
     user_prompt: str,
     model,  # Gradio Client or Transformers model
-    config: dict,
+    music_flamingo_config: dict,
 ) -> str:
     """Query Music Flamingo model with audio and prompt (with retry logic).
 
@@ -74,7 +74,7 @@ def query_music_flamingo(
         system_prompt: System message (may be ignored depending on API method)
         user_prompt: User prompt template
         model: Gradio Client instance or Transformers model
-        config: Music Flamingo config from YAML
+        music_flamingo_config: Music Flamingo config dict (from config["music_flamingo"])
 
     Returns:
         Model response text
@@ -82,7 +82,7 @@ def query_music_flamingo(
     Raises:
         Exception: If all retries fail
     """
-    api_method = config["music_flamingo"]["api_method"]
+    api_method = music_flamingo_config["api_method"]
 
     for attempt in range(MAX_RETRIES):
         try:
@@ -124,8 +124,8 @@ def query_music_flamingo(
 
                 outputs = transformer_model.generate(
                     **inputs,
-                    max_new_tokens=config["music_flamingo"].get("max_tokens", 256),
-                    temperature=config["music_flamingo"].get("temperature", 0.7),
+                    max_new_tokens=music_flamingo_config.get("max_tokens", 256),
+                    temperature=music_flamingo_config.get("temperature", 0.7),
                 )
 
                 decoded_outputs = processor.batch_decode(
