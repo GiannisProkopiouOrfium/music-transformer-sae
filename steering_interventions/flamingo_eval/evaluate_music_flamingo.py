@@ -105,6 +105,8 @@ def query_music_flamingo(
                 processor = model["processor"]
                 transformer_model = model["model"]
 
+                logging.info(f"Processing audio: {audio_path.name}")
+
                 conversation = [
                     {
                         "role": "user",
@@ -115,6 +117,7 @@ def query_music_flamingo(
                     }
                 ]
 
+                logging.info("Applying chat template...")
                 inputs = processor.apply_chat_template(
                     conversation,
                     tokenize=True,
@@ -122,12 +125,19 @@ def query_music_flamingo(
                     return_dict=True,
                 ).to(transformer_model.device, dtype=transformer_model.dtype)
 
-                outputs = transformer_model.generate(
-                    **inputs,
-                    max_new_tokens=music_flamingo_config.get("max_tokens", 256),
-                    temperature=music_flamingo_config.get("temperature", 0.7),
-                )
+                logging.info("Generating response...")
+                
+                # Generation parameters
+                generate_kwargs = {
+                    "max_new_tokens": music_flamingo_config.get("max_tokens", 256),
+                    "do_sample": True,
+                    "temperature": music_flamingo_config.get("temperature", 0.7),
+                    "top_p": music_flamingo_config.get("top_p", 0.9),
+                }
+                
+                outputs = transformer_model.generate(**inputs, **generate_kwargs)
 
+                logging.info("Decoding output...")
                 decoded_outputs = processor.batch_decode(
                     outputs[:, inputs.input_ids.shape[1] :],
                     skip_special_tokens=True,
@@ -136,6 +146,7 @@ def query_music_flamingo(
                 result = decoded_outputs[0] if decoded_outputs else ""
 
                 if result:
+                    logging.info(f"Response received ({len(result)} chars)")
                     return result
                 else:
                     raise ValueError("Empty response from model")

@@ -53,6 +53,7 @@ music_flamingo:
   model_name: "nvidia/music-flamingo-large"
   device: "cuda:0"
   temperature: 0.7
+  top_p: 0.9
   max_tokens: 256
 
 # Prompts for each category
