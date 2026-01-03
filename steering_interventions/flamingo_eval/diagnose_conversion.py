@@ -54,8 +54,6 @@ def main():
                         # Load encoding
                         encoding_path = pathlib.Path("../baseline/encoding_mmm.json")
                         if encoding_path.exists():
-                            import json
-
                             with open(encoding_path) as f:
                                 encoding = json.load(f)
 
