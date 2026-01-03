@@ -131,7 +131,7 @@ def query_music_flamingo(
                 generate_kwargs = {
                     "max_new_tokens": music_flamingo_config.get("max_tokens", 256),
                     "do_sample": True,
-                    "temperature": music_flamingo_config.get("temperature", 0.7),
+                    "temperature": music_flamingo_config.get("temperature", 0.1),
                     "top_p": music_flamingo_config.get("top_p", 0.9),
                 }
 
