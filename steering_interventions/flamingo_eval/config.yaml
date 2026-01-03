@@ -1,0 +1,335 @@
+# Music Flamingo Evaluation Configuration
+# Centralized settings for dual steering perceptual evaluation
+
+# Paths
+paths:
+  # Base directory containing all experimental data
+  data_root: "steering_interventions/flamingo_exp"
+
+  # Output directory for prepared audio and results
+  output_root: "steering_interventions/flamingo_eval"
+
+  # Encoding file for token decoding
+  encoding_file: "data/sod/processed/notes/encoding.json"
+
+  # Model checkpoint (if needed for re-generation)
+  model_checkpoint: "exp/sod/checkpoints/best_model.pt"
+
+# Ground truth metrics for degradation calculation
+ground_truth:
+  pitch_class_entropy: 2.974
+  scale_consistency: 92.26
+  groove_consistency: 93.05
+
+# Sample selection
+sample_selection:
+  # Method: "best_degradation", "random", "all"
+  method: "best_degradation"
+
+  # For dual unconditional: which baseline sample to use consistently
+  # Options: "num_0", "num_1", "num_2", "best_degradation"
+  baseline_sample: "num_0" # Use sample_alpha_p0.0_d0.0_num_0.npy
+
+# Music Flamingo evaluation settings
+music_flamingo:
+  # Number of independent runs per sample (for self-consistency)
+  num_runs: 3
+
+  # Majority voting threshold (2 out of 3 for agreement)
+  voting_threshold: 2
+
+  # Model settings (adjust based on your Music Flamingo setup)
+  model_name: "nvidia/music-flamingo-large"
+  device: "cuda:0"
+  temperature: 0.7
+  max_tokens: 256
+
+# Prompts for each category
+prompts:
+  # Category I: Unconditional Single Steering
+  category_1_pitch:
+    system: "You are an expert music analyst. Provide objective assessments of musical characteristics."
+
+    user_template: |
+      Listen to this musical piece and analyze its pitch characteristics.
+
+      <think>
+      First, consider:
+      - What is the overall pitch register (low bass, mid-range, or high treble)?
+      - Are most notes in the lower, middle, or upper part of the piano keyboard?
+      - Compare to typical musical ranges (bass: <C3, mid: C3-C5, treble: >C5)
+      </think>
+
+      On a scale from 1 to 5, rate the overall pitch register of this music:
+      1 = Very low register (bass range, like cello or tuba)
+      2 = Low-to-mid register  
+      3 = Mid register (typical singing range)
+      4 = Mid-to-high register
+      5 = Very high register (piccolo or soprano range)
+
+      Provide only the numeric rating (1-5) and a brief 1-sentence justification.
+
+    # Parse expected format: "Rating: X\nJustification: ..."
+    parse_regex: "(?i)rating?:?\\s*(\\d)"
+
+  category_1_duration:
+    system: "You are an expert music analyst. Provide objective assessments of musical characteristics."
+
+    user_template: |
+      Listen to this musical piece and analyze its note duration characteristics.
+
+      <think>
+      First, consider:
+      - Are the notes short and detached (staccato) or long and sustained (legato)?
+      - What is the typical length of notes - quick bursts or extended tones?
+      - Ignore tempo; focus only on how long notes are held relative to the beat
+      </think>
+
+      On a scale from 1 to 5, rate the average note duration in this music:
+      1 = Very short notes (staccato, like rapid percussion hits)
+      2 = Short-to-moderate notes
+      3 = Moderate note lengths (balanced articulation)
+      4 = Moderate-to-long notes
+      5 = Very long, sustained notes (legato, like organ chords or string pads)
+
+      Provide only the numeric rating (1-5) and a brief 1-sentence justification.
+
+    parse_regex: "(?i)rating?:?\\s*(\\d)"
+
+  # Category II: Unconditional Dual Steering
+  category_2_dual:
+    system: "You are an expert music analyst. Provide objective assessments of musical characteristics."
+
+    user_template: |
+      Listen to this musical piece and analyze TWO characteristics independently:
+
+      <think>
+      For PITCH:
+      - What is the overall pitch register (low bass, mid-range, or high treble)?
+
+      For DURATION:
+      - Are notes short and detached (staccato) or long and sustained (legato)?
+
+      Evaluate these two aspects separately without letting one influence the other.
+      </think>
+
+      Rate BOTH of the following on a 1-5 scale:
+
+      A) PITCH REGISTER:
+      1 = Very low register (bass)
+      3 = Mid register
+      5 = Very high register (treble)
+
+      B) NOTE DURATION:
+      1 = Very short notes (staccato)
+      3 = Moderate note lengths
+      5 = Very long, sustained notes (legato)
+
+      Provide both ratings in this format:
+      Pitch: X
+      Duration: Y
+      Brief justification: [one sentence for each]
+
+    parse_pitch_regex: "(?i)pitch:?\\s*(\\d)"
+    parse_duration_regex: "(?i)duration:?\\s*(\\d)"
+
+  # Category III: Conditional Single Steering
+  category_3_pitch:
+    system: "You are an expert music analyst. Provide objective assessments of musical characteristics."
+
+    user_template: |
+      Listen to this musical piece which has two distinct sections: an introduction and a main body.
+
+      <think>
+      Compare the pitch register between:
+      - Introduction (first ~8 seconds / first musical phrase)
+      - Main body (remaining majority of the piece)
+
+      Did the overall pitch register increase, decrease, or stay roughly the same?
+      Consider the average pitch across all instruments in each section.
+      </think>
+
+      Identify the direction of pitch change from introduction to main body:
+
+      Respond with EXACTLY ONE of these three options:
+      - "UP" if the main body has higher pitch than the introduction
+      - "DOWN" if the main body has lower pitch than the introduction  
+      - "CONSTANT" if the pitch register stayed roughly the same
+
+      Format:
+      Direction: [UP/DOWN/CONSTANT]
+      Confidence: [HIGH/MEDIUM/LOW]
+      Justification: [one sentence explaining the change]
+
+    parse_regex: "(?i)direction:?\\s*(UP|DOWN|CONSTANT)"
+    parse_confidence_regex: "(?i)confidence:?\\s*(HIGH|MEDIUM|LOW)"
+
+  category_3_duration:
+    system: "You are an expert music analyst. Provide objective assessments of musical characteristics."
+
+    user_template: |
+      Listen to this musical piece which has two distinct sections: an introduction and a main body.
+
+      <think>
+      Compare the note duration between:
+      - Introduction (first ~8 seconds / first musical phrase)
+      - Main body (remaining majority of the piece)
+
+      Did the notes become longer (more sustained), shorter (more staccato), or stay similar?
+      Focus on articulation changes, not tempo.
+      </think>
+
+      Identify the direction of duration change from introduction to main body:
+
+      Respond with EXACTLY ONE of these three options:
+      - "LONGER" if the main body has more sustained notes than the introduction
+      - "SHORTER" if the main body has shorter, more detached notes
+      - "CONSTANT" if the note duration stayed roughly the same
+
+      Format:
+      Direction: [LONGER/SHORTER/CONSTANT]
+      Confidence: [HIGH/MEDIUM/LOW]
+      Justification: [one sentence explaining the change]
+
+    parse_regex: "(?i)direction:?\\s*(LONGER|SHORTER|CONSTANT)"
+    parse_confidence_regex: "(?i)confidence:?\\s*(HIGH|MEDIUM|LOW)"
+
+  # Category IV: Conditional Dual Steering
+  category_4_dual:
+    system: "You are an expert music analyst. Provide objective assessments of musical characteristics."
+
+    user_template: |
+      Listen to this musical piece which has two distinct sections: an introduction and a main body.
+
+      <think>
+      Compare TWO characteristics between the introduction and main body:
+
+      1. PITCH REGISTER: Did it go up, down, or stay constant?
+      2. NOTE DURATION: Did notes become longer, shorter, or stay constant?
+
+      Evaluate these changes independently.
+      </think>
+
+      Identify the direction of change for BOTH characteristics:
+
+      A) PITCH CHANGE (introduction → main body):
+      - "UP" / "DOWN" / "CONSTANT"
+
+      B) DURATION CHANGE (introduction → main body):
+      - "LONGER" / "SHORTER" / "CONSTANT"
+
+      Format:
+      Pitch direction: [UP/DOWN/CONSTANT]
+      Duration direction: [LONGER/SHORTER/CONSTANT]
+      Confidence (pitch): [HIGH/MEDIUM/LOW]
+      Confidence (duration): [HIGH/MEDIUM/LOW]
+      Justification: [one sentence for each characteristic]
+
+    parse_pitch_regex: "(?i)pitch\\s+direction:?\\s*(UP|DOWN|CONSTANT)"
+    parse_duration_regex: "(?i)duration\\s+direction:?\\s*(LONGER|SHORTER|CONSTANT)"
+    parse_pitch_confidence_regex: "(?i)confidence\\s*\\(pitch\\):?\\s*(HIGH|MEDIUM|LOW)"
+    parse_duration_confidence_regex: "(?i)confidence\\s*\\(duration\\):?\\s*(HIGH|MEDIUM|LOW)"
+
+# Statistical analysis settings
+analysis:
+  # Significance level
+  alpha: 0.05
+
+  # Multiple comparison correction method
+  # Options: "fdr_bh" (Benjamini-Hochberg), "bonferroni", "none"
+  correction_method: "fdr_bh"
+
+  # Minimum correlation for "strong" effect (for interpretation)
+  strong_correlation_threshold: 0.7
+
+  # Cohen's d thresholds
+  cohens_d_thresholds:
+    small: 0.2
+    medium: 0.5
+    large: 0.8
+
+# Output formats
+output:
+  # Save detailed per-sample results
+  save_detailed: true
+
+  # Generate LaTeX tables
+  generate_latex: true
+
+  # Generate figures
+  generate_figures: true
+
+  # Figure format
+  figure_format: "pdf" # or "png"
+
+  # DPI for raster figures
+  figure_dpi: 300
+
+# Logging
+logging:
+  level: "INFO" # DEBUG, INFO, WARNING, ERROR
+  save_to_file: true
+  log_file: "flamingo_eval/evaluation.log"
+
+# Category-specific settings
+categories:
+  # Category I: Unconditional Single
+  category_1:
+    enabled: true
+    concepts: ["pitch", "duration"]
+    # Alpha values to evaluate (must exist in data)
+    alphas: [-1.5, -1.0, -0.5, 0.0, 0.5, 1.0, 1.5]
+    # Metrics to calculate
+    metrics:
+      - "directional_success_rate" # % where sign(α) matches direction
+      - "spearman_correlation" # α vs. rating correlation
+
+  # Category II: Unconditional Dual
+  category_2:
+    enabled: true
+    scenarios: ["low_long", "low_short", "high_long", "high_short", "baseline"]
+    # Alpha combinations to evaluate (auto-detected from data)
+    metrics:
+      - "dual_directional_success_rate" # Both concepts correct
+      - "spearman_correlation_pitch" # α_pitch vs. pitch rating
+      - "spearman_correlation_duration" # α_duration vs. duration rating
+
+  # Category III: Conditional Single
+  category_3:
+    enabled: true
+    concepts: ["pitch", "duration"]
+    # Override directions to evaluate
+    override_types:
+      pitch: ["high_to_low", "low_to_high"]
+      duration: ["high_to_low", "low_to_high"]
+    # Alphas per override direction
+    alphas: [-1.5, -1.0, -0.5, 0.0, 0.5, 1.0, 1.5]
+    metrics:
+      - "override_success_rate" # OSR: % where change detected correctly
+      - "alpha_response_correlation" # Stronger α → more detectable change?
+
+  # Category IV: Conditional Dual
+  category_4:
+    enabled: true
+    # Use pre-selected best examples from listening_samples
+    use_listening_samples: true
+    scenarios:
+      - "high_pitch_short_duration_to_low_long"
+      - "high_pitch_long_duration_to_low_short"
+      - "low_pitch_short_duration_to_high_long"
+      - "low_pitch_long_duration_to_high_short"
+    metrics:
+      - "dual_override_success_rate" # Dual-OSR: Both changes detected
+      - "pitch_override_success_rate"
+      - "duration_override_success_rate"
+
+# Resume/checkpoint settings
+resume:
+  # Enable resuming from partial results
+  enabled: true
+
+  # Checkpoint file
+  checkpoint_file: "flamingo_eval/evaluation_checkpoint.json"
+
+  # Save checkpoint every N samples
+  checkpoint_interval: 10
