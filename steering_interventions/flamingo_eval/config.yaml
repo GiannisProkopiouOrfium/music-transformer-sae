@@ -7,7 +7,7 @@ paths:
   data_root: "flamingo_exp"
 
   # Output directory for prepared audio and results
-  output_root: "=flamingo_eval"
+  output_root: "flamingo_eval"
 
   # Encoding file for token decoding
   encoding_file: "../data/sod/processed/notes/encoding.json"
