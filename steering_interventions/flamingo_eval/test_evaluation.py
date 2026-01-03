@@ -10,25 +10,28 @@ import importlib.util
 sys.path.insert(0, str(pathlib.Path(__file__).parent.parent.parent / "mmt"))
 
 # Import evaluation functions from evaluate_music_flamingo.py
-# eval_script_path = pathlib.Path(__file__).parent / "evaluate_music_flamingo.py"
-# spec = importlib.util.spec_from_file_location(
-#     "evaluate_music_flamingo", eval_script_path
-# )
-# eval_module = importlib.util.module_from_spec(spec)
-# spec.loader.exec_module(eval_module)
+eval_script_path = pathlib.Path(__file__).parent / "evaluate_music_flamingo.py"
+
+# Debug: check if file exists
+if not eval_script_path.exists():
+    print(f"❌ Error: Could not find {eval_script_path}")
+    print(f"Script location: {pathlib.Path(__file__).parent}")
+    print(f"Files in directory:")
+    for f in pathlib.Path(__file__).parent.glob("*.py"):
+        print(f"  - {f.name}")
+    sys.exit(1)
+
+spec = importlib.util.spec_from_file_location(
+    "evaluate_music_flamingo", eval_script_path
+)
+eval_module = importlib.util.module_from_spec(spec)
+spec.loader.exec_module(eval_module)
 
 # Import the functions we need
-# evaluate_sample_category_1 = eval_module.evaluate_sample_category_1
-# evaluate_sample_category_2 = eval_module.evaluate_sample_category_2
-# evaluate_sample_category_3 = eval_module.evaluate_sample_category_3
-# evaluate_sample_category_4 = eval_module.evaluate_sample_category_4
-
-from evaluate_music_flamingo import (
-    evaluate_sample_category_1,
-    evaluate_sample_category_2,
-    evaluate_sample_category_3,
-    evaluate_sample_category_4,
-)
+evaluate_sample_category_1 = eval_module.evaluate_sample_category_1
+evaluate_sample_category_2 = eval_module.evaluate_sample_category_2
+evaluate_sample_category_3 = eval_module.evaluate_sample_category_3
+evaluate_sample_category_4 = eval_module.evaluate_sample_category_4
 
 
 def main():
