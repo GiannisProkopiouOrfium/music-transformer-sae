@@ -178,9 +178,9 @@ prompts:
       2 = DOWN (intro higher, main lower)
       3 = CONSTANT (similar)
 
-      Explain in one sentence, then write: ANSWER: [number]
+      Explain in one sentence, then write: PITCH: [number]
 
-    parse_regex: 'ANSWER:\s*([123])'
+    parse_regex: '(?:PITCH:\s*)?([123])'
 
   category_3_duration:
     system: "You are an expert music analyst with focus on average note duration comparison. Provide objective assessments of musical characteristics."
@@ -192,9 +192,9 @@ prompts:
       2 = SHORTER (main more staccato)
       3 = CONSTANT (similar)
 
-      Explain in one sentence, then write: ANSWER: [number]
+      Explain in one sentence, then write: DURATION: [number]
 
-    parse_regex: 'ANSWER:\s*([123])'
+    parse_regex: '(?:DURATION:\s*)?([123])'
 
   # Category IV: Conditional Dual Steering
   category_4_dual:
