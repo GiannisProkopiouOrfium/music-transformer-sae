@@ -52,9 +52,9 @@ music_flamingo:
   # Model settings (adjust based on your Music Flamingo setup)
   model_name: "nvidia/music-flamingo-large"
   device: "cuda:0"
-  temperature: 0.2 # Zero temperature for perfect consistency
+  temperature: 0.1 # Zero temperature for perfect consistency
   top_p: 0.9
-  max_tokens: 256 # Reduced for faster, more concise responses
+  max_tokens: 100 # Reduced for faster, more concise responses
 
 # Prompts for each category
 prompts:
@@ -79,7 +79,7 @@ prompts:
       4 = Mid-to-high register (notes around MIDI 65-67)
       5 = Very high register (most notes above MIDI 67)
 
-      IMPORTANT: Provide brief reasoning, then end with the XML-tagged rating in this EXACT format:
+      IMPORTANT: Provide brief reasoning (one sentence), then end with the XML-tagged rating in this EXACT format:
       <answer>{"pitch": "X"}</answer>
       Where X is a number from 1-5.
       Example: Notes center around MIDI 63-64 in the mid register. <answer>{"pitch": "3"}</answer>
@@ -107,7 +107,7 @@ prompts:
       4 = Moderate-to-long notes (around 12-14 beats)
       5 = Very long, sustained notes (around 14.5 beats or more, legato)
 
-      IMPORTANT: Provide brief reasoning, then end with the XML-tagged rating in this EXACT format:
+      IMPORTANT: Provide brief reasoning (one sentence), then end with the XML-tagged rating in this EXACT format:
       <answer>{"duration": "X"}</answer>
       Where X is a number from 1-5.
       Example: Notes are sustained around 11 beats with balanced articulation. <answer>{"duration": "3"}</answer>
@@ -146,7 +146,7 @@ prompts:
       4 = Moderate-to-long notes (around 12-14 beats)
       5 = Very long, sustained notes (around 14.5 beats or more, legato)
 
-      IMPORTANT: Provide brief reasoning, then end with XML-tagged ratings in this EXACT format:
+      IMPORTANT: Provide brief reasoning (one sentence total), then end with XML-tagged ratings in this EXACT format:
       <answer>{"pitch": "X", "duration": "Y"}</answer>
       Where X and Y are numbers from 1-5.
       Example: Pitch centers around MIDI 66 (mid-high), notes sustained 12-13 beats. <answer>{"pitch": "4", "duration": "4"}</answer>
@@ -231,7 +231,7 @@ prompts:
       B) DURATION CHANGE (introduction → main body):
       - "LONGER" / "SHORTER" / "CONSTANT"
 
-      Analyze the introduction and main body, then compare with brief reasoning.
+      Analyze the introduction and main body, then compare (one sentence).
 
       CRITICAL: You MUST end your response with XML tags containing both directions in this EXACT format:
       <answer>{"pitch_direction": "UP/DOWN/CONSTANT", "duration_direction": "LONGER/SHORTER/CONSTANT"}</answer>
