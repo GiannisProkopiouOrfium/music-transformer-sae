@@ -52,7 +52,7 @@ music_flamingo:
   # Model settings (adjust based on your Music Flamingo setup)
   model_name: "nvidia/music-flamingo-large"
   device: "cuda:0"
-  temperature: 0.1 # Low temperature for consistency
+  temperature: 0.3 # Low temperature for consistency
   top_p: 0.9
   max_tokens: 256
 
@@ -79,10 +79,10 @@ prompts:
       4 = Mid-to-high register (notes around MIDI 65-67)
       5 = Very high register (most notes above MIDI 67)
 
-      IMPORTANT: Provide a brief justification first, then end your response with the rating inside XML tags in this EXACT format:
+      IMPORTANT: Provide detailed reasoning (2-3 sentences), then end your response with the rating inside XML tags in this EXACT format:
       <answer>{"pitch": "X"}</answer>
       Where X is a number from 1-5.
-      Example: The music uses mostly mid-range notes around MIDI 63-64. <answer>{"pitch": "3"}</answer>
+      Example: Listening to the piece, I observe the melody predominantly centers around MIDI 62-64, which sits comfortably in the middle register. The notes never drop below MIDI 60 or rise above MIDI 66. Based on the scale provided, this places the music squarely in the mid-range category. <answer>{"pitch": "3"}</answer>
 
     # Parse regex: Extract rating from XML-tagged JSON format
     parse_regex: '<answer>\s*\{\s*"pitch"\s*:\s*"(\d)"\s*\}\s*</answer>'
@@ -107,10 +107,10 @@ prompts:
       4 = Moderate-to-long notes (around 12-14 beats)
       5 = Very long, sustained notes (around 14.5 beats or more, legato)
 
-      IMPORTANT: Provide a brief justification first, then end your response with the rating inside XML tags in this EXACT format:
+      IMPORTANT: Provide detailed reasoning (2-3 sentences), then end your response with the rating inside XML tags in this EXACT format:
       <answer>{"duration": "X"}</answer>
       Where X is a number from 1-5.
-      Example: Notes are moderately sustained around 11 beats with balanced articulation. <answer>{"duration": "3"}</answer>
+      Example: The notes in this piece are held for approximately 11-12 beats on average, with smooth transitions between them. This is notably longer than the 6.5-beat staccato reference but falls short of the 14.5-beat legato style. The articulation creates a moderately sustained character throughout. <answer>{"duration": "3"}</answer>
 
     parse_regex: '<answer>\s*\{\s*"duration"\s*:\s*"(\d)"\s*\}\s*</answer>'
   # Category II: Unconditional Dual Steering
@@ -146,10 +146,10 @@ prompts:
       4 = Moderate-to-long notes (around 12-14 beats)
       5 = Very long, sustained notes (around 14.5 beats or more, legato)
 
-      IMPORTANT: Provide brief justification for each, then end your response with ratings inside XML tags in this EXACT format:
+      IMPORTANT: Analyze each characteristic thoroughly (2-3 sentences each), then end your response with ratings inside XML tags in this EXACT format:
       <answer>{"pitch": "X", "duration": "Y"}</answer>
       Where X and Y are numbers from 1-5.
-      Example: The pitch is in mid-range around MIDI 63. Notes are sustained around 13 beats. <answer>{"pitch": "3", "duration": "4"}</answer>
+      Example: For pitch, the melody predominantly uses MIDI 65-67, which places it in the mid-to-high register category. The notes stay consistently above MIDI 64 throughout. For duration, notes are typically held for 12-13 beats, approaching the legato end of the spectrum but not reaching the full 14.5-beat maximum. <answer>{"pitch": "4", "duration": "4"}</answer>
 
     parse_pitch_regex: '<answer>\s*\{[^}]*"pitch"\s*:\s*"(\d)"[^}]*\}\s*</answer>'
     parse_duration_regex: '<answer>\s*\{[^}]*"duration"\s*:\s*"(\d)"[^}]*\}\s*</answer>'
@@ -231,9 +231,14 @@ prompts:
       B) DURATION CHANGE (introduction → main body):
       - "LONGER" / "SHORTER" / "CONSTANT"
 
-      IMPORTANT: Provide brief justification for each change, then end your response inside XML tags in this EXACT format:
+      Analyze the introduction and main body sections separately, then compare (2-3 sentences total).
+
+      CRITICAL: You MUST end your response with XML tags containing both directions in this EXACT format:
       <answer>{"pitch_direction": "UP/DOWN/CONSTANT", "duration_direction": "LONGER/SHORTER/CONSTANT"}</answer>
-      Example: Intro uses MIDI 60-62 with 8-beat notes, main body shifts to MIDI 65-67 with 13-beat sustained notes. <answer>{"pitch_direction": "UP", "duration_direction": "LONGER"}</answer>
+
+      Example response:
+      In the introduction, I hear notes in the MIDI 61-62 range with relatively short 7-8 beat durations. The main body section shifts upward to MIDI 66-68, with more sustained notes lasting 12-14 beats. Comparing these sections reveals a clear upward pitch shift and longer note values in the main body.
+      <answer>{"pitch_direction": "UP", "duration_direction": "LONGER"}</answer>
 
     parse_pitch_regex: '<answer>\s*\{[^}]*"pitch_direction"\s*:\s*"(UP|DOWN|CONSTANT)"[^}]*\}\s*</answer>'
     parse_duration_regex: '<answer>\s*\{[^}]*"duration_direction"\s*:\s*"(LONGER|SHORTER|CONSTANT)"[^}]*\}\s*</answer>'
