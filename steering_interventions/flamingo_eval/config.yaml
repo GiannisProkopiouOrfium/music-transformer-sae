@@ -50,11 +50,11 @@ music_flamingo:
   voting_threshold: 2
 
   # Model settings (adjust based on your Music Flamingo setup)
-  model_name: "nvidia/music-flamingo-large"
+  model_name: "nvidia/music-flamingo-hf"
   device: "cuda:0"
   temperature: 0.1 # Zero temperature for perfect consistency
   top_p: 0.9
-  max_tokens: 100 # Reduced for faster, more concise responses
+  max_tokens: 256 # Enough for brief reasoning + XML tags
 
 # Prompts for each category
 prompts:
@@ -79,9 +79,12 @@ prompts:
       4 = Mid-to-high register (notes around MIDI 65-67)
       5 = Very high register (most notes above MIDI 67)
 
-      IMPORTANT: Provide brief reasoning (one sentence), then end with the XML-tagged rating in this EXACT format:
+      CRITICAL FORMAT REQUIREMENT:
+      You MUST end your response with this exact XML format:
       <answer>{"pitch": "X"}</answer>
-      Where X is a number from 1-5.
+      where X is your rating (1-5).
+
+      Provide brief reasoning (one sentence)  before the tags, but the XML tags are MANDATORY.
       Example: Notes center around MIDI 63-64 in the mid register. <answer>{"pitch": "3"}</answer>
 
     # Parse regex: Extract rating from XML-tagged JSON format
@@ -107,9 +110,12 @@ prompts:
       4 = Moderate-to-long notes (around 12-14 beats)
       5 = Very long, sustained notes (around 14.5 beats or more, legato)
 
-      IMPORTANT: Provide brief reasoning (one sentence), then end with the XML-tagged rating in this EXACT format:
+      CRITICAL FORMAT REQUIREMENT:
+      You MUST end your response with this exact XML format:
       <answer>{"duration": "X"}</answer>
-      Where X is a number from 1-5.
+      where X is your rating (1-5).
+
+      Provide brief reasoning (one sentence) before the tags, but the XML tags are MANDATORY.
       Example: Notes are sustained around 11 beats with balanced articulation. <answer>{"duration": "3"}</answer>
 
     parse_regex: '<answer>\s*\{\s*"duration"\s*:\s*"(\d)"\s*\}\s*</answer>'
@@ -146,9 +152,12 @@ prompts:
       4 = Moderate-to-long notes (around 12-14 beats)
       5 = Very long, sustained notes (around 14.5 beats or more, legato)
 
-      IMPORTANT: Provide brief reasoning (one sentence total), then end with XML-tagged ratings in this EXACT format:
+      CRITICAL FORMAT REQUIREMENT:
+      You MUST end your response with this exact XML format:
       <answer>{"pitch": "X", "duration": "Y"}</answer>
-      Where X and Y are numbers from 1-5.
+      where X and Y are your ratings (1-5).
+
+      Provide brief reasoning (one sentence) before the tags, but the XML tags are MANDATORY.
       Example: Pitch centers around MIDI 66 (mid-high), notes sustained 12-13 beats. <answer>{"pitch": "4", "duration": "4"}</answer>
 
     parse_pitch_regex: '<answer>\s*\{[^}]*"pitch"\s*:\s*"(\d)"[^}]*\}\s*</answer>'
@@ -231,11 +240,11 @@ prompts:
       B) DURATION CHANGE (introduction → main body):
       - "LONGER" / "SHORTER" / "CONSTANT"
 
-      Analyze the introduction and main body, then compare (one sentence).
-
-      CRITICAL: You MUST end your response with XML tags containing both directions in this EXACT format:
+      CRITICAL FORMAT REQUIREMENT:
+      You MUST end your response with this exact XML format:
       <answer>{"pitch_direction": "UP/DOWN/CONSTANT", "duration_direction": "LONGER/SHORTER/CONSTANT"}</answer>
 
+      Provide brief reasoning (one sentence) before the tags, but the XML tags are MANDATORY.
       Example: Intro uses MIDI 61-62 with 8-beat notes, main body shifts to MIDI 66-68 with 13-beat notes. <answer>{"pitch_direction": "UP", "duration_direction": "LONGER"}</answer>
 
     parse_pitch_regex: '<answer>\s*\{[^}]*"pitch_direction"\s*:\s*"(UP|DOWN|CONSTANT)"[^}]*\}\s*</answer>'
