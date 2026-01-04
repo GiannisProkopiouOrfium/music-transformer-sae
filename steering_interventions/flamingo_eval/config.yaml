@@ -60,112 +60,116 @@ music_flamingo:
 prompts:
   # Category I: Unconditional Single Steering
   category_1_pitch:
-    system: "You are an expert music analyst. Provide objective assessments of musical characteristics."
+    system: "You are an expert music analyst with focus on average note pitch. Provide objective assessments of musical characteristics."
 
     user_template: |
-      Listen to this musical piece and analyze its pitch characteristics.
+      Listen to this musical piece and analyze its average note pitch characteristics.
 
       <think>
       First, consider:
-      - What is the overall pitch register (low bass, mid-range, or high treble)?
+      - What is the overall/average pitch of the notes (low bass, mid-range, or high treble)?
       - In MIDI note numbers, low pitch is around 60 (middle C), high pitch is around 68 (G# above middle C)
       - Most notes below 60 = low register, around 60-64 = mid register, above 64 = high register
       </think>
 
       On a scale from 1 to 5, rate the overall pitch register of this music:
-      1 = Very low register (most notes below MIDI 60 / middle C)
-      2 = Low-to-mid register (notes around MIDI 60-62)
-      3 = Mid register (notes around MIDI 62-65)
-      4 = Mid-to-high register (notes around MIDI 65-67)
-      5 = Very high register (most notes above MIDI 67)
+      1 = Very low average note pitch (most notes below MIDI 60 / middle C)
+      2 = Low-to-mid average note pitch (notes around MIDI 60-62)
+      3 = Mid average note pitch (notes around MIDI 62-65)
+      4 = Mid-to-high average note pitch (notes around MIDI 65-67)
+      5 = Very high average note pitch (most notes above MIDI 67)
 
       CRITICAL FORMAT REQUIREMENT:
       You MUST end your response with this exact XML format:
-      <answer>{"pitch": "X"}</answer>
+      <answer>{"average_note_pitch": "X"}</answer>
       where X is your rating (1-5).
 
       Provide brief reasoning (one sentence)  before the tags, but the XML tags are MANDATORY.
-      Example: Notes center around MIDI 63-64 in the mid register. <answer>{"pitch": "3"}</answer>
-
+      Example: Notes center average around MIDI 63-64 in the mid register. <answer>{"average_note_pitch": "3"}</answer>
     # Parse regex: Extract rating from XML-tagged JSON format
-    parse_regex: '<answer>\s*\{\s*"pitch"\s*:\s*"(\d)"\s*\}\s*</answer>'
+    parse_regex: '<answer>\s*\{\s*"average_note_pitch"\s*:\s*"(\d)"\s*\}\s*</answer>'
 
   category_1_duration:
-    system: "You are an expert music analyst. Provide objective assessments of musical characteristics."
+    system: "You are an expert music analyst with focus on average note duration. Provide objective assessments of musical characteristics."
 
     user_template: |
-      Listen to this musical piece and analyze its note duration characteristics.
+      Listen to this musical piece and analyze its average note duration characteristics.
 
       <think>
       First, consider:
-      - Are the notes short and detached (staccato) or long and sustained (legato)?
+      - Are the notes duration short and detached (staccato) or long and sustained (legato)?
       - In beats, short notes are around 6.5 beats or less, long notes are around 14.5 beats or more
       - Focus on how long notes are held, not the tempo
       </think>
 
       On a scale from 1 to 5, rate the average note duration in this music:
-      1 = Very short notes (around 6.5 beats or less, rapid and detached)
-      2 = Short-to-moderate notes (around 8-10 beats)
-      3 = Moderate note lengths (around 10-12 beats, balanced articulation)
-      4 = Moderate-to-long notes (around 12-14 beats)
-      5 = Very long, sustained notes (around 14.5 beats or more, legato)
+      1 = Very short average note duration (around 6.5 beats or less, rapid and detached)
+      2 = Short-to-moderate average note duration (around 8-10 beats)
+      3 = Moderate average note duration (around 10-12 beats, balanced articulation)
+      4 = Moderate-to-long average note duration (around 12-14 beats)
+      5 = Very long, sustained average note duration (around 14.5 beats or more, legato)
 
       CRITICAL FORMAT REQUIREMENT:
       You MUST end your response with this exact XML format:
-      <answer>{"duration": "X"}</answer>
+      <answer>{"average_note_duration": "X"}</answer>
       where X is your rating (1-5).
 
       Provide brief reasoning (one sentence) before the tags, but the XML tags are MANDATORY.
-      Example: Notes are sustained around 11 beats with balanced articulation. <answer>{"duration": "3"}</answer>
+      Example: Note duration average is around 11 beats with balanced articulation. <answer>{"average_note_duration": "3"}</answer>
+    parse_regex: '<answer>\s*\{\s*"average_note_duration"\s*:\s*"(\d)"\s*\}\s*</answer>'
 
-    parse_regex: '<answer>\s*\{\s*"duration"\s*:\s*"(\d)"\s*\}\s*</answer>'
   # Category II: Unconditional Dual Steering
   category_2_dual:
-    system: "You are an expert music analyst. Provide objective assessments of musical characteristics."
+    system: "You are an expert music analyst with focus on average note pitch and average note duration. Provide objective assessments of musical characteristics."
 
     user_template: |
       Listen to this musical piece and analyze TWO characteristics independently:
 
       <think>
-      For PITCH:
-      - What is the overall pitch register (low bass, mid-range, or high treble)?
+      For average note PITCH:
+      - What is the overall/average pitch of the notes (low bass, mid-range, or high treble)?
+      - In MIDI note numbers, low pitch is around 60 (middle C), high pitch is around 68 (G# above middle C)
+      - Most notes below 60 = low register, around 60-64 = mid register, above 64 = high register
 
-      For DURATION:
-      - Are notes short and detached (staccato) or long and sustained (legato)?
+      For average note DURATION:
+      - Are the notes duration short and detached (staccato) or long and sustained (legato)?
+      - In beats, short notes are around 6.5 beats or less, long notes are around 14.5 beats or more
+      - Focus on how long notes are held, not the tempo
 
       Evaluate these two aspects separately without letting one influence the other.
       </think>
 
       Rate BOTH of the following on a 1-5 scale:
 
-      A) PITCH REGISTER:
-      1 = Very low register (most notes below MIDI 60 / middle C)
-      2 = Low-to-mid register (notes around MIDI 60-62)
-      3 = Mid register (notes around MIDI 62-65)
-      4 = Mid-to-high register (notes around MIDI 65-67)
-      5 = Very high register (most notes above MIDI 67)
+      A) average note PITCH:
+      On a scale from 1 to 5, rate the overall pitch register of this music:
+      1 = Very low average note pitch (most notes below MIDI 60 / middle C)
+      2 = Low-to-mid average note pitch (notes around MIDI 60-62)
+      3 = Mid average note pitch (notes around MIDI 62-65)
+      4 = Mid-to-high average note pitch (notes around MIDI 65-67)
+      5 = Very high average note pitch (most notes above MIDI 67)
 
-      B) NOTE DURATION:
-      1 = Very short notes (around 6.5 beats or less, rapid and detached)
-      2 = Short-to-moderate notes (around 8-10 beats)
-      3 = Moderate note lengths (around 10-12 beats, balanced articulation)
-      4 = Moderate-to-long notes (around 12-14 beats)
-      5 = Very long, sustained notes (around 14.5 beats or more, legato)
+      B) average note DURATION:
+      On a scale from 1 to 5, rate the average note duration in this music:
+      1 = Very short average note duration (around 6.5 beats or less, rapid and detached)
+      2 = Short-to-moderate average note duration (around 8-10 beats)
+      3 = Moderate average note duration (around 10-12 beats, balanced articulation)
+      4 = Moderate-to-long average note duration (around 12-14 beats)
+      5 = Very long, sustained average note duration (around 14.5 beats or more, legato)
 
       CRITICAL FORMAT REQUIREMENT:
       You MUST end your response with this exact XML format:
-      <answer>{"pitch": "X", "duration": "Y"}</answer>
+      <answer>{"average_note_pitch": "X", "average_note_duration": "Y"}</answer>
       where X and Y are your ratings (1-5).
 
       Provide brief reasoning (one sentence) before the tags, but the XML tags are MANDATORY.
-      Example: Pitch centers around MIDI 66 (mid-high), notes sustained 12-13 beats. <answer>{"pitch": "4", "duration": "4"}</answer>
-
-    parse_pitch_regex: '<answer>\s*\{[^}]*"pitch"\s*:\s*"(\d)"[^}]*\}\s*</answer>'
-    parse_duration_regex: '<answer>\s*\{[^}]*"duration"\s*:\s*"(\d)"[^}]*\}\s*</answer>'
+      Example: Pitch centers around MIDI 66 (mid-high), notes sustained 12-13 beats. <answer>{"average_note_pitch": "2", "average_note_duration": "4"}</answer>
+    parse_pitch_regex: '<answer>\s*\{[^}]*"average_note_pitch"\s*:\s*"(\d)"[^}]*\}\s*</answer>'
+    parse_duration_regex: '<answer>\s*\{[^}]*"average_note_duration"\s*:\s*"(\d)"[^}]*\}\s*</answer>'
 
   # Category III: Conditional Single Steering
   category_3_pitch:
-    system: "You are an expert music analyst. Provide objective assessments of musical characteristics."
+    system: "You are an expert music analyst with focus on average note pitch comparison. Provide objective assessments of musical characteristics."
 
     user_template: |
       Listen to this musical piece which has two distinct sections: an introduction and a main body.
@@ -175,80 +179,102 @@ prompts:
       - Introduction (first ~8 seconds / first musical phrase)
       - Main body (remaining majority of the piece)
 
-      Did the overall pitch register increase, decrease, or stay roughly the same?
+      First, consider:
+      - What is the overall/average pitch of the notes before and after the introduction (low bass, mid-range, or high treble)?
+      - In MIDI note numbers, low pitch is around 60 (middle C), high pitch is around 68 (G# above middle C)
+      - Most notes below 60 = low register, around 60-64 = mid register, above 64 = high register
+
+      Did the average note pitch register increase, decrease, or stay roughly the same?
       Consider the average pitch across all instruments in each section.
       </think>
 
-      Identify the direction of pitch change from introduction to main body:
-      - "UP" if the main body has higher pitch than the introduction (e.g., shifted from MIDI 60 to 65)
-      - "DOWN" if the main body has lower pitch than the introduction (e.g., shifted from MIDI 65 to 60)
-      - "CONSTANT" if the pitch register stayed roughly the same (within 2-3 MIDI notes)
+      Identify the direction of average note pitch change from introduction to main body:
+      - "UP" if the main body has higher average note pitch than the introduction (e.g., shifted from MIDI 60 to 65)
+      - "DOWN" if the main body has lower average note pitch than the introduction (e.g., shifted from MIDI 65 to 60)
+      - "CONSTANT" if the note pitch register stayed roughly the same (within 2-3 MIDI notes)
 
       IMPORTANT: Provide brief justification first, then end your response inside XML tags in this EXACT format:
-      <answer>{"direction": "UP/DOWN/CONSTANT"}</answer>
-      Example: The intro uses notes around MIDI 60-62, main body shifts to MIDI 64-66. <answer>{"direction": "UP"}</answer>
+      <answer>{" average_note_pitch_direction": "UP/DOWN/CONSTANT"}</answer>
 
-    parse_regex: '<answer>\s*\{[^}]*"direction"\s*:\s*"(UP|DOWN|CONSTANT)"[^}]*\}\s*</answer>'
+    parse_regex: '<answer>\s*\{[^}]*"average_note_pitch_direction"\s*:\s*"(UP|DOWN|CONSTANT)"[^}]*\}\s*</answer>'
 
   category_3_duration:
-    system: "You are an expert music analyst. Provide objective assessments of musical characteristics."
+    system: "You are an expert music analyst with focus on average note duration comparison. Provide objective assessments of musical characteristics."
 
     user_template: |
       Listen to this musical piece which has two distinct sections: an introduction and a main body.
 
       <think>
       Compare the note duration between:
-      - Introduction (first ~8 seconds / first musical phrase)
+      - Introduction (first ~10 seconds / first musical phrase)
       - Main body (remaining majority of the piece)
 
-      Did the notes become longer (more sustained), shorter (more staccato), or stay similar?
-      Focus on articulation changes, not tempo.
+      For average note DURATION:
+      - Are the average note durations short and detached (staccato) or long and sustained (legato) before and after the introduction?
+      - In beats, short notes are around 6.5 beats or less, long notes are around 14.5 beats or more
+      - Focus on how long notes are held, not the tempo
+
+      Did the average note durations become longer (more sustained), shorter (more staccato), or stay similar?
+      Focus on note duration changes, not tempo.
       </think>
 
-      Identify the direction of duration change from introduction to main body:
-      - "LONGER" if the main body has more sustained notes (e.g., from 8 beats to 13 beats)
-      - "SHORTER" if the main body has shorter notes (e.g., from 13 beats to 8 beats)
+      Identify the direction of average note duration change from introduction to main body:
+      - "LONGER" if the main body has longer average note durations than the introduction (e.g., from 8 beats to 13 beats)
+      - "SHORTER" if the main body has shorter average note durations than the introduction (e.g., from 13 beats to 8 beats)
       - "CONSTANT" if note durations stayed roughly the same (within 2-3 beats)
 
       IMPORTANT: Provide brief justification first, then end your response inside XML tags in this EXACT format:
-      <answer>{"direction": "LONGER/SHORTER/CONSTANT"}</answer>
-      Example: Intro has staccato notes around 7 beats, main body becomes more legato around 12 beats. <answer>{"direction": "LONGER"}</answer>
+      <answer>{"average_note_duration_direction": "LONGER/SHORTER/CONSTANT"}</answer>
 
-    parse_regex: '<answer>\s*\{[^}]*"direction"\s*:\s*"(LONGER|SHORTER|CONSTANT)"[^}]*\}\s*</answer>'
+    parse_regex: '<answer>\s*\{[^}]*"average_note_duration_direction"\s*:\s*"(LONGER|SHORTER|CONSTANT)"[^}]*\}\s*</answer>'
 
   # Category IV: Conditional Dual Steering
   category_4_dual:
-    system: "You are an expert music analyst. Provide objective assessments of musical characteristics."
+    system: "You are an expert music analyst with focus on average note pitch and duration comparison. Provide objective assessments of musical characteristics."
 
     user_template: |
       Listen to this musical piece which has two distinct sections: an introduction and a main body.
+      Compare the note duration between:
+      - Introduction (first ~10 seconds / first musical phrase)
+      - Main body (remaining majority of the piece)
 
       <think>
-      Compare TWO characteristics between the introduction and main body:
+      Listen to this musical piece and analyze TWO characteristics independently:
 
-      1. PITCH REGISTER: Did it go up, down, or stay constant?
-      2. NOTE DURATION: Did notes become longer, shorter, or stay constant?
+      For average note PITCH:
+      - What is the overall/average pitch of the notes (low bass, mid-range, or high treble)?
+      - In MIDI note numbers, low pitch is around 60 (middle C), high pitch is around 68 (G# above middle C)
+      - Most notes below 60 = low register, around 60-64 = mid register, above 64 = high register
+
+      For average note DURATION:
+      - Are the notes duration short and detached (staccato) or long and sustained (legato)?
+      - In beats, short notes are around 6.5 beats or less, long notes are around 14.5 beats or more
+      - Focus on how long notes are held, not the tempo
 
       Evaluate these changes independently.
       </think>
 
       Identify the direction of change for BOTH characteristics:
 
-      A) PITCH CHANGE (introduction → main body):
-      - "UP" / "DOWN" / "CONSTANT"
+      A) Identify the direction of average note pitch change from introduction to main body:
+      - "UP" if the main body has higher average note pitch than the introduction (e.g., shifted from MIDI 60 to 65)
+      - "DOWN" if the main body has lower average note pitch than the introduction (e.g., shifted from MIDI 65 to 60)
+      - "CONSTANT" if the note pitch register stayed roughly the same (within 2-3 MIDI notes)
 
-      B) DURATION CHANGE (introduction → main body):
-      - "LONGER" / "SHORTER" / "CONSTANT"
+      B) Identify the direction of average note duration change from introduction to main body:
+      - "LONGER" if the main body has longer average note durations than the introduction (e.g., from 8 beats to 13 beats)
+      - "SHORTER" if the main body has shorter average note durations than the introduction (e.g., from 13 beats to 8 beats)
+      - "CONSTANT" if note durations stayed roughly the same (within 2-3 beats)
 
       CRITICAL FORMAT REQUIREMENT:
       You MUST end your response with this exact XML format:
-      <answer>{"pitch_direction": "UP/DOWN/CONSTANT", "duration_direction": "LONGER/SHORTER/CONSTANT"}</answer>
+      <answer>{"average_note_pitch_direction": "UP/DOWN/CONSTANT", "average_note_duration_direction": "LONGER/SHORTER/CONSTANT"}</answer>
 
-      Provide brief reasoning (one sentence) before the tags, but the XML tags are MANDATORY.
-      Example: Intro uses MIDI 61-62 with 8-beat notes, main body shifts to MIDI 66-68 with 13-beat notes. <answer>{"pitch_direction": "UP", "duration_direction": "LONGER"}</answer>
-
-    parse_pitch_regex: '<answer>\s*\{[^}]*"pitch_direction"\s*:\s*"(UP|DOWN|CONSTANT)"[^}]*\}\s*</answer>'
-    parse_duration_regex: '<answer>\s*\{[^}]*"duration_direction"\s*:\s*"(LONGER|SHORTER|CONSTANT)"[^}]*\}\s*</answer>'
+      Do NOT describe directions in text (e.g., "The pitch direction is UP").
+      Instead, provide brief reasoning (one sentence), then the JSON inside XML tags.
+      Example: Intro stays low with short notes, main section goes higher with longer sustain. <answer>{"average_note_pitch_direction": "UP", "average_note_duration_direction": "LONGER"}</answer>
+    parse_pitch_regex: '<answer>\s*\{[^}]*"average_note_pitch_direction"\s*:\s*"(UP|DOWN|CONSTANT)"[^}]*\}\s*</answer>'
+    parse_duration_regex: '<answer>\s*\{[^}]*"average_note_duration_direction"\s*:\s*"(LONGER|SHORTER|CONSTANT)"[^}]*\}\s*</answer>'
 
 # Statistical analysis settings
 analysis:
