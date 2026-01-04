@@ -212,6 +212,32 @@ def majority_vote(ratings: List[str]) -> Tuple[str, int, bool]:
     return (majority_rating, vote_count, is_unanimous)
 
 
+def map_pitch_direction(code: str) -> str:
+    """Map numeric pitch direction code to text.
+    
+    Args:
+        code: "1", "2", or "3"
+        
+    Returns:
+        "UP", "DOWN", or "CONSTANT"
+    """
+    mapping = {"1": "UP", "2": "DOWN", "3": "CONSTANT"}
+    return mapping.get(code, code)
+
+
+def map_duration_direction(code: str) -> str:
+    """Map numeric duration direction code to text.
+    
+    Args:
+        code: "1", "2", or "3"
+        
+    Returns:
+        "LONGER", "SHORTER", or "CONSTANT"
+    """
+    mapping = {"1": "LONGER", "2": "SHORTER", "3": "CONSTANT"}
+    return mapping.get(code, code)
+
+
 def evaluate_sample_category_1(
     sample: dict, config: dict, model, output_root: pathlib.Path
 ) -> dict:
@@ -411,7 +437,7 @@ def evaluate_sample_category_3(
             logging.info(f"Run {run_idx+1} parsed direction: {direction}")
 
             if direction:
-                directions.append(direction.upper())
+                directions.append(direction)
             else:
                 logging.warning(
                     f"Run {run_idx+1} - Failed to parse direction. Regex: {prompt_config['parse_regex']}"
@@ -423,17 +449,26 @@ def evaluate_sample_category_3(
 
     # Majority vote
     final_direction, vote_count, is_unanimous = majority_vote(directions)
+    
+    # Map numeric code to text for pitch direction
+    if final_direction and concept == "pitch":
+        final_direction_text = map_pitch_direction(final_direction)
+    elif final_direction and concept == "duration":
+        final_direction_text = map_duration_direction(final_direction)
+    else:
+        final_direction_text = final_direction
 
     logging.info(f"Category 3 - All directions: {directions}")
     logging.info(
-        f"Category 3 - Final direction: {final_direction}, Vote count: {vote_count}/{num_runs}"
+        f"Category 3 - Final direction: {final_direction_text} (code: {final_direction}), Vote count: {vote_count}/{num_runs}"
     )
 
     result = {
         **sample,
         "responses": responses,
         "parsed_directions": directions,
-        "final_direction": final_direction,
+        "final_direction": final_direction_text,
+        "final_direction_code": final_direction,
         "vote_count": vote_count,
         "total_runs": num_runs,
         "is_unanimous": is_unanimous,
@@ -486,14 +521,14 @@ def evaluate_sample_category_4(
             )
 
             if pitch_dir:
-                pitch_directions.append(pitch_dir.upper())
+                pitch_directions.append(pitch_dir)
             else:
                 logging.warning(
                     f"Run {run_idx+1} - Failed to parse pitch direction. Regex: {prompt_config['parse_pitch_regex']}"
                 )
 
             if duration_dir:
-                duration_directions.append(duration_dir.upper())
+                duration_directions.append(duration_dir)
             else:
                 logging.warning(
                     f"Run {run_idx+1} - Failed to parse duration direction. Regex: {prompt_config['parse_duration_regex']}"
@@ -508,12 +543,16 @@ def evaluate_sample_category_4(
     final_duration_dir, duration_votes, duration_unanimous = majority_vote(
         duration_directions
     )
+    
+    # Map numeric codes to text
+    final_pitch_dir_text = map_pitch_direction(final_pitch_dir) if final_pitch_dir else None
+    final_duration_dir_text = map_duration_direction(final_duration_dir) if final_duration_dir else None
 
     logging.info(
-        f"Category 4 - Pitch directions: {pitch_directions}, Final: {final_pitch_dir} ({pitch_votes}/{num_runs})"
+        f"Category 4 - Pitch directions: {pitch_directions}, Final: {final_pitch_dir_text} (code: {final_pitch_dir}) ({pitch_votes}/{num_runs})"
     )
     logging.info(
-        f"Category 4 - Duration directions: {duration_directions}, Final: {final_duration_dir} ({duration_votes}/{num_runs})"
+        f"Category 4 - Duration directions: {duration_directions}, Final: {final_duration_dir_text} (code: {final_duration_dir}) ({duration_votes}/{num_runs})"
     )
 
     result = {
@@ -521,8 +560,10 @@ def evaluate_sample_category_4(
         "responses": responses,
         "parsed_pitch_directions": pitch_directions,
         "parsed_duration_directions": duration_directions,
-        "final_pitch_direction": final_pitch_dir,
-        "final_duration_direction": final_duration_dir,
+        "final_pitch_direction": final_pitch_dir_text,
+        "final_duration_direction": final_duration_dir_text,
+        "final_pitch_direction_code": final_pitch_dir,
+        "final_duration_direction_code": final_duration_dir,
         "pitch_vote_count": pitch_votes,
         "duration_vote_count": duration_votes,
         "total_runs": num_runs,
