@@ -35,6 +35,22 @@ evaluate_sample_category_4 = eval_module.evaluate_sample_category_4
 
 
 def main():
+    import argparse
+
+    parser = argparse.ArgumentParser(description="Test Music Flamingo evaluation")
+    parser.add_argument(
+        "--categories",
+        nargs="+",
+        choices=[
+            "unconditional_single",
+            "unconditional_dual",
+            "conditional_single",
+            "conditional_dual",
+        ],
+        help="Specific categories to test (default: all)",
+    )
+    args = parser.parse_args()
+
     logging.basicConfig(
         level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s"
     )
@@ -52,6 +68,9 @@ def main():
     test_samples = {}
     for entry in manifest:
         cat = entry["category"]
+        # Skip if category filtering is enabled and this category is not in the list
+        if args.categories and cat not in args.categories:
+            continue
         if cat not in test_samples:
             test_samples[cat] = entry
 
