@@ -172,65 +172,36 @@ prompts:
     system: "You are an expert music analyst with focus on average note pitch comparison. Provide objective assessments of musical characteristics."
 
     user_template: |
-      Task: Compare AVERAGE note pitch between introduction (first ~10 seconds) and main body (rest).
+      Compare AVERAGE pitch: introduction (first ~10 seconds) vs main body.
 
-      Rate the AVERAGE note pitch direction:
-      1 = UP (intro lower, main body higher)
-      2 = DOWN (intro higher, main body lower)
-      3 = CONSTANT (similar throughout)
+      1 = UP (intro lower, main higher)
+      2 = DOWN (intro higher, main lower)
+      3 = CONSTANT (similar)
 
-      You MUST respond with one sentence explaining, then this EXACT format:
-      <answer>{"average_note_pitch_direction": "1"}</answer>
+      Explain in one sentence, then write: ANSWER: [number]
 
-      Do not forget the <answer> and </answer> tags with the number inside.
-
-    parse_regex: '<answer>\s*\{[^}]*"average_note_pitch_direction"\s*:\s*"([123])"[^}]*\}\s*</answer>'
+    parse_regex: 'ANSWER:\s*([123])'
 
   category_3_duration:
     system: "You are an expert music analyst with focus on average note duration comparison. Provide objective assessments of musical characteristics."
 
     user_template: |
-      Task: Compare AVERAGE note duration between introduction (first ~10 seconds) and main body (rest).
+      Compare AVERAGE duration: introduction (first ~10 seconds) vs main body.
 
-      Rate the AVERAGE note duration direction:
-      1 = LONGER (intro shorter, main body more sustained)
-      2 = SHORTER (intro longer, main body more staccato)
-      3 = CONSTANT (similar throughout)
+      1 = LONGER (main more sustained)
+      2 = SHORTER (main more staccato)
+      3 = CONSTANT (similar)
 
-      You MUST respond with one sentence explaining, then this EXACT format:
-      <answer>{"average_note_duration_direction": "1"}</answer>
+      Explain in one sentence, then write: ANSWER: [number]
 
-      Do not forget the <answer> and </answer> tags with the number inside.
-
-    parse_regex: '<answer>\s*\{[^}]*"average_note_duration_direction"\s*:\s*"([123])"[^}]*\}\s*</answer>'
+    parse_regex: 'ANSWER:\s*([123])'
 
   # Category IV: Conditional Dual Steering
   category_4_dual:
     system: "You are an expert music analyst with focus on average note pitch and duration comparison. Provide objective assessments of musical characteristics."
 
     user_template: |
-      Listen to this musical piece which has two distinct sections: an introduction and a main body.
-      Compare the note duration between:
-      - Introduction (first ~10 seconds / first musical phrase)
-      - Main body (remaining majority of the piece)
-
-      <think>
-      Listen to this musical piece and analyze TWO characteristics independently:
-
-      For average note PITCH:
-      - What is the overall/average pitch of the notes (low bass, mid-range, or high treble)?
-      - In MIDI note numbers, low pitch is around 60 (middle C), high pitch is around 68 (G# above middle C)
-      - Most notes below 60 = low register, around 60-64 = mid register, above 64 = high register
-
-      For average note DURATION:
-      - Are the notes duration short and detached (staccato) or long and sustained (legato)?
-      - In beats, short notes are around 6.5 beats or less, long notes are around 14.5 beats or more
-      - Focus on how long notes are held, not the tempo
-
-      Evaluate these changes independently.
-      </think>
-
-      Task: Compare AVERAGE pitch and AVERAGE duration between introduction and main body.
+      Compare AVERAGE pitch and AVERAGE duration: introduction (first ~10 seconds) vs main body.
 
       average note PITCH direction:
       1 = UP (intro lower, main higher)
@@ -242,13 +213,12 @@ prompts:
       2 = SHORTER (main more staccato)
       3 = CONSTANT (similar)
 
-      You MUST respond with one sentence explaining, then this EXACT format:
-      <answer>{"average_note_pitch_direction": "1", "average_note_duration_direction": "1"}</answer>
+      Explain briefly, then write:
+      PITCH: [number]
+      DURATION: [number]
 
-      Do not forget the <answer> and </answer> tags with numbers inside.
-
-    parse_pitch_regex: '<answer>\s*\{[^}]*"average_note_pitch_direction"\s*:\s*"([123])"[^}]*\}\s*</answer>'
-    parse_duration_regex: '<answer>\s*\{[^}]*"average_note_duration_direction"\s*:\s*"([123])"[^}]*\}\s*</answer>'
+    parse_pitch_regex: 'PITCH:\s*([123])'
+    parse_duration_regex: 'DURATION:\s*([123])'
 
 # Statistical analysis settings
 analysis:

@@ -214,10 +214,10 @@ def majority_vote(ratings: List[str]) -> Tuple[str, int, bool]:
 
 def map_pitch_direction(code: str) -> str:
     """Map numeric pitch direction code to text.
-    
+
     Args:
         code: "1", "2", or "3"
-        
+
     Returns:
         "UP", "DOWN", or "CONSTANT"
     """
@@ -227,10 +227,10 @@ def map_pitch_direction(code: str) -> str:
 
 def map_duration_direction(code: str) -> str:
     """Map numeric duration direction code to text.
-    
+
     Args:
         code: "1", "2", or "3"
-        
+
     Returns:
         "LONGER", "SHORTER", or "CONSTANT"
     """
@@ -449,7 +449,7 @@ def evaluate_sample_category_3(
 
     # Majority vote
     final_direction, vote_count, is_unanimous = majority_vote(directions)
-    
+
     # Map numeric code to text for pitch direction
     if final_direction and concept == "pitch":
         final_direction_text = map_pitch_direction(final_direction)
@@ -543,10 +543,14 @@ def evaluate_sample_category_4(
     final_duration_dir, duration_votes, duration_unanimous = majority_vote(
         duration_directions
     )
-    
+
     # Map numeric codes to text
-    final_pitch_dir_text = map_pitch_direction(final_pitch_dir) if final_pitch_dir else None
-    final_duration_dir_text = map_duration_direction(final_duration_dir) if final_duration_dir else None
+    final_pitch_dir_text = (
+        map_pitch_direction(final_pitch_dir) if final_pitch_dir else None
+    )
+    final_duration_dir_text = (
+        map_duration_direction(final_duration_dir) if final_duration_dir else None
+    )
 
     logging.info(
         f"Category 4 - Pitch directions: {pitch_directions}, Final: {final_pitch_dir_text} (code: {final_pitch_dir}) ({pitch_votes}/{num_runs})"
