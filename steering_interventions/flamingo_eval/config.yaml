@@ -172,13 +172,12 @@ prompts:
     system: "You are an expert music analyst with focus on average note pitch comparison. Provide objective assessments of musical characteristics."
 
     user_template: |
-      Listen to this musical piece with two sections: introduction (~10 seconds) and main body.
-      ANSWER FORMAT - You MUST use this structure:
+      Task: Listen to this piece introduction (~10 seconds) and main body. Did the average note pitch go UP, DOWN, or stay CONSTANT in the main body compared to the introduction?
+
+      You MUST respond with one reasoning sentence, then this EXACT format with the tags:
       <answer>{"average_note_pitch_direction": "UP"}</answer>
 
-      Task: Listen to this piece (intro + main body). Did the average note pitch go UP, DOWN, or stay CONSTANT in the main body compared to the introduction?
-
-      Brief reasoning (one sentence), then the answer tags above.
+      Make sure you follow the EXACT format with <answer> and </answer> tags around the JSON.
 
     parse_regex: '<answer>\s*\{[^}]*"average_note_pitch_direction"\s*:\s*"(UP|DOWN|CONSTANT)"[^}]*\}\s*</answer>'
 
@@ -188,18 +187,12 @@ prompts:
     user_template: |
       Listen to this musical piece with two sections: introduction (~10 seconds) and main body.
 
-      REQUIRED OUTPUT FORMAT - Use this exact structure in the end after your reasoning (one sentence):
-      <answer>{"average_note_duration_direction": "LONGER/SHORTER/CONSTANT"}</answer>
+      Task: Did the average note duration go LONGER, SHORTER, or stay CONSTANT in the main body compared to the introduction?
 
-      Task: Compare average note duration between introduction and main body.
-      - "LONGER" = main body has longer average note duration (e.g., 8 beats→13 beats)
-      - "SHORTER" = main body has shorter average note duration (e.g., 13 beats→8 beats)
-      - "CONSTANT" = stayed similar (within 2-3 beats)
-
-      ANSWER FORMAT - You MUST use this structure:
+      You MUST respond with one reasoning sentence, then this EXACT format with the tags:
       <answer>{"average_note_duration_direction": "LONGER"}</answer>
 
-      Brief reasoning (one sentence), then the answer tags above.
+      Do not forget the <answer> and </answer> tags around the JSON.
 
     parse_regex: '<answer>\s*\{[^}]*"average_note_duration_direction"\s*:\s*"(LONGER|SHORTER|CONSTANT)"[^}]*\}\s*</answer>'
 
@@ -229,14 +222,12 @@ prompts:
       Evaluate these changes independently.
       </think>
 
-      ANSWER FORMAT - You MUST use this structure:
+      Task: Compare average note pitch (UP/DOWN/CONSTANT) and average note duration (LONGER/SHORTER/CONSTANT) between introduction and the main body.
+
+      You MUST respond with one reasoning sentence, then this EXACT format with the tags:
       <answer>{"average_note_pitch_direction": "UP", "average_note_duration_direction": "LONGER"}</answer>
 
-      Task: Compare TWO characteristics (intro vs main body):
-      - AVERAGE NOTE PITCH: "UP" / "DOWN" / "CONSTANT"
-      - AVERAGE NOTE DURATION: "LONGER" / "SHORTER" / "CONSTANT"
-
-      Brief reasoning (one sentence), then the answer tags above. DO NOT write prose without tags.
+      Make sure you follow the EXACT format with <answer> and </answer> tags around the JSON.
 
     parse_pitch_regex: '<answer>\s*\{[^}]*"average_note_pitch_direction"\s*:\s*"(UP|DOWN|CONSTANT)"[^}]*\}\s*</answer>'
     parse_duration_regex: '<answer>\s*\{[^}]*"average_note_duration_direction"\s*:\s*"(LONGER|SHORTER|CONSTANT)"[^}]*\}\s*</answer>'
