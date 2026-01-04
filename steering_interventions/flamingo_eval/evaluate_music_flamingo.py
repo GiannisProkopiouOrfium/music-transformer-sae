@@ -601,6 +601,12 @@ def main():
         action="store_true",
         help="Dry run (don't actually query model)",
     )
+    parser.add_argument(
+        "--limit",
+        type=int,
+        default=None,
+        help="Limit to N samples (for testing)",
+    )
 
     args = parser.parse_args()
 
@@ -720,7 +726,14 @@ def main():
     checkpoint_interval = config["resume"]["checkpoint_interval"]
     samples_since_checkpoint = 0
 
-    for sample in tqdm(manifest, desc="Evaluating samples"):
+    # Apply limit if specified
+    samples_to_process = manifest
+    if args.limit is not None:
+        remaining = [s for s in manifest if s["id"] not in completed_ids]
+        samples_to_process = remaining[: args.limit]
+        logging.info(f"LIMIT MODE: Processing only {len(samples_to_process)} samples")
+
+    for sample in tqdm(samples_to_process, desc="Evaluating samples"):
         sample_id = sample["id"]
 
         # Skip if already completed
