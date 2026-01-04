@@ -173,17 +173,12 @@ prompts:
 
     user_template: |
       Listen to this musical piece with two sections: introduction (~10 seconds) and main body.
+      ANSWER FORMAT - You MUST use this structure:
+      <answer>{"average_note_pitch_direction": "UP"}</answer>
 
-      REQUIRED OUTPUT FORMAT - Use this exact structure in the end after your reasoning (one sentence):
-      <answer>{"average_note_pitch_direction": "UP/DOWN/CONSTANT"}</answer>
+      Task: Listen to this piece (intro + main body). Did the average note pitch go UP, DOWN, or stay CONSTANT in the main body compared to the introduction?
 
-      Task: Compare average note pitch between introduction and main body.
-      - "UP" = main body higher than intro (e.g., MIDI 60→65)
-      - "DOWN" = main body lower than intro (e.g., MIDI 65→60)
-      - "CONSTANT" = stayed similar (within 2-3 MIDI notes)
-
-      Reference: MIDI 60=middle C (low), MIDI 68=G# above C (high)
-      Example: The introduction's average note pitch is around MIDI 61 (low), while the main body centers around MIDI 66 (higher). <answer>{"average_note_pitch_direction": "UP"}</answer>
+      Brief reasoning (one sentence), then the answer tags above.
 
     parse_regex: '<answer>\s*\{[^}]*"average_note_pitch_direction"\s*:\s*"(UP|DOWN|CONSTANT)"[^}]*\}\s*</answer>'
 
@@ -197,13 +192,14 @@ prompts:
       <answer>{"average_note_duration_direction": "LONGER/SHORTER/CONSTANT"}</answer>
 
       Task: Compare average note duration between introduction and main body.
-      - "LONGER" = main body more sustained (e.g., 8 beats→13 beats)
-      - "SHORTER" = main body more staccato (e.g., 13 beats→8 beats)
+      - "LONGER" = main body has longer average note duration (e.g., 8 beats→13 beats)
+      - "SHORTER" = main body has shorter average note duration (e.g., 13 beats→8 beats)
       - "CONSTANT" = stayed similar (within 2-3 beats)
 
-      Reference: 6.5 beats (short/staccato), 14.5 beats (long/legato)
-      Focus on average note duration, not tempo.
-      Example: The introduction's average note duration is around 9 beats (moderate), while the main body averages around 14 beats (longer). <answer>{"average_note_duration_direction": "LONGER"}</answer>
+      ANSWER FORMAT - You MUST use this structure:
+      <answer>{"average_note_duration_direction": "LONGER"}</answer>
+
+      Brief reasoning (one sentence), then the answer tags above.
 
     parse_regex: '<answer>\s*\{[^}]*"average_note_duration_direction"\s*:\s*"(LONGER|SHORTER|CONSTANT)"[^}]*\}\s*</answer>'
 
@@ -233,22 +229,14 @@ prompts:
       Evaluate these changes independently.
       </think>
 
-      REQUIRED OUTPUT FORMAT - Use this exact structure (DO NOT describe in prose) after your reasoning (one sentence):
-      <answer>{"average_note_pitch_direction": "UP/DOWN/CONSTANT", "average_note_duration_direction": "LONGER/SHORTER/CONSTANT"}</answer>
+      ANSWER FORMAT - You MUST use this structure:
+      <answer>{"average_note_pitch_direction": "UP", "average_note_duration_direction": "LONGER"}</answer>
 
-      Task: Compare TWO characteristics between introduction and main body:
+      Task: Compare TWO characteristics (intro vs main body):
+      - AVERAGE NOTE PITCH: "UP" / "DOWN" / "CONSTANT"
+      - AVERAGE NOTE DURATION: "LONGER" / "SHORTER" / "CONSTANT"
 
-      A) AVERAGE NOTE PITCH CHANGE:
-      - "UP" = main body higher average note pitch than introduction (e.g., MIDI 60→65)
-      - "DOWN" = main body lower average note pitch than introduction (e.g., MIDI 65→60)
-      - "CONSTANT" = similar (within 2-3 MIDI notes)
-
-      B) AVERAGE NOTE DURATION CHANGE:
-      - "LONGER" = main body longer average note duration than introduction (e.g., 8→13 beats)
-      - "SHORTER" = main body shorter average note duration than introduction (e.g., 13→8 beats)
-      - "CONSTANT" = similar (within 2-3 beats)
-
-      Example: The introduction's average note pitch is around MIDI 61 (low), while the main body centers around MIDI 66 (higher). The introduction's average note duration is around 9 beats (moderate), while the main body averages around 14 beats (longer). <answer>{"average_note_pitch_direction": "UP", "average_note_duration_direction": "LONGER"}</answer>
+      Brief reasoning (one sentence), then the answer tags above. DO NOT write prose without tags.
 
     parse_pitch_regex: '<answer>\s*\{[^}]*"average_note_pitch_direction"\s*:\s*"(UP|DOWN|CONSTANT)"[^}]*\}\s*</answer>'
     parse_duration_regex: '<answer>\s*\{[^}]*"average_note_duration_direction"\s*:\s*"(LONGER|SHORTER|CONSTANT)"[^}]*\}\s*</answer>'
