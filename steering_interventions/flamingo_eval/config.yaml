@@ -59,31 +59,30 @@ music_flamingo:
 # Prompts for each category
 prompts:
   # Category I: Unconditional Single Steering
+  # (B) Low-to-mid average note pitch (notes around MIDI 60-62)
+  # (D) Mid-to-high average note pitch (notes around MIDI 65-67)
+
   category_1_pitch:
     system: "You are an expert music analyst. Answer the question about the audio."
 
     user_template: |
       How would the overall average note pitch of this audio be described? Choose the correct option from the following options:
-      (A) Very low average note pitch (most notes below MIDI 60 / middle C)
-      (B) Low-to-mid average note pitch (notes around MIDI 60-62)
-      (C) Mid average note pitch (notes around MIDI 62-65)
-      (D) Mid-to-high average note pitch (notes around MIDI 65-67)
-      (E) Very high average note pitch (most notes above MIDI 67)
+      (A) Low average note pitch (notes less than MIDI 62-65)
+      (B) Mid average note pitch (notes around MIDI 62-65)
+      (C) High average note pitch (notes greater than MIDI 62-65)
 
-    parse_regex: '\(([A-E])\)'
+    parse_regex: '\(([A-C])\)'
 
   category_1_duration:
     system: "You are an expert music analyst. Answer the question about the audio."
 
     user_template: |
       How would the average note duration in this audio be described? Choose the correct option from the following options:
-      (A) Very short average note duration (around 6.5 beats or less, rapid and detached)
-      (B) Short-to-moderate average note duration (around 8-10 beats)
-      (C) Moderate average note duration (around 10-12 beats, balanced articulation)
-      (D) Moderate-to-long average note duration (around 12-14 beats)
-      (E) Very long, sustained average note duration (around 14.5 beats or more, legato)
+      (A) Short average note duration (around 10 beats or less, more detached)
+      (B) Moderate average note duration (around 10-12 beats, balanced articulation)
+      (C) Long, sustained average note duration (around 12 beats or more, legato)
 
-    parse_regex: '\(([A-E])\)'
+    parse_regex: '\(([A-C])\)'
 
   # Category II: Unconditional Dual Steering
   category_2_dual:

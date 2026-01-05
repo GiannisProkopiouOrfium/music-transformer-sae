@@ -86,7 +86,7 @@ def select_diverse_samples(manifest: list, category: str, config: dict) -> list:
             s
             for s in category_samples
             if s["concept"] == "pitch"
-            and s.get("transition_type") == "high_to_low"
+            and s.get("override_direction") == "high_to_low"
             and abs(s.get("alpha", 0)) > 1.0
         ]
         if pitch_htl:
@@ -97,7 +97,7 @@ def select_diverse_samples(manifest: list, category: str, config: dict) -> list:
             s
             for s in category_samples
             if s["concept"] == "duration"
-            and s.get("transition_type") == "low_to_high"
+            and s.get("override_direction") == "low_to_high"
             and abs(s.get("alpha", 0)) > 1.0
         ]
         if dur_lth:
@@ -116,10 +116,11 @@ def select_diverse_samples(manifest: list, category: str, config: dict) -> list:
 
     elif category == "conditional_dual":
         # Select 3 different transition scenarios
+        # Match actual ID format: cat4_lowpitchshortdurationtohighlong_...
         scenarios = [
-            "low_pitch_short_duration_to_high_long",
-            "high_pitch_long_duration_to_low_short",
-            "low_pitch_long_duration_to_high_short",
+            "lowpitchshortdurationtohighlong",
+            "highpitchlongdurationtolowshort",
+            "lowpitchlongdurationtohighshort",
         ]
 
         selected = []

@@ -256,15 +256,15 @@ def map_duration_direction(code: str) -> str:
 
 
 def map_letter_to_rating(letter: str) -> str:
-    """Map letter choice to numeric rating (1-5).
+    """Map letter choice to numeric rating (1-3 for Category 1).
 
     Args:
-        letter: "A", "B", "C", "D", or "E"
+        letter: "A", "B", or "C"
 
     Returns:
-        "1", "2", "3", "4", or "5"
+        "1", "2", or "3"
     """
-    mapping = {"A": "1", "B": "2", "C": "3", "D": "4", "E": "5"}
+    mapping = {"A": "1", "B": "2", "C": "3"}
     return mapping.get(letter, letter)
 
 
