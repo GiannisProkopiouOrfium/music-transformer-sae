@@ -112,7 +112,7 @@ def analyze_position_bias(results: list) -> dict:
     # Category 3: Check if model can detect decreases
     cat3 = [r for r in results if r["category"] == "conditional_single"]
 
-    direction_counts = defaultdict(lambda: {"UP": 0, "DOWN": 0, "CONSTANT": 0})
+    direction_counts = defaultdict(lambda: defaultdict(int))
 
     for r in cat3:
         concept = r.get("concept", "")
