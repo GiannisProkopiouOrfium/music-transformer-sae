@@ -78,9 +78,9 @@ prompts:
 
     user_template: |
       How would the average note duration in this audio be described? Choose the correct option from the following options:
-      (A) Short average note duration (less than 10 MIDI beats)
-      (B) Moderate average note duration (around 10-12 MIDI beats)
-      (C) Long average note duration (more than 12 MIDI beats)
+      (A) Short average note duration (notes less than 10 MIDI beats)
+      (B) Moderate average note duration (notes around 10-12 MIDI beats)
+      (C) Long average note duration (notes more than 12 MIDI beats)
 
     parse_regex: '\(([A-C])\)'
 
@@ -90,12 +90,11 @@ prompts:
 
     user_template: |
       How would you describe the overall average note pitch AND average note duration of this audio? Choose the correct option from the following options:
-      (A) Low average note pitch (notes lower than MIDI 62) and Short average note duration (less than MIDI 10 beats)
-      (B) Low average note pitch (notes lower than MIDI 62) and Long average note duration (more than 12 MIDI beats)
-      (C) Mid average note pitch (notes around MIDI 62-65) and Moderate average note duration (around 10-12 MIDI beats)
-      (D) High average note pitch (notes higher than MIDI 65) and Short average note duration (less than 10 MIDI beats)
-      (E) High average note pitch (notes higher than MIDI 65) and Long average note duration (more than 12 MIDI beats)
-
+      (A) Low average note pitch (notes lower than MIDI 62) and Short average note duration (notes less than MIDI 10 beats)
+      (B) Low average note pitch (notes lower than MIDI 62) and Long average note duration (notes more than 12 MIDI beats)
+      (C) Mid average note pitch (notes around MIDI 62-65) and Moderate average note duration (notes around 10-12 MIDI beats)
+      (D) High average note pitch (notes higher than MIDI 65) and Short average note duration (notes less than MIDI 10 beats)
+      (E) High average note pitch (notes higher than MIDI 65) and Long average note duration (notes more than 12 MIDI beats)
     parse_regex: '\(([A-E])\)'
 
   # Category III: Conditional Single Steering
@@ -127,11 +126,11 @@ prompts:
 
     user_template: |
       Compare the introduction (first ~10 seconds) with the main body (rest of the piece). How do BOTH the average note pitch AND average note duration change? Choose the correct option from the following options:
-      (A) Pitch goes UP (intro lower → main higher) and Duration becomes LONGER (intro shorter → main longer)
-      (B) Pitch goes UP (intro lower → main higher) and Duration becomes SHORTER (intro longer → main shorter)
-      (C) Pitch stays CONSTANT and Duration stays CONSTANT
-      (D) Pitch goes DOWN (intro higher → main lower) and Duration becomes SHORTER (intro longer → main shorter)
-      (E) Pitch goes DOWN (intro higher → main lower) and Duration becomes LONGER (intro shorter → main longer)
+      (A) Average note pitch goes higher and average note duration becomes longer
+      (B) Average note pitch goes higher and average note duration becomes shorter
+      (C) Average note pitch stays constant and average note duration stays constant
+      (D) Average note pitch goes lower and average note duration becomes shorter
+      (E) Average note pitch goes lower and average note duration becomes longer
     parse_regex: '\(([A-E])\)'
 
 # Statistical analysis settings
