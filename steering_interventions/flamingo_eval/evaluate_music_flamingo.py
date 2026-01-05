@@ -259,25 +259,59 @@ def map_letter_to_rating(letter: str) -> str:
     """Map letter choice to numeric rating (1-5).
 
     Args:
-        letter: "A", "B", "C", "D", or "E" (or "F"-"J" for duration in dual)
+        letter: "A", "B", "C", "D", or "E"
 
     Returns:
         "1", "2", "3", "4", or "5"
     """
-    # For pitch questions (A-E) and duration in Category 2 (F-J)
-    mapping = {
-        "A": "1",
-        "B": "2",
-        "C": "3",
-        "D": "4",
-        "E": "5",
-        "F": "1",
-        "G": "2",
-        "H": "3",
-        "I": "4",
-        "J": "5",
-    }
+    mapping = {"A": "1", "B": "2", "C": "3", "D": "4", "E": "5"}
     return mapping.get(letter, letter)
+
+
+def map_dual_letter_to_ratings(letter: str) -> tuple:
+    """Map Category 2 combined letter to separate pitch and duration ratings.
+    
+    Args:
+        letter: "A", "B", "C", "D", or "E"
+    
+    Returns:
+        (pitch_rating, duration_rating) as strings (1-5)
+    """
+    # A: Low pitch + Short duration
+    # B: Low pitch + Long duration  
+    # C: Mid pitch + Moderate duration
+    # D: High pitch + Short duration
+    # E: High pitch + Long duration
+    mapping = {
+        "A": ("1", "1"),  # Low + Short
+        "B": ("1", "5"),  # Low + Long
+        "C": ("3", "3"),  # Mid + Moderate
+        "D": ("5", "1"),  # High + Short
+        "E": ("5", "5"),  # High + Long
+    }
+    return mapping.get(letter, (None, None))
+
+
+def map_dual_direction_letter(letter: str) -> tuple:
+    """Map Category 4 combined letter to pitch and duration directions.
+    
+    Args:
+        letter: "A" through "E"
+    
+    Returns:
+        (pitch_direction, duration_direction) as text
+    """
+    # Match config.yaml Category 4 options:
+    # A: UP + LONGER, B: UP + SHORTER, C: CONSTANT + CONSTANT
+    # D: DOWN + SHORTER, E: DOWN + LONGER
+    mapping = {
+        "A": ("UP", "LONGER"),
+        "B": ("UP", "SHORTER"),
+        "C": ("CONSTANT", "CONSTANT"),
+        "D": ("DOWN", "SHORTER"),
+        "E": ("DOWN", "LONGER"),
+    }
+    return mapping.get(letter, (None, None))
 
 
 def evaluate_sample_category_1(
@@ -384,35 +418,24 @@ def evaluate_sample_category_2(
 
             logging.info(f"Run {run_idx+1} response: {response}")
 
-            # Parse both ratings (will be letters)
-            pitch_letter = parse_response(response, prompt_config["parse_pitch_regex"])
-            duration_letter = parse_response(
-                response, prompt_config["parse_duration_regex"]
-            )
+            # Parse combined answer (single letter A-E)
+            combined_letter = parse_response(response, prompt_config["parse_regex"])
+            
+            logging.info(f"Run {run_idx+1} parsed combined letter: {combined_letter}")
 
-            logging.info(
-                f"Run {run_idx+1} parsed pitch letter: {pitch_letter}, duration letter: {duration_letter}"
-            )
-
-            if pitch_letter:
-                # Convert A-E to 1-5
-                pitch_rating = map_letter_to_rating(pitch_letter)
-                pitch_ratings.append(pitch_rating)
-                logging.info(f"Run {run_idx+1} pitch rating: {pitch_rating}")
+            if combined_letter:
+                # Decode into separate pitch and duration ratings
+                pitch_rating, duration_rating = map_dual_letter_to_ratings(combined_letter)
+                
+                if pitch_rating and duration_rating:
+                    pitch_ratings.append(pitch_rating)
+                    duration_ratings.append(duration_rating)
+                    logging.info(f"Run {run_idx+1} decoded to pitch: {pitch_rating}, duration: {duration_rating}")
+                else:
+                    logging.warning(f"Run {run_idx+1} - Invalid combined letter: {combined_letter}")
             else:
                 logging.warning(
-                    f"Run {run_idx+1} - Failed to parse pitch. Regex: {prompt_config['parse_pitch_regex']}"
-                )
-
-            if duration_letter:
-                # Convert F-J to 1-5
-                duration_rating = map_letter_to_rating(duration_letter)
-                duration_ratings.append(duration_rating)
-                logging.info(f"Run {run_idx+1} duration rating: {duration_rating}")
-                logging.info(f"Run {run_idx+1} duration rating: {duration_rating}")
-            else:
-                logging.warning(
-                    f"Run {run_idx+1} - Failed to parse duration. Regex: {prompt_config['parse_duration_regex']}"
+                    f"Run {run_idx+1} - Failed to parse response. Regex: {prompt_config['parse_regex']}"
                 )
 
         except Exception as e:
@@ -562,53 +585,41 @@ def evaluate_sample_category_4(
 
             logging.info(f"Run {run_idx+1} response: {response}")
 
-            # Parse both directions (will be letters)
-            pitch_letter = parse_response(response, prompt_config["parse_pitch_regex"])
-            duration_letter = parse_response(
-                response, prompt_config["parse_duration_regex"]
-            )
+            # Parse combined answer (single letter A-I)
+            combined_letter = parse_response(response, prompt_config["parse_regex"])
+            
+            logging.info(f"Run {run_idx+1} parsed combined letter: {combined_letter}")
 
-            logging.info(
-                f"Run {run_idx+1} parsed pitch letter: {pitch_letter}, duration letter: {duration_letter}"
-            )
-
-            if pitch_letter:
-                pitch_directions.append(pitch_letter)
+            if combined_letter:
+                # Decode into separate pitch and duration directions
+                pitch_dir, duration_dir = map_dual_direction_letter(combined_letter)
+                
+                if pitch_dir and duration_dir:
+                    pitch_directions.append(pitch_dir)
+                    duration_directions.append(duration_dir)
+                    logging.info(f"Run {run_idx+1} decoded to pitch: {pitch_dir}, duration: {duration_dir}")
+                else:
+                    logging.warning(f"Run {run_idx+1} - Invalid combined letter: {combined_letter}")
             else:
                 logging.warning(
-                    f"Run {run_idx+1} - Failed to parse pitch direction. Regex: {prompt_config['parse_pitch_regex']}"
-                )
-
-            if duration_letter:
-                duration_directions.append(duration_letter)
-            else:
-                logging.warning(
-                    f"Run {run_idx+1} - Failed to parse duration direction. Regex: {prompt_config['parse_duration_regex']}"
+                    f"Run {run_idx+1} - Failed to parse response. Regex: {prompt_config['parse_regex']}"
                 )
 
         except Exception as e:
             logging.error(f"Error in run {run_idx+1}: {e}")
             responses.append(f"ERROR: {e}")
 
-    # Majority votes
+    # Majority votes (already decoded as text like "UP", "DOWN", etc.)
     final_pitch_dir, pitch_votes, pitch_unanimous = majority_vote(pitch_directions)
     final_duration_dir, duration_votes, duration_unanimous = majority_vote(
         duration_directions
     )
 
-    # Map letter codes to text (A/B/C → UP/DOWN/CONSTANT, D/E/F → LONGER/SHORTER/CONSTANT)
-    final_pitch_dir_text = (
-        map_pitch_direction(final_pitch_dir) if final_pitch_dir else None
-    )
-    final_duration_dir_text = (
-        map_duration_direction(final_duration_dir) if final_duration_dir else None
-    )
-
     logging.info(
-        f"Category 4 - Pitch directions: {pitch_directions}, Final: {final_pitch_dir_text} (letter: {final_pitch_dir}) ({pitch_votes}/{num_runs})"
+        f"Category 4 - Pitch directions: {pitch_directions}, Final: {final_pitch_dir} ({pitch_votes}/{num_runs})"
     )
     logging.info(
-        f"Category 4 - Duration directions: {duration_directions}, Final: {final_duration_dir_text} (letter: {final_duration_dir}) ({duration_votes}/{num_runs})"
+        f"Category 4 - Duration directions: {duration_directions}, Final: {final_duration_dir} ({duration_votes}/{num_runs})"
     )
 
     result = {
@@ -616,10 +627,8 @@ def evaluate_sample_category_4(
         "responses": responses,
         "parsed_pitch_directions": pitch_directions,
         "parsed_duration_directions": duration_directions,
-        "final_pitch_direction": final_pitch_dir_text,
-        "final_duration_direction": final_duration_dir_text,
-        "final_pitch_direction_code": final_pitch_dir,
-        "final_duration_direction_code": final_duration_dir,
+        "final_pitch_direction": final_pitch_dir,
+        "final_duration_direction": final_duration_dir,
         "pitch_vote_count": pitch_votes,
         "duration_vote_count": duration_votes,
         "total_runs": num_runs,

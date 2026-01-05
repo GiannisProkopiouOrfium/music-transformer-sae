@@ -87,27 +87,17 @@ prompts:
 
   # Category II: Unconditional Dual Steering
   category_2_dual:
-    system: "You are an expert music analyst. Answer both questions about the audio."
+    system: "You are an expert music analyst. Answer the question about the audio."
 
     user_template: |
-      Answer BOTH questions about this audio:
+      How would you describe the overall average note pitch AND average note duration of this audio? Choose the correct option from the following options:
+      (A) Low average note pitch (notes lower than MIDI 62) and Short average note duration (less than 10 beats)
+      (B) Low average note pitch (notes lower than MIDI 62) and Long, sustained average note duration (more than 12 beats)
+      (C) Mid average note pitch (notes around MIDI 62-65) and Moderate average note duration (around 10-12 beats)
+      (D) High average note pitch (notes higher than MIDI 65) and Short average note duration (less than 10 beats)
+      (E) High average note pitch (notes higher than MIDI 65) and Long, sustained average note duration (more than 12 beats)
 
-      Question 1: How would the overall average note pitch of this audio be described?
-      (A) Very low average note pitch (most notes below MIDI 60 / middle C)
-      (B) Low-to-mid average note pitch (notes around MIDI 60-62)
-      (C) Mid average note pitch (notes around MIDI 62-65)
-      (D) Mid-to-high average note pitch (notes around MIDI 65-67)
-      (E) Very high average note pitch (most notes above MIDI 67)
-
-      Question 2: How would the overall average note duration of this audio be described?
-      (F) Very short average note duration (around 6.5 beats or less, rapid and detached)
-      (G) Short-to-moderate average note duration (around 8-10 beats)
-      (H) Moderate average note duration (around 10-12 beats, balanced articulation)
-      (I) Moderate-to-long average note duration (around 12-14 beats)
-      (J) Very long, sustained average note duration (around 14.5 beats or more, legato)
-
-    parse_pitch_regex: 'Question 1[^(]*\(([A-E])\)'
-    parse_duration_regex: 'Question 2[^(]*\(([F-J])\)'
+    parse_regex: '\(([A-E])\)'
 
   # Category III: Conditional Single Steering
   category_3_pitch:
@@ -134,23 +124,17 @@ prompts:
 
   # Category IV: Conditional Dual Steering
   category_4_dual:
-    system: "You are an expert music analyst. Answer both questions about the audio."
+    system: "You are an expert music analyst. Answer the question about the audio."
 
     user_template: |
-      Compare the introduction (first ~10 seconds) with the main body (rest of the piece). Answer BOTH questions:
+      Compare the introduction (first ~10 seconds) with the main body (rest of the piece). How do BOTH the average note pitch AND average note duration change? Choose the correct option from the following options:
+      (A) Pitch goes UP (intro lower → main higher) and Duration becomes LONGER (main more sustained)
+      (B) Pitch goes UP (intro lower → main higher) and Duration becomes SHORTER (main more staccato)
+      (C) Pitch stays CONSTANT and Duration stays CONSTANT
+      (D) Pitch goes DOWN (intro higher → main lower) and Duration becomes SHORTER (main more staccato)
+      (E) Pitch goes DOWN (intro higher → main lower) and Duration becomes LONGER (main more sustained)
 
-      Question 1: Which best describes the average note PITCH direction?
-      (A) UP - The introduction has lower pitch, the main body has higher pitch
-      (B) DOWN - The introduction has higher pitch, the main body has lower pitch
-      (C) CONSTANT - The pitch remains similar throughout
-
-      Question 2: Which best describes the average note DURATION direction?
-      (D) LONGER - The main body has longer, more sustained notes
-      (E) SHORTER - The main body has shorter, more staccato notes
-      (F) CONSTANT - The duration remains similar throughout
-
-    parse_pitch_regex: 'Question 1[^(]*\(([A-C])\)'
-    parse_duration_regex: 'Question 2[^(]*\(([D-F])\)'
+    parse_regex: '\(([A-E])\)'
 
 # Statistical analysis settings
 analysis:
