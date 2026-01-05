@@ -270,15 +270,15 @@ def map_letter_to_rating(letter: str) -> str:
 
 def map_dual_letter_to_ratings(letter: str) -> tuple:
     """Map Category 2 combined letter to separate pitch and duration ratings.
-    
+
     Args:
         letter: "A", "B", "C", "D", or "E"
-    
+
     Returns:
         (pitch_rating, duration_rating) as strings (1-5)
     """
     # A: Low pitch + Short duration
-    # B: Low pitch + Long duration  
+    # B: Low pitch + Long duration
     # C: Mid pitch + Moderate duration
     # D: High pitch + Short duration
     # E: High pitch + Long duration
@@ -294,10 +294,10 @@ def map_dual_letter_to_ratings(letter: str) -> tuple:
 
 def map_dual_direction_letter(letter: str) -> tuple:
     """Map Category 4 combined letter to pitch and duration directions.
-    
+
     Args:
         letter: "A" through "E"
-    
+
     Returns:
         (pitch_direction, duration_direction) as text
     """
@@ -420,19 +420,25 @@ def evaluate_sample_category_2(
 
             # Parse combined answer (single letter A-E)
             combined_letter = parse_response(response, prompt_config["parse_regex"])
-            
+
             logging.info(f"Run {run_idx+1} parsed combined letter: {combined_letter}")
 
             if combined_letter:
                 # Decode into separate pitch and duration ratings
-                pitch_rating, duration_rating = map_dual_letter_to_ratings(combined_letter)
-                
+                pitch_rating, duration_rating = map_dual_letter_to_ratings(
+                    combined_letter
+                )
+
                 if pitch_rating and duration_rating:
                     pitch_ratings.append(pitch_rating)
                     duration_ratings.append(duration_rating)
-                    logging.info(f"Run {run_idx+1} decoded to pitch: {pitch_rating}, duration: {duration_rating}")
+                    logging.info(
+                        f"Run {run_idx+1} decoded to pitch: {pitch_rating}, duration: {duration_rating}"
+                    )
                 else:
-                    logging.warning(f"Run {run_idx+1} - Invalid combined letter: {combined_letter}")
+                    logging.warning(
+                        f"Run {run_idx+1} - Invalid combined letter: {combined_letter}"
+                    )
             else:
                 logging.warning(
                     f"Run {run_idx+1} - Failed to parse response. Regex: {prompt_config['parse_regex']}"
@@ -587,19 +593,23 @@ def evaluate_sample_category_4(
 
             # Parse combined answer (single letter A-I)
             combined_letter = parse_response(response, prompt_config["parse_regex"])
-            
+
             logging.info(f"Run {run_idx+1} parsed combined letter: {combined_letter}")
 
             if combined_letter:
                 # Decode into separate pitch and duration directions
                 pitch_dir, duration_dir = map_dual_direction_letter(combined_letter)
-                
+
                 if pitch_dir and duration_dir:
                     pitch_directions.append(pitch_dir)
                     duration_directions.append(duration_dir)
-                    logging.info(f"Run {run_idx+1} decoded to pitch: {pitch_dir}, duration: {duration_dir}")
+                    logging.info(
+                        f"Run {run_idx+1} decoded to pitch: {pitch_dir}, duration: {duration_dir}"
+                    )
                 else:
-                    logging.warning(f"Run {run_idx+1} - Invalid combined letter: {combined_letter}")
+                    logging.warning(
+                        f"Run {run_idx+1} - Invalid combined letter: {combined_letter}"
+                    )
             else:
                 logging.warning(
                     f"Run {run_idx+1} - Failed to parse response. Regex: {prompt_config['parse_regex']}"

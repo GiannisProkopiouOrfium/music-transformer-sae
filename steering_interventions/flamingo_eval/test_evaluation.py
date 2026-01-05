@@ -180,9 +180,21 @@ def main():
                     f"Parsed duration directions: {result['parsed_duration_directions']}"
                 )
 
-            print(
-                f"\nFinal rating: {result.get('final_rating', result.get('final_pitch_rating', result.get('final_direction', result.get('final_pitch_direction', 'N/A'))))}"
-            )
+            # Show final ratings
+            if "final_rating" in result:
+                print(f"\nFinal rating: {result['final_rating']}")
+            elif "final_pitch_rating" in result and "final_duration_rating" in result:
+                print(f"\nFinal pitch rating: {result['final_pitch_rating']}")
+                print(f"Final duration rating: {result['final_duration_rating']}")
+            elif "final_direction" in result:
+                print(f"\nFinal direction: {result['final_direction']}")
+            elif (
+                "final_pitch_direction" in result
+                and "final_duration_direction" in result
+            ):
+                print(f"\nFinal pitch direction: {result['final_pitch_direction']}")
+                print(f"Final duration direction: {result['final_duration_direction']}")
+
             results.append({"category": cat, "success": True, "result": result})
 
         except Exception as e:
