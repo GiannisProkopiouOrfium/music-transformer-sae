@@ -114,8 +114,8 @@ prompts:
 
     user_template: |
       Compare the average note duration between the introduction (first ~10 seconds) and the main body (rest of the piece). Which best describes the duration direction? Choose the correct option from the following options:
-      (A) LONGER - The main body has longer, more sustained notes than the introduction
-      (B) SHORTER - The main body has shorter, more staccato notes than the introduction
+      (A) LONGER - The main body has longer average note duration than the introduction
+      (B) SHORTER - The main body has shorter average note duration than the introduction
       (C) CONSTANT - The average note duration remains similar throughout
 
     parse_regex: '\(([A-C])\)'
