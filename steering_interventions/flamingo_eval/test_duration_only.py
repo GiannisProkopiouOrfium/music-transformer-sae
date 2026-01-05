@@ -24,17 +24,24 @@ def main():
     # Setup model
     api_method = config["music_flamingo"]["api_method"]
     if api_method == "transformers":
-        from transformers import AutoProcessor, MusicFlamingo
+        from transformers import AudioFlamingo3ForConditionalGeneration, AutoProcessor
 
-        model_name = config["music_flamingo"]["model_name"]
-        device = config["music_flamingo"]["device"]
+        model_id = "nvidia/music-flamingo-hf"
+        device = config["music_flamingo"].get("device", "cuda:0")
 
-        logging.info(f"Loading {model_name}...")
-        processor = AutoProcessor.from_pretrained(model_name)
-        model = MusicFlamingo.from_pretrained(model_name).to(device)
-        model.eval()
+        logging.info(f"Loading {model_id}...")
+        processor = AutoProcessor.from_pretrained(model_id)
+        transformer_model = AudioFlamingo3ForConditionalGeneration.from_pretrained(
+            model_id, device_map="auto"
+        )
+
+        # Package as dict like evaluate_music_flamingo expects
+        model = {"processor": processor, "model": transformer_model}
     else:
         raise ValueError("This test only supports transformers mode")
+
+    # Output root for file paths
+    output_root = Path(config["paths"]["output_root"])
 
     # Load manifest
     manifest_path = Path("flamingo_eval/manifest.json")
@@ -57,7 +64,7 @@ def main():
 
     for sample in duration_samples:
         print(f"\n[Sample: alpha={sample['alpha']}]")
-        result = efm.evaluate_sample_category_1(sample, config, model, processor)
+        result = efm.evaluate_sample_category_1(sample, config, model, output_root)
         results.append(result)
 
         # Extract rating
