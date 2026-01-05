@@ -44,10 +44,10 @@ music_flamingo:
   hf_token: ""
 
   # Number of independent runs per sample (for self-consistency)
-  num_runs: 3
+  num_runs: 1
 
-  # Majority voting threshold (2 out of 3 for agreement)
-  voting_threshold: 2
+  # Majority voting threshold (1 out of 1 for single run)
+  voting_threshold: 1
 
   # Model settings (adjust based on your Music Flamingo setup)
   model_name: "nvidia/music-flamingo-hf"
@@ -78,9 +78,9 @@ prompts:
 
     user_template: |
       How would the average note duration in this audio be described? Choose the correct option from the following options:
-      (A) Short average note duration (around 10 beats or less, more detached)
-      (B) Moderate average note duration (around 10-12 beats, balanced articulation)
-      (C) Long, sustained average note duration (around 12 beats or more, legato)
+      (A) Short average note duration (less than 10 MIDI beats)
+      (B) Moderate average note duration (around 10-12 MIDI beats)
+      (C) Long, sustained average note duration (more than 12 MIDI beats)
 
     parse_regex: '\(([A-C])\)'
 
