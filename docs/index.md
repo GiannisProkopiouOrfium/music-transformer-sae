@@ -41,8 +41,10 @@ Our framework enables inference-time steerability without expensive fine-tuning.
 * **Latent Vector Extraction:** We use the **Difference-in-Means (DiffMean)** methodology to calculate steering vectors by contrasting "High" and "Low" attribute clusters (e.g., High Pitch vs. Low Pitch) from the Symbolic Orchestral Database (SOD).
 
 * **Inference-Time Steering:** We inject these vectors into the residual stream during generation:
-  
-  $$h_{steer}^{(l)} \leftarrow h^{(l)} + \alpha v^{(l)}$$
+
+$$
+h_{steer}^{(l)} \leftarrow h^{(l)} + \alpha v^{(l)}
+$$
 
 * **Dual Steering (Disentanglement):** To control Pitch and Duration simultaneously without interference, we apply **Gram-Schmidt Orthogonalization**. This mathematically decouples correlated features, ensuring independent control.
 
@@ -62,12 +64,12 @@ Our framework enables inference-time steerability without expensive fine-tuning.
 - **Pitch Control:** 15-25 semitone changes with minimal quality degradation
 - **Duration Control:** 8-12 tick changes maintaining musical coherence
 
-### Dual Steering (Phase 3)
+### Dual Steering
 - **Success Rate:** 88.5% dual success (both attributes steered correctly)
 - **Best Strategy:** Gram-Schmidt with pitch priority
 - **Quality:** Average degradation of 2.14 (near-baseline)
 
-### Conditioned Dual Steering (Phase 4)
+### Conditioned Dual Steering
 Testing ability to override strong conditioning context:
 
 | Scenario | Success Rate | Avg Degradation |
@@ -239,7 +241,7 @@ The complete codebase is available on GitHub:
 - `steering_interventions/activation_extractor.py` - Extract activations from transformer layers
 - `steering_interventions/steering_vector_computer.py` - Compute steering vectors via DiffMean
 - `steering_interventions/dual_steering/vector_composition.py` - Gram-Schmidt orthogonalization
-- `steering_interventions/dual_steering/test_multi_conditioned.py` - Phase 4 experiments
+- `steering_interventions/dual_steering/test_multi_conditioned.py` - Conditioned dual steering
 
 ### Quick Start
 
