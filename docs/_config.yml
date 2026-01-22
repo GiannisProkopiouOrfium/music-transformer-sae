@@ -1,0 +1,15 @@
+# Site settings
+title: "Latent Space Disentanglement via Activation Steering"
+description: "Interpretable Attribute Control in Symbolic Music Generation"
+baseurl: "/music-transformer-sae"
+url: "https://giannisprokopiouorfium.github.io"
+
+# Theme
+theme: jekyll-theme-cayman
+# Or use: minima, slate, minimal, etc.
+
+# Exclude from processing
+exclude:
+  - README.md
+  - Gemfile
+  - Gemfile.lock
