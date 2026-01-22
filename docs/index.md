@@ -75,7 +75,7 @@ Testing ability to override strong conditioning context:
 | Scenario | Success Rate | Avg Degradation |
 |----------|--------------|-----------------|
 | Low+Short → High+Long | **96.1%** | 3.03 |
-| Low+Long → High+Short | **90.6%** | 1.33 |
+| Low+Long → High+Short | 90.6% | **1.33** |
 | High+Long → Low+Short | 85.6% | 2.59 |
 | High+Short → Low+Long | 82.2% | 5.80 |
 
