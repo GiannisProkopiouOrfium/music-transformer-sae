@@ -157,8 +157,10 @@ Gemfile.lock
 /data
 
 *.md
+!docs/**/*.md
 feature_*
 *.wav
+!docs/**/*.mp3
 *.png
 enhanced_*
 interpretation/analysis_results/detailed_interpretations.json
