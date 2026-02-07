@@ -28,7 +28,7 @@ K = 32  # Number of active features (adjust based on expansion factor)
 # Training Hyperparameters
 LEARNING_RATE = 1e-4
 BATCH_SIZE = 64  # For SAE training
-EPOCHS = 50
+EPOCHS = 100  # Increased from 50 since loss still improving at epoch 50
 L1_COEFFICIENT = 1e-3  # Weight for L1 sparsity loss
 
 # Data Collection
@@ -93,12 +93,14 @@ def print_config(quick_test=False):
     print(
         f"Expansion factor: {config['expansion_factor']}x ({HIDDEN_DIM} → {SPARSE_DIM})"
     )
-    print(f"TopK sparsity: ADAPTIVE (K=32/64/128 by layer)")
-    print(f"  Layers 0-3: K=32 (0.78% active)")
-    print(f"  Layers 4-7: K=64 (1.56% active)")
-    print(f"  Layers 8-11: K=128 (3.12% active)")
+    print("TopK sparsity: ADAPTIVE (K by layer)")
+    print("  Layer 0: K=32 (0.78% active)")
+    print("  Layers 1-3: K=64 (1.56% active)")
+    print("  Layers 4-7: K=96 (2.34% active)")
+    print("  Layers 8-11: K=128 (3.12% active)")
     print(f"Learning rate: {config['learning_rate']}")
     print(f"L1 coefficient: {config['l1_coefficient']}")
-    print(f"Target MSE: ADAPTIVE (<0.05/<0.5/<2.0 by layer)")
-    print(f"Target L0: ADAPTIVE (32/64/128 ± {SPARSITY_TOLERANCE} by layer)")
+    print("Target MSE: ADAPTIVE by layer")
+    print("  Layer 0: <0.05, Layers 1-3: <0.4, Layers 4-7: <0.9, Layers 8-11: <2.0")
+    print(f"Target L0: ADAPTIVE (32/64/96/128 ± {SPARSITY_TOLERANCE} by layer)")
     print("=" * 60)
