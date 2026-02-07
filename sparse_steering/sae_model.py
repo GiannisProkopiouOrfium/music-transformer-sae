@@ -109,38 +109,38 @@ class SparseAutoencoder(nn.Module):
 
     def fit_normalization(self, x: torch.Tensor, eps: float = 1e-8):
         """Fit normalization parameters from training data.
-        
+
         Args:
             x: Training activations (N, input_dim)
             eps: Small constant for numerical stability
         """
         if not self.normalize_input:
             return
-        
+
         # Compute mean and std across samples
         self.input_mean = x.mean(dim=0)
         self.input_std = x.std(dim=0) + eps
         self.normalization_fitted = True
-    
+
     def normalize(self, x: torch.Tensor) -> torch.Tensor:
         """Normalize input activations.
-        
+
         Args:
             x: Input activations (batch, input_dim)
-            
+
         Returns:
             Normalized activations
         """
         if not self.normalize_input:
             return x
         return (x - self.input_mean) / self.input_std
-    
+
     def denormalize(self, x: torch.Tensor) -> torch.Tensor:
         """Denormalize output activations.
-        
+
         Args:
             x: Normalized activations (batch, input_dim)
-            
+
         Returns:
             Original-scale activations
         """
@@ -159,7 +159,7 @@ class SparseAutoencoder(nn.Module):
         """
         # Normalize input
         x_norm = self.normalize(x)
-        
+
         # Linear projection
         h = self.encoder(x_norm)
 
@@ -191,7 +191,7 @@ class SparseAutoencoder(nn.Module):
 
         # Denormalize output
         reconstruction = self.denormalize(reconstruction_norm)
-        
+
         return reconstruction
 
     def forward(self, x: torch.Tensor) -> Tuple[torch.Tensor, torch.Tensor]:

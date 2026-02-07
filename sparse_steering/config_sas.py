@@ -93,9 +93,12 @@ def print_config(quick_test=False):
     print(
         f"Expansion factor: {config['expansion_factor']}x ({HIDDEN_DIM} → {SPARSE_DIM})"
     )
-    print(f"TopK sparsity: K={config['k']} ({config['k']/SPARSE_DIM*100:.2f}% active)")
+    print(f"TopK sparsity: ADAPTIVE (K=32/64/128 by layer)")
+    print(f"  Layers 0-3: K=32 (0.78% active)")
+    print(f"  Layers 4-7: K=64 (1.56% active)")
+    print(f"  Layers 8-11: K=128 (3.12% active)")
     print(f"Learning rate: {config['learning_rate']}")
     print(f"L1 coefficient: {config['l1_coefficient']}")
-    print(f"Target MSE: {TARGET_MSE}")
-    print(f"Target L0: {TARGET_SPARSITY} ± {SPARSITY_TOLERANCE}")
+    print(f"Target MSE: ADAPTIVE (<0.05/<0.5/<2.0 by layer)")
+    print(f"Target L0: ADAPTIVE (32/64/128 ± {SPARSITY_TOLERANCE} by layer)")
     print("=" * 60)

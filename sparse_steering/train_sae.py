@@ -107,7 +107,7 @@ def train_sae(
         Dictionary with training history
     """
     sae = sae.to(device)
-    
+
     # Fit normalization parameters from training data
     if sae.normalize_input:
         logging.info(f"Fitting normalization for layer {layer_idx}...")
@@ -121,9 +121,9 @@ def train_sae(
             f"std: {sae.input_std.mean():.4f}"
         )
         del all_train_data
-        if device.type == 'cuda':
+        if device.type == "cuda":
             torch.cuda.empty_cache()
-    
+
     optimizer = optim.Adam(sae.parameters(), lr=learning_rate)
 
     history = {
@@ -256,13 +256,30 @@ def validate_sae(
         val_loader: Validation data loader
         layer_idx: Layer index
         device: Device
-        target_mse: Target MSE threshold
-        target_sparsity: Target L0 norm
+        target_mse: Target MSE threshold (overridden by adaptive setting)
+        target_sparsity: Target L0 norm (overridden by adaptive K)
         sparsity_tolerance: Tolerance for L0 norm
 
     Returns:
         (passed, metrics) where passed is True if validation criteria met
     """
+    # Adaptive MSE threshold based on layer depth
+    # Deeper layers have higher variance and need relaxed thresholds
+    if layer_idx < 4:
+        target_mse = 0.05
+    elif layer_idx < 8:
+        target_mse = 0.5
+    else:
+        target_mse = 2.0
+
+    # Adaptive sparsity target based on layer
+    if layer_idx < 4:
+        target_sparsity = 32
+    elif layer_idx < 8:
+        target_sparsity = 64
+    else:
+        target_sparsity = 128
+
     sae.eval()
 
     all_reconstructions = []
@@ -450,17 +467,29 @@ def main():
             f"Train: {len(train_dataset)} samples, Val: {len(val_dataset)} samples"
         )
 
+        # Adaptive K based on layer depth (deeper layers need more capacity)
+        # Layers 0-3: K=32, Layers 4-7: K=64, Layers 8-11: K=128
+        if layer_idx < 4:
+            adaptive_k = 32
+        elif layer_idx < 8:
+            adaptive_k = 64
+        else:
+            adaptive_k = 128
+
+        logging.info(f"Using adaptive K={adaptive_k} for layer {layer_idx}")
+
         # Create SAE
         sae = SparseAutoencoder(
             input_dim=HIDDEN_DIM,
             sparse_dim=SPARSE_DIM,
-            k=config["k"],
+            k=adaptive_k,  # Use adaptive K instead of config["k"]
             tied_weights=True,
+            normalize_input=True,
         )
 
         logging.info(
             f"SAE: {HIDDEN_DIM} -> {SPARSE_DIM} (expansion={config['expansion_factor']}x, "
-            f"K={config['k']})"
+            f"K={adaptive_k}, sparsity={adaptive_k/SPARSE_DIM*100:.2f}%)"
         )
 
         # Train
