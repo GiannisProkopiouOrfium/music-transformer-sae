@@ -136,7 +136,7 @@ def extract_random_activations(
     """Extract activations from random segments.
 
     Args:
-        n_segments: Number of random segments to extract
+        n_segments: Number of random segments to extract (guaranteed minimum)
         notes_dir: Directory with .npy files
         model: Pretrained MMT model
         num_layers: Number of layers in model
@@ -149,7 +149,7 @@ def extract_random_activations(
         seed: Random seed
 
     Returns:
-        Dictionary mapping layer_idx -> activations array
+        Dictionary mapping layer_idx -> activations array (at least n_segments)
     """
     # Get all available files
     file_list = load_all_available_files(notes_dir)
@@ -158,10 +158,19 @@ def extract_random_activations(
         logging.error(f"No .npy files found in {notes_dir}")
         return {}
 
+    # Oversample to account for empty segments (50% extra)
+    # We'll keep sampling until we get enough valid segments
+    oversample_factor = 1.5
+    initial_sample_size = int(n_segments * oversample_factor)
+
+    logging.info(
+        f"Target: {n_segments} valid segments (oversampling to {initial_sample_size} initially)"
+    )
+
     # Sample random segments
     segments = sample_random_segments(
         file_list,
-        n_segments,
+        initial_sample_size,
         n_beats=n_beats,
         max_beat=max_beat,
         seed=seed,
@@ -179,6 +188,55 @@ def extract_random_activations(
         max_seq_len,
         max_beat,
     )
+
+    # Check if we need more segments
+    if len(activations) > 0:
+        first_layer_count = activations[0].shape[0]
+        attempts = 1
+
+        while first_layer_count < n_segments and attempts < 5:
+            needed = n_segments - first_layer_count
+            logging.info(
+                f"Got {first_layer_count}/{n_segments} segments, sampling {needed} more..."
+            )
+
+            # Sample more segments (use different seed to avoid duplicates)
+            more_segments = sample_random_segments(
+                file_list,
+                needed,
+                n_beats=n_beats,
+                max_beat=max_beat,
+                seed=seed + attempts * 1000,
+            )
+
+            # Extract activations for additional segments
+            more_activations = extract_activations_for_segments(
+                more_segments,
+                model,
+                num_layers,
+                encoding,
+                notes_dir,
+                device,
+                batch_size,
+                max_seq_len,
+                max_beat,
+            )
+
+            # Concatenate with existing activations
+            if len(more_activations) > 0:
+                for layer_idx in activations:
+                    activations[layer_idx] = np.concatenate(
+                        [activations[layer_idx], more_activations[layer_idx]], axis=0
+                    )
+                first_layer_count = activations[0].shape[0]
+
+            attempts += 1
+
+        # Trim to exact count if we oversampled
+        if first_layer_count > n_segments:
+            logging.info(f"Trimming from {first_layer_count} to {n_segments} segments")
+            for layer_idx in activations:
+                activations[layer_idx] = activations[layer_idx][:n_segments]
 
     return activations
 
