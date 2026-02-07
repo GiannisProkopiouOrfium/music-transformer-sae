@@ -158,87 +158,92 @@ def extract_random_activations(
         logging.error(f"No .npy files found in {notes_dir}")
         return {}
 
-    # Oversample to account for empty segments (50% extra)
-    # We'll keep sampling until we get enough valid segments
-    oversample_factor = 1.5
-    initial_sample_size = int(n_segments * oversample_factor)
+    # Initialize accumulator for activations
+    accumulated_activations = {layer_idx: [] for layer_idx in range(num_layers)}
+    total_valid = 0
+    attempt = 0
+    chunk_size = 1000  # Process in chunks to avoid OOM
 
-    logging.info(
-        f"Target: {n_segments} valid segments (oversampling to {initial_sample_size} initially)"
-    )
+    logging.info(f"Target: {n_segments} valid segments")
+    logging.info(f"Processing in chunks of {chunk_size} to avoid OOM")
 
-    # Sample random segments
-    segments = sample_random_segments(
-        file_list,
-        initial_sample_size,
-        n_beats=n_beats,
-        max_beat=max_beat,
-        seed=seed,
-    )
+    # Keep sampling and processing until we have enough valid segments
+    while total_valid < n_segments and attempt < 20:
+        # Calculate how many more we need (with oversampling)
+        needed = n_segments - total_valid
+        oversample_factor = 1.5 if attempt == 0 else 1.2
+        to_sample = min(chunk_size, int(needed * oversample_factor))
 
-    # Extract activations using existing infrastructure
-    activations = extract_activations_for_segments(
-        segments,
-        model,
-        num_layers,
-        encoding,
-        notes_dir,
-        device,
-        batch_size,
-        max_seq_len,
-        max_beat,
-    )
-
-    # Check if we need more segments
-    if len(activations) > 0:
-        first_layer_count = activations[0].shape[0]
-        attempts = 1
-
-        while first_layer_count < n_segments and attempts < 5:
-            needed = n_segments - first_layer_count
+        if attempt > 0:
             logging.info(
-                f"Got {first_layer_count}/{n_segments} segments, sampling {needed} more..."
+                f"Attempt {attempt + 1}: Have {total_valid}/{n_segments}, sampling {to_sample} more"
             )
 
-            # Sample more segments (use different seed to avoid duplicates)
-            more_segments = sample_random_segments(
-                file_list,
-                needed,
-                n_beats=n_beats,
-                max_beat=max_beat,
-                seed=seed + attempts * 1000,
+        # Sample segments for this chunk
+        segments_chunk = sample_random_segments(
+            file_list,
+            to_sample,
+            n_beats=n_beats,
+            max_beat=max_beat,
+            seed=seed + attempt * 10000,
+        )
+
+        # Extract activations for this chunk
+        chunk_activations = extract_activations_for_segments(
+            segments_chunk,
+            model,
+            num_layers,
+            encoding,
+            notes_dir,
+            device,
+            batch_size,
+            max_seq_len,
+            max_beat,
+        )
+
+        # Accumulate results
+        if len(chunk_activations) > 0:
+            chunk_valid = chunk_activations[0].shape[0]
+            logging.info(f"Chunk {attempt + 1}: Extracted {chunk_valid} valid segments")
+
+            for layer_idx in range(num_layers):
+                accumulated_activations[layer_idx].append(chunk_activations[layer_idx])
+
+            total_valid += chunk_valid
+        else:
+            logging.warning(f"Chunk {attempt + 1}: No valid segments extracted")
+
+        attempt += 1
+
+        # Free memory
+        del segments_chunk
+        del chunk_activations
+        if device.type == "cuda":
+            torch.cuda.empty_cache()
+
+    # Concatenate all chunks
+    logging.info(f"Concatenating {attempt} chunks ({total_valid} total segments)...")
+    final_activations = {}
+    for layer_idx in range(num_layers):
+        if len(accumulated_activations[layer_idx]) > 0:
+            final_activations[layer_idx] = np.concatenate(
+                accumulated_activations[layer_idx], axis=0
             )
+        else:
+            logging.error(f"No activations for layer {layer_idx}")
+            return {}
 
-            # Extract activations for additional segments
-            more_activations = extract_activations_for_segments(
-                more_segments,
-                model,
-                num_layers,
-                encoding,
-                notes_dir,
-                device,
-                batch_size,
-                max_seq_len,
-                max_beat,
-            )
+    # Trim to exact count if we oversampled
+    if total_valid > n_segments:
+        logging.info(f"Trimming from {total_valid} to {n_segments} segments")
+        for layer_idx in final_activations:
+            final_activations[layer_idx] = final_activations[layer_idx][:n_segments]
+    elif total_valid < n_segments:
+        logging.warning(
+            f"Only got {total_valid}/{n_segments} segments after {attempt} attempts"
+        )
 
-            # Concatenate with existing activations
-            if len(more_activations) > 0:
-                for layer_idx in activations:
-                    activations[layer_idx] = np.concatenate(
-                        [activations[layer_idx], more_activations[layer_idx]], axis=0
-                    )
-                first_layer_count = activations[0].shape[0]
-
-            attempts += 1
-
-        # Trim to exact count if we oversampled
-        if first_layer_count > n_segments:
-            logging.info(f"Trimming from {first_layer_count} to {n_segments} segments")
-            for layer_idx in activations:
-                activations[layer_idx] = activations[layer_idx][:n_segments]
-
-    return activations
+    return final_activations
 
 
 def main():
