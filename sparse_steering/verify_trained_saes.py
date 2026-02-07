@@ -25,18 +25,18 @@ def load_sae(checkpoint_path: pathlib.Path, k: int) -> SparseAutoencoder:
     )
 
     checkpoint = torch.load(checkpoint_path, map_location="cpu")
-    sae.load_state_dict(checkpoint["model_state_dict"])
-    sae.eval()
-
-    return sae, checkpoint
-
-
-def get_adaptive_k(layer_idx: int) -> int:
-    """Get adaptive K for layer."""
-    if layer_idx == 0:
-        return 32
-    elif layer_idx < 4:
-        return 64
+    state_dict = checkpoint["model_state_dict"]
+    
+    # Backward compatibility: add _normalization_fitted if missing
+    if "_normalization_fitted" not in state_dict:
+        # Check if normalization was fitted by checking if input_mean is non-zero
+        if "input_mean" in state_dict:
+            has_normalization = state_dict["input_mean"].abs().sum() > 0
+            state_dict["_normalization_fitted"] = torch.tensor(1 if has_normalization else 0)
+        else:
+            state_dict["_normalization_fitted"] = torch.tensor(0)
+    
+    sae.load_state_dict(state_dict)
     elif layer_idx < 8:
         return 96
     else:

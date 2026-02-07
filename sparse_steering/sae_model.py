@@ -78,7 +78,9 @@ class SparseAutoencoder(nn.Module):
         # Input normalization parameters (computed from training data)
         self.register_buffer("input_mean", torch.zeros(input_dim))
         self.register_buffer("input_std", torch.ones(input_dim))
-        self.register_buffer("_normalization_fitted", torch.tensor(0))  # 0=False, 1=True
+        self.register_buffer(
+            "_normalization_fitted", torch.tensor(0)
+        )  # 0=False, 1=True
 
         # Encoder: dense -> sparse
         self.encoder = nn.Linear(input_dim, sparse_dim, bias=True)
@@ -111,7 +113,7 @@ class SparseAutoencoder(nn.Module):
     def normalization_fitted(self) -> bool:
         """Check if normalization has been fitted (stored as buffer for serialization)."""
         return bool(self._normalization_fitted.item())
-    
+
     @normalization_fitted.setter
     def normalization_fitted(self, value: bool):
         """Set normalization fitted flag (stored as buffer for serialization)."""
