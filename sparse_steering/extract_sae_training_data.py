@@ -30,8 +30,10 @@ from activation_extractor import (
 )
 
 # Import from mmt
-from baseline import representation, utils
-from mmt import music_x_transformers, config as mmt_config
+import representation
+import utils
+import music_x_transformers
+import config as mmt_config
 
 # Import from sparse_steering
 from config_sas import (
