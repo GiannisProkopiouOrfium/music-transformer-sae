@@ -56,6 +56,7 @@ class SparseAutoencoder(nn.Module):
         sparse_dim: int = 4096,
         k: int = 32,
         tied_weights: bool = True,
+        normalize_input: bool = True,
     ):
         """Initialize Sparse Autoencoder.
 
@@ -64,6 +65,7 @@ class SparseAutoencoder(nn.Module):
             sparse_dim: Dimension of sparse feature space
             k: Number of active features in TopK sparsity
             tied_weights: Whether to tie encoder and decoder weights (transpose)
+            normalize_input: Whether to normalize inputs to zero mean, unit variance
         """
         super().__init__()
 
@@ -71,6 +73,12 @@ class SparseAutoencoder(nn.Module):
         self.sparse_dim = sparse_dim
         self.k = k
         self.tied_weights = tied_weights
+        self.normalize_input = normalize_input
+
+        # Input normalization parameters (computed from training data)
+        self.register_buffer("input_mean", torch.zeros(input_dim))
+        self.register_buffer("input_std", torch.ones(input_dim))
+        self.normalization_fitted = False
 
         # Encoder: dense -> sparse
         self.encoder = nn.Linear(input_dim, sparse_dim, bias=True)
@@ -99,6 +107,47 @@ class SparseAutoencoder(nn.Module):
             nn.init.xavier_uniform_(self.decoder.weight)
             nn.init.zeros_(self.decoder.bias)
 
+    def fit_normalization(self, x: torch.Tensor, eps: float = 1e-8):
+        """Fit normalization parameters from training data.
+        
+        Args:
+            x: Training activations (N, input_dim)
+            eps: Small constant for numerical stability
+        """
+        if not self.normalize_input:
+            return
+        
+        # Compute mean and std across samples
+        self.input_mean = x.mean(dim=0)
+        self.input_std = x.std(dim=0) + eps
+        self.normalization_fitted = True
+    
+    def normalize(self, x: torch.Tensor) -> torch.Tensor:
+        """Normalize input activations.
+        
+        Args:
+            x: Input activations (batch, input_dim)
+            
+        Returns:
+            Normalized activations
+        """
+        if not self.normalize_input:
+            return x
+        return (x - self.input_mean) / self.input_std
+    
+    def denormalize(self, x: torch.Tensor) -> torch.Tensor:
+        """Denormalize output activations.
+        
+        Args:
+            x: Normalized activations (batch, input_dim)
+            
+        Returns:
+            Original-scale activations
+        """
+        if not self.normalize_input:
+            return x
+        return x * self.input_std + self.input_mean
+
     def encode(self, x: torch.Tensor) -> torch.Tensor:
         """Encode dense activations to sparse features.
 
@@ -108,8 +157,11 @@ class SparseAutoencoder(nn.Module):
         Returns:
             Sparse features (batch, sparse_dim) with TopK sparsity
         """
+        # Normalize input
+        x_norm = self.normalize(x)
+        
         # Linear projection
-        h = self.encoder(x)
+        h = self.encoder(x_norm)
 
         # ReLU activation
         h = F.relu(h)
@@ -130,13 +182,16 @@ class SparseAutoencoder(nn.Module):
         """
         if self.tied_weights:
             # Use transposed encoder weights
-            reconstruction = F.linear(
+            reconstruction_norm = F.linear(
                 sparse_features, self.encoder.weight.t(), self.decoder_bias
             )
         else:
             # Use separate decoder
-            reconstruction = self.decoder(sparse_features) + self.decoder_bias
+            reconstruction_norm = self.decoder(sparse_features) + self.decoder_bias
 
+        # Denormalize output
+        reconstruction = self.denormalize(reconstruction_norm)
+        
         return reconstruction
 
     def forward(self, x: torch.Tensor) -> Tuple[torch.Tensor, torch.Tensor]:

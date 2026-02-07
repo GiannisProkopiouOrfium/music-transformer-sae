@@ -107,6 +107,23 @@ def train_sae(
         Dictionary with training history
     """
     sae = sae.to(device)
+    
+    # Fit normalization parameters from training data
+    if sae.normalize_input:
+        logging.info(f"Fitting normalization for layer {layer_idx}...")
+        all_train_data = []
+        for batch in train_loader:
+            all_train_data.append(batch)
+        all_train_data = torch.cat(all_train_data, dim=0).to(device)
+        sae.fit_normalization(all_train_data)
+        logging.info(
+            f"  Input mean: {sae.input_mean.mean():.4f}, "
+            f"std: {sae.input_std.mean():.4f}"
+        )
+        del all_train_data
+        if device.type == 'cuda':
+            torch.cuda.empty_cache()
+    
     optimizer = optim.Adam(sae.parameters(), lr=learning_rate)
 
     history = {
