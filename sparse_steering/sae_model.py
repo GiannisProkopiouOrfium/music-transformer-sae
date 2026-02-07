@@ -184,7 +184,7 @@ class SparseAutoencoder(nn.Module):
         l0_norm = torch.mean((sparse_features != 0).float().sum(dim=-1))
 
         return {
-            "total": total_loss,
+            "loss": total_loss,
             "mse": mse_loss,
             "l1": l1_loss,
             "l0": l0_norm,

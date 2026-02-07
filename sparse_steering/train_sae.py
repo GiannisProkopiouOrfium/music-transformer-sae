@@ -125,7 +125,7 @@ def train_sae(
     for epoch in range(epochs):
         # Training
         sae.train()
-        train_losses = {"total": [], "mse": [], "l1": [], "l0": []}
+        train_losses = {"loss": [], "mse": [], "l1": [], "l0": []}
 
         pbar = tqdm(train_loader, desc=f"Layer {layer_idx} Epoch {epoch+1}/{epochs}")
         for batch in pbar:
@@ -141,7 +141,7 @@ def train_sae(
 
             # Backward pass
             optimizer.zero_grad()
-            loss_dict["total"].backward()
+            loss_dict["loss"].backward()
             optimizer.step()
 
             # Record losses
@@ -151,7 +151,7 @@ def train_sae(
             # Update progress bar
             pbar.set_postfix(
                 {
-                    "loss": loss_dict["total"].item(),
+                    "loss": loss_dict["loss"].item(),
                     "mse": loss_dict["mse"].item(),
                     "l0": loss_dict["l0"].item(),
                 }
@@ -159,7 +159,7 @@ def train_sae(
 
         # Validation
         sae.eval()
-        val_losses = {"total": [], "mse": [], "l1": [], "l0": []}
+        val_losses = {"loss": [], "mse": [], "l1": [], "l0": []}
 
         with torch.no_grad():
             for batch in val_loader:
