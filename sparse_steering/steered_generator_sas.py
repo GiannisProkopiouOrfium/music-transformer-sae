@@ -7,6 +7,13 @@ Implements Algorithm 2 from the SAS paper:
 - Applies activation function and decodes back
 - Adds correction term to preserve reconstruction quality
 
+Prerequisites:
+    - Trained MMT model at: exp/sod/ape/checkpoints/best_model.pt
+    - Encoding at: data/sod/processed/notes/encoding.json
+    - Trained SAE models at: exp/sod/sparse_steering/sae_models/
+    - SAS vectors at: exp/sod/sparse_steering/sas_vectors/
+    (Run compute_sas_vectors.py --tau 0.08 first)
+
 Usage:
     # Generate with pitch steering
     python sparse_steering/steered_generator_sas.py \
@@ -458,10 +465,10 @@ def main():
     device = torch.device(f"cuda:{args.gpu}" if torch.cuda.is_available() else "cpu")
     logger.info(f"Using device: {device}")
 
-    # Paths
-    checkpoint_path = args.exp_dir / "checkpoints" / "best_model.pt"
-    train_args_path = args.exp_dir / "train-args.json"
-    encoding_path = args.exp_dir / "notes" / "encoding.json"
+    # Paths - matching the structure from encode_concept_activations.py
+    checkpoint_path = args.exp_dir / "ape" / "checkpoints" / "best_model.pt"
+    train_args_path = args.exp_dir / "ape" / "train-args.json"
+    encoding_path = pathlib.Path("data/sod/processed/notes") / "encoding.json"
     sae_dir = args.exp_dir / "sparse_steering" / "sae_models"
     sas_vectors_path = (
         args.exp_dir
@@ -478,10 +485,17 @@ def main():
     # Validate paths
     if not checkpoint_path.exists():
         logger.error(f"Model checkpoint not found: {checkpoint_path}")
+        logger.error(f"Expected at: {checkpoint_path.absolute()}")
+        logger.error("Please check --exp_dir argument or ensure model is trained")
+        sys.exit(1)
+    if not encoding_path.exists():
+        logger.error(f"Encoding not found: {encoding_path}")
+        logger.error(f"Expected at: {encoding_path.absolute()}")
         sys.exit(1)
     if not sas_vectors_path.exists():
         logger.error(f"SAS vectors not found: {sas_vectors_path}")
-        logger.error("Run compute_sas_vectors.py first")
+        logger.error(f"Expected at: {sas_vectors_path.absolute()}")
+        logger.error("Run: python sparse_steering/compute_sas_vectors.py --tau 0.08")
         sys.exit(1)
 
     logger.info("=" * 80)
