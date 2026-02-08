@@ -210,16 +210,31 @@ def load_model(checkpoint_path, train_args_path, encoding_path, device):
     return model, encoding, train_args
 
 
+def get_adaptive_k(layer_idx: int) -> int:
+    """Get adaptive K for layer."""
+    if layer_idx == 0:
+        return 32
+    elif layer_idx < 4:
+        return 64
+    elif layer_idx < 8:
+        return 96
+    else:
+        return 128
+
+
 def load_sae_models(sae_dir, device):
     """Load trained SAE models for all layers."""
     logger.info(f"Loading SAE models from {sae_dir}")
 
-    # Add sae directory to path
-    sae_path = pathlib.Path(__file__).parent.parent / "sae"
-    if str(sae_path) not in sys.path:
-        sys.path.insert(0, str(sae_path))
+    # Add sparse_steering directory to path for sae_model import
+    sparse_steering_path = pathlib.Path(__file__).parent
+    if str(sparse_steering_path) not in sys.path:
+        sys.path.insert(0, str(sparse_steering_path))
 
-    from train_adaptive_sae import AdaptiveTopKSAE
+    from sae_model import SparseAutoencoder
+
+    HIDDEN_DIM = 512
+    SPARSE_DIM = 4096
 
     sae_models = {}
     for layer_idx in range(12):  # Assuming 12 layers
@@ -228,18 +243,34 @@ def load_sae_models(sae_dir, device):
             logger.warning(f"SAE checkpoint not found for layer {layer_idx}")
             continue
 
-        checkpoint = torch.load(checkpoint_path, map_location=device)
-        sae_config = checkpoint["config"]
+        # Get adaptive K for this layer
+        k = get_adaptive_k(layer_idx)
 
         # Create SAE model
-        sae = AdaptiveTopKSAE(
-            d_model=sae_config["d_model"],
-            d_hidden=sae_config["d_hidden"],
-            target_l0_values=sae_config["target_l0_values"],
-        ).to(device)
+        sae = SparseAutoencoder(
+            input_dim=HIDDEN_DIM,
+            sparse_dim=SPARSE_DIM,
+            k=k,
+            tied_weights=True,
+            normalize_input=True,
+        )
 
-        sae.load_state_dict(checkpoint["model_state_dict"])
+        checkpoint = torch.load(checkpoint_path, map_location=device, weights_only=False)
+        state_dict = checkpoint["model_state_dict"]
+
+        # Backward compatibility: add _normalization_fitted if missing
+        if "_normalization_fitted" not in state_dict:
+            if "input_mean" in state_dict:
+                has_normalization = state_dict["input_mean"].abs().sum() > 0
+                state_dict["_normalization_fitted"] = torch.tensor(
+                    1 if has_normalization else 0
+                )
+            else:
+                state_dict["_normalization_fitted"] = torch.tensor(0)
+
+        sae.load_state_dict(state_dict)
         sae.eval()
+        sae = sae.to(device)
 
         sae_models[layer_idx] = sae
 
