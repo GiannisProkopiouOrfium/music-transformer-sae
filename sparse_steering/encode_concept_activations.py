@@ -289,7 +289,17 @@ def main():
     encoding = utils.load_json(encoding_path)
 
     model = music_x_transformers.MusicXTransformer(
-        dim=train_args["dim"], encoding=encoding, **mmt_config.model_config
+        dim=train_args["dim"],
+        encoding=encoding,
+        depth=train_args["layers"],
+        heads=train_args["heads"],
+        max_seq_len=train_args["max_seq_len"],
+        max_beat=train_args["max_beat"],
+        rotary_pos_emb=train_args["rel_pos_emb"],
+        use_abs_pos_emb=train_args["abs_pos_emb"],
+        emb_dropout=train_args["dropout"],
+        attn_dropout=train_args["dropout"],
+        ff_dropout=train_args["dropout"],
     ).to(device)
 
     model.load_state_dict(
