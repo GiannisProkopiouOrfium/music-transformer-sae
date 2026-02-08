@@ -210,8 +210,8 @@ def main():
         "--concepts",
         type=str,
         nargs="+",
-        default=["pitch", "duration"],
-        help="Concepts to encode (default: pitch duration)",
+        default=["average_pitch", "average_duration"],
+        help="Concepts to encode (default: average_pitch average_duration)",
     )
     parser.add_argument(
         "--checkpoint_dir",
@@ -283,7 +283,7 @@ def main():
     # Load MMT model
     logging.info("Loading MMT model...")
     train_args_path = args.model_checkpoint.parent.parent / "train-args.json"
-    encoding_path = args.notes_dir.parent / "encoding.json"
+    encoding_path = args.notes_dir / "encoding.json"
 
     train_args = utils.load_json(train_args_path)
     encoding = utils.load_json(encoding_path)

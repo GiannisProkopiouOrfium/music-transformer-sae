@@ -185,8 +185,8 @@ def main():
         "--concepts",
         type=str,
         nargs="+",
-        default=["pitch", "duration"],
-        help="Concepts to process (default: pitch duration)",
+        default=["average_pitch", "average_duration"],
+        help="Concepts to process (default: average_pitch average_duration)",
     )
     parser.add_argument(
         "--input_dir",

@@ -54,8 +54,8 @@ def check_curated_datasets(datasets_dir: pathlib.Path, concepts: list) -> bool:
         logging.error("")
         logging.error("To generate curated datasets, run:")
         logging.error("  cd steering_interventions")
-        logging.error("  python data_curator.py --concept pitch --segment_length 8")
-        logging.error("  python data_curator.py --concept duration --segment_length 8")
+        logging.error("  python data_curator.py --concept average_pitch --n_beats 8")
+        logging.error("  python data_curator.py --concept average_duration --n_beats 8")
         logging.error("")
         logging.error("Or run the full pipeline:")
         logging.error("  cd steering_interventions")
@@ -112,8 +112,8 @@ def main():
         "--concepts",
         type=str,
         nargs="+",
-        default=["pitch", "duration"],
-        help="Concepts to check (default: pitch duration)",
+        default=["average_pitch", "average_duration"],
+        help="Concepts to check (default: average_pitch average_duration)",
     )
     parser.add_argument(
         "--checkpoint_dir",
@@ -152,7 +152,7 @@ def main():
 
     # Derive paths
     train_args_path = args.model_checkpoint.parent.parent / "train-args.json"
-    encoding_path = args.notes_dir.parent / "encoding.json"
+    encoding_path = args.notes_dir / "encoding.json"
 
     # Run checks
     checks = [
