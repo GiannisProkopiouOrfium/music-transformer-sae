@@ -24,19 +24,20 @@ Usage:
 
 import argparse
 import logging
+import pathlib
 import sys
-from pathlib import Path
 
 import numpy as np
 import torch
-from torch import nn
+import torch.nn as nn
 
-# Add project root to path
-project_root = Path(__file__).parent.parent
-sys.path.insert(0, str(project_root))
+# Add mmt directory to path
+sys.path.insert(0, str(pathlib.Path(__file__).parent.parent / "mmt"))
 
-from baseline import representation
-from mmt import MusicXTransformer
+import config
+import music_x_transformers
+import representation
+import utils
 
 # Configure logging
 logging.basicConfig(
@@ -158,36 +159,40 @@ def load_model(checkpoint_path, train_args_path, encoding_path, device):
     """Load the trained MMT model."""
     logger.info(f"Loading model from {checkpoint_path}")
 
-    # Load encoding
+    # Load training args and encoding
+    train_args = utils.load_json(train_args_path)
     encoding = representation.load_encoding(encoding_path)
 
-    # Load training args
-    import json
-
-    with open(train_args_path) as f:
-        train_args = json.load(f)
-
-    # Create model
-    model = MusicXTransformer(
+    # Create model - match the parameter names from test_steering.py
+    model = music_x_transformers.MusicXTransformer(
         dim=train_args["dim"],
         encoding=encoding,
-        depth=train_args["n_layers"],
-        heads=train_args["n_heads"],
+        depth=train_args["layers"],  # Note: "layers" not "n_layers"
+        heads=train_args["heads"],
         max_seq_len=train_args["max_seq_len"],
         max_beat=train_args["max_beat"],
         rotary_pos_emb=train_args["rel_pos_emb"],
         use_abs_pos_emb=train_args["abs_pos_emb"],
-        emb_dropout=train_args["emb_dropout"],
-        attn_dropout=train_args["attn_dropout"],
-        ff_dropout=train_args["ff_dropout"],
+        emb_dropout=train_args["dropout"],
+        attn_dropout=train_args["dropout"],
+        ff_dropout=train_args["dropout"],
     ).to(device)
 
-    # Load checkpoint
-    checkpoint = torch.load(checkpoint_path, map_location=device)
-    model.load_state_dict(checkpoint["model"])
+    # Load checkpoint - note: might be just state_dict, not wrapped in {"model": ...}
+    try:
+        checkpoint = torch.load(checkpoint_path, map_location=device)
+        if isinstance(checkpoint, dict) and "model" in checkpoint:
+            model.load_state_dict(checkpoint["model"])
+        else:
+            model.load_state_dict(checkpoint)
+    except Exception as e:
+        logger.error(f"Error loading checkpoint: {e}")
+        logger.info("Trying direct load...")
+        model.load_state_dict(torch.load(checkpoint_path, map_location=device))
+
     model.eval()
 
-    logger.info(f"✓ Model loaded ({train_args['n_layers']} layers)")
+    logger.info(f"✓ Model loaded ({train_args['layers']} layers)")
     return model, encoding, train_args
 
 
@@ -294,8 +299,8 @@ def generate_with_steering(
     steering_strength,
     n_samples=5,
     layers_to_steer=None,
-    max_seq_len=1024,
-    temperature=1.0,
+    max_seq_len=512,
+    output_dir=None,
     device="cuda",
 ):
     """
@@ -303,7 +308,7 @@ def generate_with_steering(
 
     Args:
         model: MMT model
-        encoding: Encoding object
+        encoding: Encoding dictionary
         sae_models: Dictionary of SAE models
         sas_vectors: Dictionary of SAS vectors
         concept: Concept name
@@ -311,11 +316,11 @@ def generate_with_steering(
         n_samples: Number of samples to generate
         layers_to_steer: Specific layers to steer
         max_seq_len: Maximum sequence length
-        temperature: Sampling temperature
+        output_dir: Directory to save generated sequences
         device: Device
 
     Returns:
-        List of generated note sequences
+        List of generated token sequences (numpy arrays)
     """
     logger.info(f"Generating {n_samples} samples with SAS steering")
     logger.info(f"  Concept: {concept}")
@@ -327,29 +332,64 @@ def generate_with_steering(
         model, sae_models, sas_vectors, concept, steering_strength, layers_to_steer
     )
 
+    # Setup output directory
+    if output_dir is not None:
+        output_dir = pathlib.Path(output_dir)
+        output_dir.mkdir(parents=True, exist_ok=True)
+
+    # Get SOS and EOS tokens
+    sos = encoding["type_code_map"]["start-of-song"]
+    eos = encoding["type_code_map"]["end-of-song"]
+
     try:
         generated_sequences = []
 
         for i in range(n_samples):
             logger.info(f"  Generating sample {i+1}/{n_samples}...")
 
-            # Start with BOS token
-            start_seq = torch.tensor(
-                [[encoding["type_code_map"]["start-of-song"]]], device=device
-            )
+            # Create start tokens (1, 1, 6) - matches test_steering.py
+            start_tokens = torch.zeros((1, 1, 6), dtype=torch.long, device=device)
+            start_tokens[:, 0, 0] = sos
 
-            # Generate
+            # Generate with steering
             with torch.no_grad():
-                output = model.generate(
-                    start_seq,
-                    max_seq_len,
-                    temperature=temperature,
-                    filter_thres=0.9,  # Top-p sampling
+                temperature = (
+                    config.GENERATION_TEMPERATURE
+                    if hasattr(config, "GENERATION_TEMPERATURE")
+                    else 1.0
+                )
+                filter_fn = (
+                    config.GENERATION_FILTER
+                    if hasattr(config, "GENERATION_FILTER")
+                    else "top_k"
+                )
+                filter_thresh = (
+                    config.GENERATION_FILTER_THRESHOLD
+                    if hasattr(config, "GENERATION_FILTER_THRESHOLD")
+                    else 0.9
                 )
 
-            # Convert to note sequence
-            notes = representation.decode_notes(output[0].cpu().numpy(), encoding)
-            generated_sequences.append(notes)
+                generated = model.generate(
+                    start_tokens,
+                    max_seq_len,
+                    eos_token=eos,
+                    temperature=temperature,
+                    filter_logits_fn=filter_fn,
+                    filter_thres=filter_thresh,
+                    monotonicity_dim=("type", "beat"),
+                )
+
+            # Combine start and generated
+            full_seq = torch.cat((start_tokens, generated), 1).cpu().numpy()[0]
+            generated_sequences.append(full_seq)
+
+            # Save if output directory provided
+            if output_dir is not None:
+                strength_str = f"{'pos' if steering_strength >= 0 else 'neg'}{abs(steering_strength):.1f}"
+                filename = f"sample_lambda_{strength_str}_num_{i}.npy"
+                filepath = output_dir / filename
+                np.save(filepath, full_seq)
+                logger.info(f"    Saved: {filename}")
 
         return generated_sequences
 
@@ -357,30 +397,6 @@ def generate_with_steering(
         # Always remove hooks
         remove_hooks(handles)
         logger.info("✓ Steering hooks removed")
-
-
-def save_generations(sequences, output_dir, concept, steering_strength):
-    """Save generated sequences to MIDI files."""
-    output_dir = Path(output_dir)
-    output_dir.mkdir(parents=True, exist_ok=True)
-
-    import muspy
-
-    for i, notes in enumerate(sequences):
-        # Convert to MusPy Music object
-        music = representation.notes_to_music(notes)
-
-        # Save to MIDI
-        strength_str = (
-            f"{'pos' if steering_strength >= 0 else 'neg'}{abs(steering_strength):.1f}"
-        )
-        filename = f"{concept}_lambda_{strength_str}_sample{i+1}.mid"
-        filepath = output_dir / filename
-
-        muspy.write_midi(filepath, music)
-        logger.info(f"  Saved: {filename}")
-
-    logger.info(f"✓ Saved {len(sequences)} generations to {output_dir}")
 
 
 def main():
@@ -414,17 +430,17 @@ def main():
         help="Number of samples per steering strength",
     )
     parser.add_argument(
-        "--max_seq_len", type=int, default=1024, help="Maximum sequence length"
+        "--max_seq_len", type=int, default=512, help="Maximum sequence length"
     )
     parser.add_argument(
-        "--temperature", type=float, default=1.0, help="Sampling temperature"
-    )
-    parser.add_argument(
-        "--exp_dir", type=Path, default=Path("exp/sod"), help="Experiment directory"
+        "--exp_dir",
+        type=pathlib.Path,
+        default=pathlib.Path("exp/sod"),
+        help="Experiment directory",
     )
     parser.add_argument(
         "--output_dir",
-        type=Path,
+        type=pathlib.Path,
         default=None,
         help="Output directory (default: exp_dir/sparse_steering/generations_sas)",
     )
@@ -487,6 +503,11 @@ def main():
         logger.info(f"Steering strength λ = {strength}")
         logger.info(f"{'='*80}")
 
+        # Create output directory for this steering strength
+        strength_output_dir = (
+            args.output_dir / f"lambda_{'+' if strength >= 0 else ''}{strength}"
+        )
+
         sequences = generate_with_steering(
             model=model,
             encoding=encoding,
@@ -497,21 +518,18 @@ def main():
             n_samples=args.n_samples,
             layers_to_steer=args.layers,
             max_seq_len=args.max_seq_len,
-            temperature=args.temperature,
+            output_dir=strength_output_dir,
             device=device,
         )
-
-        # Save generations
-        save_generations(sequences, args.output_dir, args.concept, strength)
 
     logger.info(f"\n{'='*80}")
     logger.info("✓ Generation complete!")
     logger.info(f"✓ Outputs saved to: {args.output_dir}")
     logger.info(f"{'='*80}")
     logger.info("\nNext steps:")
-    logger.info("1. Listen to generated MIDI files")
-    logger.info("2. Analyze steering effects with deterministic metrics")
-    logger.info("3. Compare SAS vs DiffMean steering")
+    logger.info("1. Analyze generated .npy files with deterministic metrics")
+    logger.info("2. Compare SAS vs DiffMean steering effects")
+    logger.info("3. Run ablation studies on different layers")
 
 
 if __name__ == "__main__":
