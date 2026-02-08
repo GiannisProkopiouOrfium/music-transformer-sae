@@ -307,7 +307,14 @@ def main():
     )
     model.eval()
 
-    num_layers = len(model.net.attn_layers.layers)
+    # Get the actual number of layer modules (not transformer blocks)
+    # Each transformer block has 2 modules: Attention + FeedForward
+    # So actual layer count = len(model.decoder.net.attn_layers.layers)
+    decoder_wrapper = model.decoder
+    transformer = decoder_wrapper.net
+    attn_layers = transformer.attn_layers
+    num_layers = len(attn_layers.layers)
+    
     logging.info(f"Model has {num_layers} layers")
 
     # Load all SAEs
