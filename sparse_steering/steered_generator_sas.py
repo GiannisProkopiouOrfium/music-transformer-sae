@@ -238,7 +238,7 @@ def load_sae_models(sae_dir, device):
 
     sae_models = {}
     for layer_idx in range(12):  # Assuming 12 layers
-        checkpoint_path = sae_dir / f"layer{layer_idx}_sae.pt"
+        checkpoint_path = sae_dir / f"sae_layer_{layer_idx}_best.pt"
         if not checkpoint_path.exists():
             logger.warning(f"SAE checkpoint not found for layer {layer_idx}")
             continue
@@ -255,7 +255,9 @@ def load_sae_models(sae_dir, device):
             normalize_input=True,
         )
 
-        checkpoint = torch.load(checkpoint_path, map_location=device, weights_only=False)
+        checkpoint = torch.load(
+            checkpoint_path, map_location=device, weights_only=False
+        )
         state_dict = checkpoint["model_state_dict"]
 
         # Backward compatibility: add _normalization_fitted if missing
@@ -284,10 +286,14 @@ def load_sas_vectors(sas_vectors_path):
 
     data = torch.load(sas_vectors_path, map_location="cpu")
 
-    # Convert to numpy for easier manipulation
+    # Data is already numpy arrays (saved as dict of numpy arrays)
     sas_vectors = {}
-    for layer_idx, vec_tensor in data.items():
-        sas_vectors[layer_idx] = vec_tensor.numpy()
+    for layer_idx, vec_data in data.items():
+        # Handle both numpy arrays and tensors
+        if isinstance(vec_data, np.ndarray):
+            sas_vectors[layer_idx] = vec_data
+        else:
+            sas_vectors[layer_idx] = vec_data.numpy()
 
     logger.info(f"✓ Loaded SAS vectors for {len(sas_vectors)} layers")
     return sas_vectors
@@ -500,7 +506,7 @@ def main():
     checkpoint_path = args.exp_dir / "ape" / "checkpoints" / "best_model.pt"
     train_args_path = args.exp_dir / "ape" / "train-args.json"
     encoding_path = pathlib.Path("data/sod/processed/notes") / "encoding.json"
-    sae_dir = args.exp_dir / "sparse_steering" / "sae_models"
+    sae_dir = args.exp_dir / "sparse_steering" / "sae_checkpoints"
     sas_vectors_path = (
         args.exp_dir
         / "sparse_steering"
