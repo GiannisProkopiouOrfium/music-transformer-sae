@@ -286,7 +286,7 @@ def main():
     encoding_path = args.notes_dir / "encoding.json"
 
     train_args = utils.load_json(train_args_path)
-    encoding = utils.load_json(encoding_path)
+    encoding = representation.load_encoding(encoding_path)
 
     model = music_x_transformers.MusicXTransformer(
         dim=train_args["dim"],
@@ -314,7 +314,7 @@ def main():
     transformer = decoder_wrapper.net
     attn_layers = transformer.attn_layers
     num_layers = len(attn_layers.layers)
-    
+
     logging.info(f"Model has {num_layers} layers")
 
     # Load all SAEs
