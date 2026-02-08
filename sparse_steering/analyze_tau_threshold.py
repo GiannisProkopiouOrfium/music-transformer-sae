@@ -191,10 +191,19 @@ def print_summary_table(concept_results):
             "Coverage",
             "Avg ||v_SAS||",
             "Avg Shared",
+            "Shared %",
         ]
 
         rows = []
         for r in results:
+            # Calculate shared ratio
+            total_before_removal = r["avg_features"] + r["avg_shared"]
+            shared_pct = (
+                (r["avg_shared"] / total_before_removal * 100)
+                if total_before_removal > 0
+                else 0
+            )
+
             row = [
                 f"{r['tau']:.3f}",
                 f"{r['avg_features']:.1f}",
@@ -202,6 +211,7 @@ def print_summary_table(concept_results):
                 f"{r['coverage']:.1%}",
                 f"{r['avg_norm']:.4f}",
                 f"{r['avg_shared']:.1f}",
+                f"{shared_pct:.1f}%",
             ]
             rows.append(row)
 
@@ -218,31 +228,109 @@ def print_recommendations(concept_results):
     for concept, results in concept_results.items():
         logger.info(f"\n{concept}:")
 
-        # Find τ with best coverage (non-zero layers)
-        best_coverage = max(results, key=lambda r: r["coverage"])
+        # Calculate shared ratios for all results
+        for r in results:
+            total = r["avg_features"] + r["avg_shared"]
+            r["shared_ratio"] = (r["avg_shared"] / total) if total > 0 else 0
 
-        # Find τ with good balance (decent features + high coverage)
-        balanced = [r for r in results if r["coverage"] >= 0.8]  # At least 80% coverage
-        if balanced:
-            best_balanced = max(balanced, key=lambda r: r["avg_features"])
-            logger.info(f"  ✓ Recommended τ = {best_balanced['tau']:.3f}")
-            logger.info(
-                f"    - {best_balanced['avg_features']:.1f} avg features per layer"
-            )
-            logger.info(f"    - {best_balanced['coverage']:.1%} layer coverage")
-            logger.info(f"    - {best_balanced['avg_norm']:.4f} avg vector magnitude")
+        # Find candidates with 100% coverage and low shared ratio
+        full_coverage = [r for r in results if r["coverage"] == 1.0]
+
+        if full_coverage:
+            # Find best balance: low shared ratio, decent features
+            # Prefer shared ratio < 15% and sufficient features (> 50)
+            good_candidates = [
+                r
+                for r in full_coverage
+                if r["shared_ratio"] < 0.15 and r["avg_features"] > 50
+            ]
+
+            if good_candidates:
+                # Pick the one with most features among good candidates
+                best = max(good_candidates, key=lambda r: r["avg_features"])
+                logger.info(f"  ✅ RECOMMENDED: τ = {best['tau']:.3f}")
+                logger.info(f"    - {best['avg_features']:.1f} avg features per layer")
+                logger.info(f"    - {best['coverage']:.1%} layer coverage")
+                logger.info(
+                    f"    - {best['shared_ratio']:.1%} shared feature ratio (GOOD)"
+                )
+                logger.info(f"    - {best['avg_norm']:.4f} avg vector magnitude")
+            else:
+                # Relax constraints - just find lowest shared ratio with 100% coverage
+                best = min(full_coverage, key=lambda r: r["shared_ratio"])
+                logger.info(f"  ✅ RECOMMENDED: τ = {best['tau']:.3f}")
+                logger.info(f"    - {best['avg_features']:.1f} avg features per layer")
+                logger.info(f"    - {best['coverage']:.1%} layer coverage")
+                logger.info(f"    - {best['shared_ratio']:.1%} shared feature ratio")
+                logger.info(f"    - {best['avg_norm']:.4f} avg vector magnitude")
         else:
-            logger.info(
-                f"  ⚠ Best coverage: τ = {best_coverage['tau']:.3f} ({best_coverage['coverage']:.1%})"
-            )
-            logger.info(f"    - Consider lowering τ further for better coverage")
+            # No 100% coverage, find best available
+            best_coverage = max(results, key=lambda r: r["coverage"])
+            logger.info(f"  ⚠ Best available: τ = {best_coverage['tau']:.3f}")
+            logger.info(f"    - {best_coverage['coverage']:.1%} layer coverage")
+            logger.info(f"    - Consider lowering τ for full coverage")
 
-        # Check for empty vectors
-        all_zero = [r for r in results if r["non_zero_layers"] == 0]
-        if all_zero:
+        # Highlight problematic τ values
+        high_shared = [r for r in results if r["shared_ratio"] > 0.20]
+        if high_shared:
+            tau_list = [f"{r['tau']:.2f}" for r in high_shared]
+            logger.info(f"  ⚠ High shared ratio (>20%): τ = {', '.join(tau_list)}")
+            logger.info(f"    → Poor discriminability, avoid these values")
+
+        # Show alternatives for comparison
+        logger.info(f"\n  Alternatives to consider:")
+        candidates = [r for r in results if r["coverage"] >= 0.8][:5]
+        for r in candidates[:3]:  # Show top 3
             logger.info(
-                f"  ⚠ τ values with all-zero vectors: {[r['tau'] for r in all_zero]}"
+                f"    τ={r['tau']:.2f}: {r['avg_features']:.0f} features, "
+                f"{r['shared_ratio']:.1%} shared, "
+                f"||v||={r['avg_norm']:.1f}"
             )
+
+
+def print_per_layer_breakdown(concept_results, tau_values_to_show=None):
+    """Print per-layer breakdown for selected τ values."""
+
+    logger.info(f"\n{'='*80}")
+    logger.info("PER-LAYER BREAKDOWN")
+    logger.info(f"{'='*80}\n")
+
+    for concept, results in concept_results.items():
+        # If not specified, show top 3 recommended values
+        if tau_values_to_show is None:
+            # Get results with 100% coverage, sorted by features
+            full_cov = [r for r in results if r["coverage"] == 1.0]
+            if full_cov:
+                sorted_results = sorted(
+                    full_cov, key=lambda r: r["avg_features"], reverse=True
+                )
+                tau_values_to_show = [r["tau"] for r in sorted_results[:3]]
+            else:
+                tau_values_to_show = [
+                    results[0]["tau"],
+                    results[len(results) // 2]["tau"],
+                    results[-1]["tau"],
+                ]
+
+        selected = [r for r in results if r["tau"] in tau_values_to_show]
+
+        for result in selected:
+            logger.info(f"\n{concept} - τ = {result['tau']:.3f}")
+            logger.info("-" * 60)
+
+            headers = ["Layer", "Features", "||v_SAS||", "Shared Removed"]
+            rows = []
+
+            for i, stats in enumerate(result["layer_stats"]):
+                row = [
+                    f"L{i}",
+                    f"{stats['n_final']}",
+                    f"{stats['norm_vsas']:.2f}",
+                    f"{stats['n_shared']}",
+                ]
+                rows.append(row)
+
+            print(tabulate(rows, headers=headers, tablefmt="simple"))
 
 
 def main():
@@ -264,6 +352,11 @@ def main():
     )
     parser.add_argument(
         "--exp_dir", type=Path, default=Path("exp/sod"), help="Experiment directory"
+    )
+    parser.add_argument(
+        "--show_per_layer",
+        action="store_true",
+        help="Show per-layer breakdown for top candidates",
     )
 
     args = parser.parse_args()
@@ -320,6 +413,10 @@ def main():
 
     # Print recommendations
     print_recommendations(concept_results)
+
+    # Print per-layer breakdown if requested
+    if args.show_per_layer:
+        print_per_layer_breakdown(concept_results)
 
     logger.info(f"\n{'='*80}")
     logger.info("Ablation study complete!")
