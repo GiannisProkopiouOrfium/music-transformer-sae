@@ -34,10 +34,17 @@ import torch.nn as nn
 # Add mmt directory to path
 sys.path.insert(0, str(pathlib.Path(__file__).parent.parent / "mmt"))
 
-import config
 import music_x_transformers
 import representation
 import utils
+
+# Try to import config, but it's optional (only used for defaults)
+try:
+    import config
+
+    HAS_CONFIG = True
+except ImportError:
+    HAS_CONFIG = False
 
 # Configure logging
 logging.basicConfig(
@@ -200,7 +207,12 @@ def load_sae_models(sae_dir, device):
     """Load trained SAE models for all layers."""
     logger.info(f"Loading SAE models from {sae_dir}")
 
-    from sae.train_adaptive_sae import AdaptiveTopKSAE
+    # Add sae directory to path
+    sae_path = pathlib.Path(__file__).parent.parent / "sae"
+    if str(sae_path) not in sys.path:
+        sys.path.insert(0, str(sae_path))
+
+    from train_adaptive_sae import AdaptiveTopKSAE
 
     sae_models = {}
     for layer_idx in range(12):  # Assuming 12 layers
@@ -210,13 +222,13 @@ def load_sae_models(sae_dir, device):
             continue
 
         checkpoint = torch.load(checkpoint_path, map_location=device)
-        config = checkpoint["config"]
+        sae_config = checkpoint["config"]
 
         # Create SAE model
         sae = AdaptiveTopKSAE(
-            d_model=config["d_model"],
-            d_hidden=config["d_hidden"],
-            target_l0_values=config["target_l0_values"],
+            d_model=sae_config["d_model"],
+            d_hidden=sae_config["d_hidden"],
+            target_l0_values=sae_config["target_l0_values"],
         ).to(device)
 
         sae.load_state_dict(checkpoint["model_state_dict"])
@@ -353,21 +365,15 @@ def generate_with_steering(
 
             # Generate with steering
             with torch.no_grad():
-                temperature = (
-                    config.GENERATION_TEMPERATURE
-                    if hasattr(config, "GENERATION_TEMPERATURE")
-                    else 1.0
-                )
-                filter_fn = (
-                    config.GENERATION_FILTER
-                    if hasattr(config, "GENERATION_FILTER")
-                    else "top_k"
-                )
-                filter_thresh = (
-                    config.GENERATION_FILTER_THRESHOLD
-                    if hasattr(config, "GENERATION_FILTER_THRESHOLD")
-                    else 0.9
-                )
+                # Use config defaults if available, otherwise use sensible defaults
+                temperature = 1.0
+                filter_fn = "top_k"
+                filter_thresh = 0.9
+
+                if HAS_CONFIG:
+                    temperature = getattr(config, "GENERATION_TEMPERATURE", 1.0)
+                    filter_fn = getattr(config, "GENERATION_FILTER", "top_k")
+                    filter_thresh = getattr(config, "GENERATION_FILTER_THRESHOLD", 0.9)
 
                 generated = model.generate(
                     start_tokens,
