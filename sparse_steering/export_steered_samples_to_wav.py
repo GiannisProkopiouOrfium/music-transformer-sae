@@ -152,31 +152,33 @@ def load_token_sequences(samples_dir: pathlib.Path) -> Dict[float, List[np.ndarr
 
 def compute_metrics(tokens: np.ndarray, encoding: dict) -> dict:
     """Compute pitch and duration metrics for a token sequence."""
-    # Extract pitches from tokens
+    # Decode once
     try:
         music = representation.decode(tokens, encoding)
-        pitches = []
-        for track in music.tracks:
-            pitches.extend([note.pitch for note in track.notes])
-    except Exception as e:
-        logger.warning(f"Error extracting pitches: {e}")
-        pitches = []
 
-    # Extract durations from tokens
-    try:
-        music = representation.decode(tokens, encoding)
+        pitches = []
         durations = []
         for track in music.tracks:
-            durations.extend([note.duration for note in track.notes])
-    except Exception as e:
-        logger.warning(f"Error extracting durations: {e}")
-        durations = []
+            for note in track.notes:
+                pitches.append(note.pitch)
+                durations.append(note.duration)
 
-    return {
-        "pitch_mean": float(np.mean(pitches)) if pitches else 0.0,
-        "duration_mean": float(np.mean(durations)) if durations else 0.0,
-        "n_notes": len(pitches),
-    }
+        return {
+            "pitch_mean": float(np.mean(pitches)) if pitches else 0.0,
+            "duration_mean": float(np.mean(durations)) if durations else 0.0,
+            "n_notes": len(pitches),
+        }
+    except Exception as e:
+        logger.error(f"Error decoding tokens: {type(e).__name__}: {e}")
+        logger.error(f"  Token shape: {tokens.shape}, dtype: {tokens.dtype}")
+        import traceback
+
+        logger.error(f"  Traceback: {traceback.format_exc()}")
+        return {
+            "pitch_mean": 0.0,
+            "duration_mean": 0.0,
+            "n_notes": 0,
+        }
 
 
 def select_samples_to_export(
@@ -306,27 +308,34 @@ def export_to_midi_and_wav(
     Returns:
         (midi_path, wav_path)
     """
-    # Decode to muspy Music
-    music = representation.decode(tokens, encoding)
+    try:
+        # Decode to muspy Music
+        music = representation.decode(tokens, encoding)
 
-    # Trim to 64 bars (same as training)
-    music.trim(music.resolution * 64)
+        # Trim to 64 bars (same as training)
+        music.trim(music.resolution * 64)
 
-    # Create output directories
-    midi_dir = output_dir / "midi"
-    wav_dir = output_dir / "wav"
-    midi_dir.mkdir(parents=True, exist_ok=True)
-    wav_dir.mkdir(parents=True, exist_ok=True)
+        # Create output directories
+        midi_dir = output_dir / "midi"
+        wav_dir = output_dir / "wav"
+        midi_dir.mkdir(parents=True, exist_ok=True)
+        wav_dir.mkdir(parents=True, exist_ok=True)
 
-    # Save MIDI
-    midi_path = midi_dir / f"{filename_base}.mid"
-    music.write(midi_path)
+        # Save MIDI
+        midi_path = midi_dir / f"{filename_base}.mid"
+        music.write(str(midi_path))
 
-    # Save WAV
-    wav_path = wav_dir / f"{filename_base}.wav"
-    music.write(wav_path)
+        # Save WAV
+        wav_path = wav_dir / f"{filename_base}.wav"
+        music.write_audio(str(wav_path))
 
-    return midi_path, wav_path
+        return midi_path, wav_path
+    except Exception as e:
+        logger.error(f"Error in export_to_midi_and_wav: {type(e).__name__}: {e}")
+        import traceback
+
+        logger.error(f"  Traceback: {traceback.format_exc()}")
+        return None, None
 
 
 def main():
