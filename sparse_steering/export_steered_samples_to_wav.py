@@ -34,12 +34,6 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 
-def load_encoding(encoding_path: pathlib.Path) -> dict:
-    """Load encoding dictionary."""
-    with open(encoding_path) as f:
-        return json.load(f)
-
-
 def load_token_sequences(samples_dir: pathlib.Path) -> Dict[float, List[np.ndarray]]:
     """Load all token sequences organized by lambda value.
 
@@ -429,7 +423,7 @@ def main():
 
     # Load encoding
     logger.info(f"\nLoading encoding from {args.encoding_path}")
-    encoding = load_encoding(args.encoding_path)
+    encoding = representation.load_encoding(args.encoding_path)
 
     # Load all token sequences
     lambda_samples = load_token_sequences(args.samples_dir)
