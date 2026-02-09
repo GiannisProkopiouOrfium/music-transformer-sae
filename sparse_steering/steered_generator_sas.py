@@ -30,6 +30,7 @@ Usage:
 """
 
 import argparse
+import json
 import logging
 import pathlib
 import sys
@@ -37,6 +38,7 @@ import sys
 import numpy as np
 import torch
 import torch.nn as nn
+from scipy import stats as scipy_stats
 
 # Add mmt directory to path
 sys.path.insert(0, str(pathlib.Path(__file__).parent.parent / "mmt"))
@@ -58,6 +60,34 @@ logging.basicConfig(
     level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s"
 )
 logger = logging.getLogger(__name__)
+
+
+def extract_pitches_from_tokens(tokens: np.ndarray, encoding: dict) -> list:
+    """Extract pitch values from generated tokens."""
+    try:
+        music = representation.decode(tokens, encoding)
+        pitches = []
+        for track in music.tracks:
+            for note in track.notes:
+                pitches.append(note.pitch)
+        return pitches
+    except Exception as e:
+        logger.error(f"Error extracting pitches: {e}")
+        return []
+
+
+def extract_durations_from_tokens(tokens: np.ndarray, encoding: dict) -> list:
+    """Extract duration values from generated tokens (in ticks)."""
+    try:
+        music = representation.decode(tokens, encoding)
+        durations = []
+        for track in music.tracks:
+            for note in track.notes:
+                durations.append(note.duration)
+        return durations
+    except Exception as e:
+        logger.error(f"Error extracting durations: {e}")
+        return []
 
 
 class SASSteeringHook:
@@ -441,12 +471,180 @@ def generate_with_steering(
                 np.save(filepath, full_seq)
                 logger.info(f"    Saved: {filename}")
 
-        return generated_sequences
+        # Extract metrics from all generated sequences
+        all_pitches = []
+        all_durations = []
+        for seq in generated_sequences:
+            pitches = extract_pitches_from_tokens(seq, encoding)
+            durations = extract_durations_from_tokens(seq, encoding)
+            all_pitches.extend(pitches)
+            all_durations.extend(durations)
+
+        # Compute aggregate statistics
+        metrics = {
+            "pitch_mean": float(np.mean(all_pitches)) if all_pitches else 0.0,
+            "pitch_std": float(np.std(all_pitches)) if all_pitches else 0.0,
+            "pitch_min": int(np.min(all_pitches)) if all_pitches else 0,
+            "pitch_max": int(np.max(all_pitches)) if all_pitches else 0,
+            "duration_mean": float(np.mean(all_durations)) if all_durations else 0.0,
+            "duration_std": float(np.std(all_durations)) if all_durations else 0.0,
+            "n_notes": len(all_pitches),
+        }
+
+        return generated_sequences, metrics
 
     finally:
         # Always remove hooks
         remove_hooks(handles)
         logger.info("✓ Steering hooks removed")
+
+
+def analyze_steering_effect(all_results: dict, concept: str):
+    """Analyze steering effectiveness across all lambda values.
+    
+    Args:
+        all_results: Dict mapping lambda values to metrics
+        concept: Concept being steered (average_pitch or average_duration)
+    """
+    if len(all_results) < 3:
+        logger.warning("Not enough lambda values for statistical analysis")
+        return
+
+    sorted_lambdas = sorted(all_results.keys())
+    lambdas_array = np.array(sorted_lambdas)
+    
+    # Extract metrics
+    pitch_means = np.array([all_results[lam]["pitch_mean"] for lam in sorted_lambdas])
+    duration_means = np.array([all_results[lam]["duration_mean"] for lam in sorted_lambdas])
+    
+    # Calculate correlations
+    pitch_corr, pitch_pval = scipy_stats.pearsonr(lambdas_array, pitch_means)
+    pitch_spearman, pitch_spearman_pval = scipy_stats.spearmanr(lambdas_array, pitch_means)
+    duration_corr, duration_pval = scipy_stats.pearsonr(lambdas_array, duration_means)
+    duration_spearman, duration_spearman_pval = scipy_stats.spearmanr(lambdas_array, duration_means)
+    
+    # Linear regression
+    pitch_slope, pitch_intercept, pitch_r_value, _, _ = scipy_stats.linregress(lambdas_array, pitch_means)
+    duration_slope, duration_intercept, duration_r_value, _, _ = scipy_stats.linregress(lambdas_array, duration_means)
+    
+    # Check monotonicity
+    pitch_monotonic = all(pitch_means[i] <= pitch_means[i+1] for i in range(len(pitch_means)-1))
+    duration_monotonic = all(duration_means[i] <= duration_means[i+1] for i in range(len(duration_means)-1))
+    
+    # Baseline stats (lambda = 0)
+    if 0.0 in all_results:
+        baseline = all_results[0.0]
+        min_lambda = sorted_lambdas[0]
+        max_lambda = sorted_lambdas[-1]
+        
+        baseline_pitch = baseline["pitch_mean"]
+        min_pitch = all_results[min_lambda]["pitch_mean"]
+        max_pitch = all_results[max_lambda]["pitch_mean"]
+        
+        baseline_duration = baseline["duration_mean"]
+        min_duration = all_results[min_lambda]["duration_mean"]
+        max_duration = all_results[max_lambda]["duration_mean"]
+    
+    # Helper functions
+    def interpret_correlation(r, pval):
+        if pval > 0.05:
+            return "NOT SIGNIFICANT"
+        elif abs(r) >= 0.9:
+            return "VERY STRONG"
+        elif abs(r) >= 0.7:
+            return "STRONG"
+        elif abs(r) >= 0.5:
+            return "MODERATE"
+        else:
+            return "WEAK"
+    
+    # Print results
+    logger.info("\n" + "="*80)
+    logger.info("STEERING EFFECT ANALYSIS")
+    logger.info("="*80)
+    
+    logger.info(f"\nConcept: {concept}")
+    logger.info(f"Lambda values tested: {sorted_lambdas}")
+    logger.info(f"Total samples: {sum(all_results[lam]['n_notes'] for lam in sorted_lambdas)} notes")
+    
+    logger.info("\n" + "-"*80)
+    logger.info("PITCH ANALYSIS")
+    logger.info("-"*80)
+    
+    if 0.0 in all_results:
+        logger.info(f"Baseline (λ=0.0):       {baseline_pitch:.2f}")
+        logger.info(f"Min (λ={min_lambda:+.1f}):        {min_pitch:.2f} ({min_pitch - baseline_pitch:+.2f}, {((min_pitch - baseline_pitch) / baseline_pitch * 100):+.1f}%)")
+        logger.info(f"Max (λ={max_lambda:+.1f}):        {max_pitch:.2f} ({max_pitch - baseline_pitch:+.2f}, {((max_pitch - baseline_pitch) / baseline_pitch * 100):+.1f}%)")
+        logger.info(f"Range:                  {max_pitch - min_pitch:.2f} semitones")
+    
+    logger.info(f"\nCorrelation Analysis:")
+    logger.info(f"  Pearson r:            {pitch_corr:+.4f} (p={pitch_pval:.4f}) - {interpret_correlation(pitch_corr, pitch_pval)}")
+    logger.info(f"  Spearman ρ:           {pitch_spearman:+.4f} (p={pitch_spearman_pval:.4f})")
+    logger.info(f"  Linear R²:            {pitch_r_value**2:.4f} ({'Good' if pitch_r_value**2 > 0.8 else 'Moderate' if pitch_r_value**2 > 0.5 else 'Poor'} fit)")
+    logger.info(f"  Slope:                {pitch_slope:+.4f} semitones per λ")
+    logger.info(f"  Monotonic:            {'✓ Yes' if pitch_monotonic else '✗ No'}")
+    
+    logger.info("\n" + "-"*80)
+    logger.info("DURATION ANALYSIS")
+    logger.info("-"*80)
+    
+    if 0.0 in all_results:
+        logger.info(f"Baseline (λ=0.0):       {baseline_duration:.2f} ticks")
+        logger.info(f"Min (λ={min_lambda:+.1f}):        {min_duration:.2f} ({min_duration - baseline_duration:+.2f}, {((min_duration - baseline_duration) / baseline_duration * 100) if baseline_duration > 0 else 0:+.1f}%)")
+        logger.info(f"Max (λ={max_lambda:+.1f}):        {max_duration:.2f} ({max_duration - baseline_duration:+.2f}, {((max_duration - baseline_duration) / baseline_duration * 100) if baseline_duration > 0 else 0:+.1f}%)")
+        logger.info(f"Range:                  {max_duration - min_duration:.2f} ticks")
+    
+    logger.info(f"\nCorrelation Analysis:")
+    logger.info(f"  Pearson r:            {duration_corr:+.4f} (p={duration_pval:.4f}) - {interpret_correlation(duration_corr, duration_pval)}")
+    logger.info(f"  Spearman ρ:           {duration_spearman:+.4f} (p={duration_spearman_pval:.4f})")
+    logger.info(f"  Linear R²:            {duration_r_value**2:.4f} ({'Good' if duration_r_value**2 > 0.8 else 'Moderate' if duration_r_value**2 > 0.5 else 'Poor'} fit)")
+    logger.info(f"  Slope:                {duration_slope:+.4f} ticks per λ")
+    logger.info(f"  Monotonic:            {'✓ Yes' if duration_monotonic else '✗ No'}")
+    
+    logger.info("\n" + "-"*80)
+    logger.info("PROGRESSION ACROSS LAMBDA")
+    logger.info("-"*80)
+    for lam in sorted_lambdas:
+        r = all_results[lam]
+        logger.info(f"λ={lam:+5.1f}: pitch={r['pitch_mean']:6.2f}, duration={r['duration_mean']:6.2f} ticks, n={r['n_notes']:4d} notes")
+    
+    # Effectiveness evaluation
+    logger.info("\n" + "-"*80)
+    logger.info("STEERING EFFECTIVENESS")
+    logger.info("-"*80)
+    
+    # Determine target metric based on concept
+    if "pitch" in concept.lower():
+        target_metric = "pitch"
+        target_corr = pitch_corr
+        target_pval = pitch_pval
+        target_r2 = pitch_r_value**2
+        target_monotonic = pitch_monotonic
+    else:
+        target_metric = "duration"
+        target_corr = duration_corr
+        target_pval = duration_pval
+        target_r2 = duration_r_value**2
+        target_monotonic = duration_monotonic
+    
+    logger.info(f"\nTarget metric: {target_metric.upper()}")
+    
+    if target_pval > 0.05:
+        logger.warning(f"  ✗ FAILED: No significant correlation (p={target_pval:.4f})")
+    elif abs(target_corr) > 0.7 and target_monotonic and target_r2 > 0.7:
+        logger.info(f"  ✓✓✓ EXCELLENT: Strong monotonic steering effect")
+        logger.info(f"      r={target_corr:+.3f}, R²={target_r2:.3f}, monotonic={target_monotonic}")
+    elif abs(target_corr) > 0.5 and target_r2 > 0.5:
+        logger.info(f"  ✓✓ GOOD: Clear steering effect")
+        logger.info(f"      r={target_corr:+.3f}, R²={target_r2:.3f}, monotonic={target_monotonic}")
+    elif abs(target_corr) > 0.3:
+        logger.info(f"  ✓ WEAK: Some steering detected but inconsistent")
+        logger.info(f"      r={target_corr:+.3f}, R²={target_r2:.3f}, monotonic={target_monotonic}")
+    else:
+        logger.warning(f"  ✗ FAILED: Steering effect too weak or inconsistent")
+        logger.warning(f"      r={target_corr:+.3f}, R²={target_r2:.3f}, monotonic={target_monotonic}")
+    
+    logger.info("="*80)
 
 
 def main():
@@ -554,6 +752,9 @@ def main():
     # Load SAS vectors
     sas_vectors = load_sas_vectors(sas_vectors_path)
 
+    # Store results for analysis
+    all_results = {}
+
     # Generate for each steering strength
     for strength in args.steering_strengths:
         logger.info(f"\n{'='*80}")
@@ -565,7 +766,7 @@ def main():
             args.output_dir / f"lambda_{'+' if strength >= 0 else ''}{strength}"
         )
 
-        sequences = generate_with_steering(
+        sequences, metrics = generate_with_steering(
             model=model,
             encoding=encoding,
             sae_models=sae_models,
@@ -578,6 +779,19 @@ def main():
             output_dir=strength_output_dir,
             device=device,
         )
+        
+        # Store metrics
+        all_results[strength] = metrics
+        logger.info(f"  λ={strength:+.1f}: pitch_mean={metrics['pitch_mean']:.2f}, duration_mean={metrics['duration_mean']:.2f}, n={metrics['n_notes']} notes")
+
+    # Save all metrics to JSON
+    metrics_file = args.output_dir / "steering_metrics.json"
+    with open(metrics_file, "w") as f:
+        json.dump({str(k): v for k, v in all_results.items()}, f, indent=2)
+    logger.info(f"\n✓ Saved metrics to: {metrics_file}")
+
+    # Analyze steering effectiveness
+    analyze_steering_effect(all_results, args.concept)
 
     logger.info(f"\n{'='*80}")
     logger.info("✓ Generation complete!")
