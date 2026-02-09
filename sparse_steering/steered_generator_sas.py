@@ -376,9 +376,18 @@ def register_steering_hooks(
     layers = model.decoder.net.attn_layers.layers
 
     for layer_idx, layer in enumerate(layers):
-        # Register hook on the layer's residual connection output
-        # This captures the dense activations before the next layer
-        handle = layer.register_forward_hook(
+        # CRITICAL: Hook the same module we used during activation extraction!
+        # The SAE was trained on attention module outputs (layer_module_list[1]),
+        # NOT on full layer outputs. We must hook the same module for consistency.
+        #
+        # Layer structure: ModuleList[prenorm/ModuleList, Attention, Residual]
+        # We want index 1 (the Attention module) to match activation extraction
+        if isinstance(layer, nn.ModuleList) and len(layer) > 1:
+            target_module = layer[1]  # The Attention module
+        else:
+            target_module = layer  # Fallback: hook the whole layer
+        
+        handle = target_module.register_forward_hook(
             lambda module, input, output, idx=layer_idx: hook(
                 module, input, output, idx
             )
