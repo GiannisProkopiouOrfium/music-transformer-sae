@@ -43,6 +43,10 @@ def load_encoding(encoding_path: pathlib.Path) -> dict:
 def load_token_sequences(samples_dir: pathlib.Path) -> Dict[float, List[np.ndarray]]:
     """Load all token sequences organized by lambda value.
 
+    Handles two directory structures:
+    1. Direct: samples_dir/*.npy (all files in one directory)
+    2. Subdirectories: samples_dir/lambda_+X.X/*.npy (organized by lambda)
+
     Returns:
         Dictionary mapping lambda -> list of token arrays
     """
@@ -50,11 +54,49 @@ def load_token_sequences(samples_dir: pathlib.Path) -> Dict[float, List[np.ndarr
 
     lambda_samples = {}
 
-    # Find all .npy files
+    # First, try to find .npy files in subdirectories (steered_generator_sas.py structure)
+    lambda_dirs = list(samples_dir.glob("lambda_*"))
+
+    if lambda_dirs:
+        logger.info(f"Found {len(lambda_dirs)} lambda subdirectories")
+        for lambda_dir in lambda_dirs:
+            if not lambda_dir.is_dir():
+                continue
+
+            # Parse lambda from directory name (e.g., "lambda_+0.5" or "lambda_-1.0")
+            dir_name = lambda_dir.name  # e.g., "lambda_+0.5"
+            try:
+                lambda_str = dir_name.replace("lambda_", "")  # "+0.5" or "-1.0"
+                lambda_val = float(lambda_str)
+            except ValueError:
+                logger.warning(f"Could not parse lambda from directory: {dir_name}")
+                continue
+
+            # Load all .npy files in this directory
+            npy_files = list(lambda_dir.glob("*.npy"))
+            logger.info(f"  λ={lambda_val:+.1f}: {len(npy_files)} files")
+
+            for npy_file in npy_files:
+                try:
+                    tokens = np.load(npy_file)
+                    if lambda_val not in lambda_samples:
+                        lambda_samples[lambda_val] = []
+                    lambda_samples[lambda_val].append(tokens)
+                except Exception as e:
+                    logger.warning(f"Error loading {npy_file.name}: {e}")
+
+        if lambda_samples:
+            # Sort by lambda
+            lambda_samples = dict(sorted(lambda_samples.items()))
+            logger.info(f"Loaded samples for {len(lambda_samples)} lambda values")
+            return lambda_samples
+
+    # Fallback: Look for .npy files directly in samples_dir (flat structure)
+    logger.info("Searching for .npy files directly in samples_dir...")
     npy_files = list(samples_dir.glob("*.npy"))
 
     if not npy_files:
-        logger.warning(f"No .npy files found in {samples_dir}")
+        logger.warning(f"No .npy files found in {samples_dir} or subdirectories")
         return lambda_samples
 
     logger.info(f"Found {len(npy_files)} .npy files")
@@ -315,7 +357,7 @@ def main():
     # Auto-detect samples directory if not provided
     if args.samples_dir is None:
         args.samples_dir = (
-            pathlib.Path("exp/sod/sparse_steering/steered_samples") / args.concept
+            pathlib.Path("exp/sod/sparse_steering/generations_sas") / args.concept
         )
 
     logger.info("=" * 80)
