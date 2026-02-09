@@ -29,7 +29,7 @@ sys.path.insert(0, str(pathlib.Path(__file__).parent.parent / "mmt"))
 import representation
 
 logging.basicConfig(
-    level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s"
+    level=logging.DEBUG, format="%(asctime)s - %(levelname)s - %(message)s"
 )
 logger = logging.getLogger(__name__)
 
@@ -79,6 +79,24 @@ def load_token_sequences(samples_dir: pathlib.Path) -> Dict[float, List[np.ndarr
             for npy_file in npy_files:
                 try:
                     tokens = np.load(npy_file)
+
+                    # Debug: Check token array contents
+                    if (
+                        len(lambda_samples.get(lambda_val, [])) == 0
+                    ):  # Log only first file per lambda
+                        logger.debug(
+                            f"    Token shape: {tokens.shape}, dtype: {tokens.dtype}"
+                        )
+                        logger.debug(
+                            f"    Min/max values: [{tokens.min()}, {tokens.max()}]"
+                        )
+                        logger.debug(
+                            f"    First row: {tokens[0] if len(tokens) > 0 else 'empty'}"
+                        )
+                        logger.debug(
+                            f"    Unique type codes: {np.unique(tokens[:, 0]) if len(tokens.shape) == 2 else 'not 2D'}"
+                        )
+
                     if lambda_val not in lambda_samples:
                         lambda_samples[lambda_val] = []
                     lambda_samples[lambda_val].append(tokens)
@@ -154,6 +172,20 @@ def compute_metrics(tokens: np.ndarray, encoding: dict) -> dict:
     """Compute pitch and duration metrics for a token sequence."""
     # Decode once
     try:
+        logger.debug(f"Decoding tokens: shape={tokens.shape}, dtype={tokens.dtype}")
+        logger.debug(f"  Token range: [{tokens.min()}, {tokens.max()}]")
+        if len(tokens.shape) == 2 and tokens.shape[0] > 0:
+            logger.debug(f"  First token: {tokens[0]}")
+            logger.debug(
+                f"  Type column unique values: {np.unique(tokens[:, 0])[:10]}"
+            )  # First 10
+            # Show valid type codes from encoding
+            type_code_map = encoding.get("type_code_map", {})
+            code_type_map = {v: k for k, v in type_code_map.items()}
+            logger.debug(
+                f"  Valid type codes in encoding: {sorted(code_type_map.keys())}"
+            )
+
         music = representation.decode(tokens, encoding)
 
         pitches = []
