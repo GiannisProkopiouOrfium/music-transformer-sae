@@ -83,18 +83,22 @@ def analyze_single_layer(v_sas: np.ndarray, layer_idx: int, concept: str) -> Dic
         "layer_idx": layer_idx,
         "concept": concept,
         "total_features": len(v_sas),
-        "n_active": n_active,
-        "sparsity": n_active / len(v_sas),
-        "n_positive": n_positive,
-        "n_negative": n_negative,
-        "magnitude": magnitude,
-        "mean_value": mean_value,
+        "n_active": int(n_active),
+        "sparsity": float(n_active / len(v_sas)),
+        "n_positive": int(n_positive),
+        "n_negative": int(n_negative),
+        "magnitude": float(magnitude),
+        "mean_value": float(mean_value),
         "top_indices": top_indices.tolist(),
         "top_values": top_values.tolist(),
-        "threshold_80": threshold_80,
-        "threshold_90": threshold_90,
-        "active_values_mean": active_values.mean() if len(active_values) > 0 else 0,
-        "active_values_std": active_values.std() if len(active_values) > 0 else 0,
+        "threshold_80": int(threshold_80),
+        "threshold_90": int(threshold_90),
+        "active_values_mean": (
+            float(active_values.mean()) if len(active_values) > 0 else 0.0
+        ),
+        "active_values_std": (
+            float(active_values.std()) if len(active_values) > 0 else 0.0
+        ),
     }
 
     return results
@@ -384,11 +388,15 @@ def save_analysis_report(
         "n_layers": len(all_results),
         "layers": all_results,
         "summary": {
-            "total_active_features": sum(r["n_active"] for r in all_results),
-            "avg_sparsity": np.mean([r["sparsity"] for r in all_results]),
-            "avg_positive_features": np.mean([r["n_positive"] for r in all_results]),
-            "avg_negative_features": np.mean([r["n_negative"] for r in all_results]),
-            "avg_magnitude": np.mean([r["magnitude"] for r in all_results]),
+            "total_active_features": int(sum(r["n_active"] for r in all_results)),
+            "avg_sparsity": float(np.mean([r["sparsity"] for r in all_results])),
+            "avg_positive_features": float(
+                np.mean([r["n_positive"] for r in all_results])
+            ),
+            "avg_negative_features": float(
+                np.mean([r["n_negative"] for r in all_results])
+            ),
+            "avg_magnitude": float(np.mean([r["magnitude"] for r in all_results])),
         },
     }
 
