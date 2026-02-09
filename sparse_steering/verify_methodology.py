@@ -11,15 +11,6 @@ This script checks:
 Reference: "Sparse Autoencoders Enable Scalable and Reliable Circuit Identification"
 """
 
-import pathlib
-import sys
-import torch
-import numpy as np
-
-sys.path.insert(0, str(pathlib.Path(__file__).parent.parent / "mmt"))
-
-from sparse_steering import compute_sas_vectors, steered_generator_sas
-
 
 def verify_algorithm_1():
     """Verify Algorithm 1: SAS Vector Computation"""
@@ -335,4 +326,5 @@ def main():
 
 if __name__ == "__main__":
     success = main()
-    sys.exit(0 if success else 1)
+    exit(0 if success else 1)
+
