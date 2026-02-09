@@ -15,11 +15,10 @@ import argparse
 import json
 import logging
 import pathlib
-from typing import Dict, List, Tuple
+from typing import Dict, List, Optional
 
 import matplotlib.pyplot as plt
 import numpy as np
-import seaborn as sns
 import torch
 
 logging.basicConfig(
@@ -31,18 +30,18 @@ logger = logging.getLogger(__name__)
 def load_sas_vectors(sas_vectors_path: pathlib.Path) -> Dict:
     """Load SAS vectors from file."""
     logger.info(f"Loading SAS vectors from {sas_vectors_path}")
-    data = torch.load(sas_vectors_path, map_location="cpu")
+    data = torch.load(sas_vectors_path, map_location="cpu", weights_only=False)
     return data
 
 
-def load_diffmean_vectors(diffmean_path: pathlib.Path) -> Dict:
+def load_diffmean_vectors(diffmean_path: pathlib.Path) -> Optional[Dict]:
     """Load DiffMean vectors for comparison."""
     if not diffmean_path.exists():
         logger.warning(f"DiffMean vectors not found at {diffmean_path}")
         return None
 
     logger.info(f"Loading DiffMean vectors from {diffmean_path}")
-    data = torch.load(diffmean_path, map_location="cpu")
+    data = torch.load(diffmean_path, map_location="cpu", weights_only=False)
     return data
 
 
@@ -107,7 +106,7 @@ def print_layer_analysis(results: Dict):
     logger.info(f"LAYER {results['layer_idx']} - {results['concept'].upper()}")
     logger.info("=" * 80)
 
-    logger.info(f"\nFeature Statistics:")
+    logger.info("\nFeature Statistics:")
     logger.info(f"  Total dimensions: {results['total_features']}")
     logger.info(
         f"  Active features:  {results['n_active']} ({results['sparsity']*100:.2f}%)"
@@ -117,11 +116,11 @@ def print_layer_analysis(results: Dict):
     logger.info(f"  L2 magnitude:     {results['magnitude']:.4f}")
     logger.info(f"  Mean value:       {results['mean_value']:+.6f}")
 
-    logger.info(f"\nCumulative Contribution:")
-    logger.info(f"  Top {results['threshold_80']} features → 80% of steering effect")
-    logger.info(f"  Top {results['threshold_90']} features → 90% of steering effect")
+    logger.info("\nCumulative Contribution:")
+    logger.info(f"  Top {results['threshold_80']} features -> 80% of steering effect")
+    logger.info(f"  Top {results['threshold_90']} features -> 90% of steering effect")
 
-    logger.info(f"\nTop 10 Features by Magnitude:")
+    logger.info("\nTop 10 Features by Magnitude:")
     for i in range(min(10, len(results["top_indices"]))):
         idx = results["top_indices"][i]
         value = results["top_values"][i]
@@ -142,11 +141,10 @@ def compare_with_diffmean(
     sas = sas_results
 
     # DiffMean stats
-    diffmean_l0 = len(diffmean_vector)  # All dimensions active
     diffmean_l2 = np.linalg.norm(diffmean_vector)
 
-    logger.info(f"\nSAS (Sparse Interpretable Space):")
-    logger.info(f"  Dimensions:       4096")
+    logger.info("\nSAS (Sparse Interpretable Space):")
+    logger.info("  Dimensions:       4096")
     logger.info(f"  Active features:  {sas['n_active']} ({sas['sparsity']*100:.2f}%)")
     logger.info(f"  L0 sparsity:      {sas['n_active']}")
     logger.info(f"  L2 magnitude:     {sas['magnitude']:.4f}")
@@ -154,21 +152,21 @@ def compare_with_diffmean(
         f"  Interpretable:    ✓ YES - Can inspect {sas['n_active']} individual features"
     )
 
-    logger.info(f"\nDiffMean (Dense Entangled Space):")
-    logger.info(f"  Dimensions:       512")
-    logger.info(f"  Active features:  512 (100.00%)")
-    logger.info(f"  L0 sparsity:      512 (dense)")
+    logger.info("\nDiffMean (Dense Entangled Space):")
+    logger.info("  Dimensions:       512")
+    logger.info("  Active features:  512 (100.00%)")
+    logger.info("  L0 sparsity:      512 (dense)")
     logger.info(f"  L2 magnitude:     {diffmean_l2:.4f}")
-    logger.info(f"  Interpretable:    ✗ NO - 512 entangled, polysemantic dimensions")
+    logger.info("  Interpretable:    ✗ NO - 512 entangled, polysemantic dimensions")
 
-    logger.info(f"\n✓ Interpretability Advantage:")
+    logger.info("\n✓ Interpretability Advantage:")
     logger.info(
         f"  SAS has {sas['sparsity']*100:.1f}% active dimensions vs DiffMean's 100%"
     )
-    logger.info(f"  SAS features are monosemantic (one feature ≈ one concept)")
-    logger.info(f"  DiffMean features are polysemantic (one dimension = many concepts)")
+    logger.info("  SAS features are monosemantic (one feature ≈ one concept)")
+    logger.info("  DiffMean features are polysemantic (one dimension = many concepts)")
     logger.info(
-        f"  Each SAS feature can be analyzed, tested, and understood individually"
+        "  Each SAS feature can be analyzed, tested, and understood individually"
     )
 
 
@@ -180,7 +178,7 @@ def visualize_sas_vector(
     results: Dict = None,
 ):
     """Create comprehensive visualizations of SAS vector."""
-    fig, axes = plt.subplots(2, 2, figsize=(16, 12))
+    _, axes = plt.subplots(2, 2, figsize=(16, 12))
 
     # 1. Distribution of active feature values
     active_values = v_sas[v_sas != 0]
@@ -301,7 +299,7 @@ def visualize_cross_layer_analysis(
     magnitudes = [r["magnitude"] for r in all_results]
     threshold_80 = [r["threshold_80"] for r in all_results]
 
-    fig, axes = plt.subplots(2, 2, figsize=(16, 10))
+    _, axes = plt.subplots(2, 2, figsize=(16, 10))
 
     # 1. Active features per layer
     axes[0, 0].bar(layers, n_active, color="#1f77b4", edgecolor="black", alpha=0.7)
@@ -467,12 +465,11 @@ def main():
 
     # Determine which layers to analyze
     if args.layers == "all":
-        # Count layers in sas_data (exclude 'tau' and 'concept' keys)
-        layer_keys = [k for k in sas_data.keys() if k.startswith("layer_")]
-        n_layers = len(layer_keys)
-        layers_to_analyze = list(range(n_layers))
+        # Get all integer layer keys from sas_data
+        layer_keys = [k for k in sas_data.keys() if isinstance(k, int)]
+        layers_to_analyze = sorted(layer_keys)
     else:
-        layers_to_analyze = [int(l.strip()) for l in args.layers.split(",")]
+        layers_to_analyze = [int(layer.strip()) for layer in args.layers.split(",")]
 
     logger.info(f"Analyzing layers: {layers_to_analyze}")
 
@@ -480,14 +477,12 @@ def main():
     all_results = []
 
     for layer_idx in layers_to_analyze:
-        layer_key = f"layer_{layer_idx}"
-
-        if layer_key not in sas_data:
+        if layer_idx not in sas_data:
             logger.warning(f"Layer {layer_idx} not found in SAS data, skipping")
             continue
 
         # Get SAS vector for this layer
-        v_sas = sas_data[layer_key]
+        v_sas = sas_data[layer_idx]
         if isinstance(v_sas, torch.Tensor):
             v_sas = v_sas.numpy()
 
@@ -499,8 +494,8 @@ def main():
         print_layer_analysis(results)
 
         # Compare with DiffMean if available
-        if diffmean_data is not None and layer_key in diffmean_data:
-            diffmean_vector = diffmean_data[layer_key]
+        if diffmean_data is not None and layer_idx in diffmean_data:
+            diffmean_vector = diffmean_data[layer_idx]
             if isinstance(diffmean_vector, torch.Tensor):
                 diffmean_vector = diffmean_vector.numpy()
             compare_with_diffmean(results, diffmean_vector, layer_idx)
@@ -531,7 +526,7 @@ def main():
     logger.info("\n" + "=" * 80)
     logger.info("✓ ANALYSIS COMPLETE")
     logger.info("=" * 80)
-    logger.info(f"\nKey Findings:")
+    logger.info("\nKey Findings:")
     logger.info(f"  Total layers analyzed: {len(all_results)}")
     logger.info(
         f"  Average sparsity: {np.mean([r['sparsity'] for r in all_results])*100:.2f}%"
