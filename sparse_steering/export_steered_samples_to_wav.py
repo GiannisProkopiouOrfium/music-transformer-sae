@@ -152,13 +152,25 @@ def load_token_sequences(samples_dir: pathlib.Path) -> Dict[float, List[np.ndarr
 
 def compute_metrics(tokens: np.ndarray, encoding: dict) -> dict:
     """Compute pitch and duration metrics for a token sequence."""
-    from sparse_steering.steered_generator_sas import (
-        extract_pitches_from_tokens,
-        extract_durations_from_tokens,
-    )
+    # Extract pitches from tokens
+    try:
+        music = representation.decode(tokens, encoding)
+        pitches = []
+        for track in music.tracks:
+            pitches.extend([note.pitch for note in track.notes])
+    except Exception as e:
+        logger.warning(f"Error extracting pitches: {e}")
+        pitches = []
 
-    pitches = extract_pitches_from_tokens(tokens, encoding)
-    durations = extract_durations_from_tokens(tokens, encoding)
+    # Extract durations from tokens
+    try:
+        music = representation.decode(tokens, encoding)
+        durations = []
+        for track in music.tracks:
+            durations.extend([note.duration for note in track.notes])
+    except Exception as e:
+        logger.warning(f"Error extracting durations: {e}")
+        durations = []
 
     return {
         "pitch_mean": float(np.mean(pitches)) if pitches else 0.0,
