@@ -141,12 +141,22 @@ class SASSteeringHook:
         Args:
             module: The layer module
             input: Input to the layer
-            output: Dense activations a_ℓ from the layer
+            output: Dense activations a_ℓ from the layer (may be tuple)
             layer_idx: Layer index
 
         Returns:
-            Steered activations ã_ℓ
+            Steered activations ã_ℓ (same format as output)
         """
+        # Handle tuple outputs from Attention module
+        # Attention modules return (output, attention_weights)
+        is_tuple_output = isinstance(output, tuple)
+        if is_tuple_output:
+            actual_output = output[0]
+            other_outputs = output[1:]  # Save for returning later
+        else:
+            actual_output = output
+            other_outputs = None
+        
         # Check if we should steer this layer
         if self.layers_to_steer is not None and layer_idx not in self.layers_to_steer:
             return output
@@ -155,7 +165,7 @@ class SASSteeringHook:
             return output
 
         # Initialize device on first call
-        self._initialize_device(output)
+        self._initialize_device(actual_output)
 
         # Get SAE and SAS vector for this layer
         sae = self.sae_models[layer_idx]
@@ -164,7 +174,7 @@ class SASSteeringHook:
         # Algorithm 2: Sparse Activation Steering
         # Input: a_ℓ (dense activations), v_(b,ℓ) (SAS vector), λ (steering strength)
 
-        a_l = output  # (batch, seq, 512) dense activations
+        a_l = actual_output  # (batch, seq, 512) dense activations
         batch_size, seq_len, d_model = a_l.shape
 
         # Flatten for processing
@@ -199,7 +209,11 @@ class SASSteeringHook:
         # Reshape back
         a_steered = a_steered.reshape(batch_size, seq_len, d_model)
 
-        return a_steered
+        # Return in same format as input (tuple or tensor)
+        if is_tuple_output:
+            return (a_steered,) + other_outputs
+        else:
+            return a_steered
 
 
 def load_model(checkpoint_path, train_args_path, encoding_path, device):
