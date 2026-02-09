@@ -123,9 +123,7 @@ def evaluate_quality_metrics(tokens: np.ndarray, encoding: dict) -> dict:
         return {
             "pitch_class_entropy": muspy.pitch_class_entropy(music),
             "scale_consistency": muspy.scale_consistency(music) * 100,
-            "groove_consistency": muspy.groove_consistency(
-                music, 4 * music.resolution
-            )
+            "groove_consistency": muspy.groove_consistency(music, 4 * music.resolution)
             * 100,
         }
     except Exception as e:
@@ -148,13 +146,9 @@ def calculate_degradation(metrics: dict, baseline: dict) -> dict:
     Returns:
         Degradation scores
     """
-    entropy_diff = abs(
-        metrics["pitch_class_entropy"] - baseline["pitch_class_entropy"]
-    )
+    entropy_diff = abs(metrics["pitch_class_entropy"] - baseline["pitch_class_entropy"])
     scale_diff = max(0, baseline["scale_consistency"] - metrics["scale_consistency"])
-    groove_diff = max(
-        0, baseline["groove_consistency"] - metrics["groove_consistency"]
-    )
+    groove_diff = max(0, baseline["groove_consistency"] - metrics["groove_consistency"])
 
     total_degradation = entropy_diff + scale_diff + groove_diff
 
@@ -592,13 +586,13 @@ def generate_with_steering(
         all_pitches = []
         all_durations = []
         all_quality_metrics = []
-        
+
         for seq in generated_sequences:
             pitches = extract_pitches_from_tokens(seq, encoding)
             durations = extract_durations_from_tokens(seq, encoding)
             all_pitches.extend(pitches)
             all_durations.extend(durations)
-            
+
             # Evaluate quality metrics for each sample
             quality = evaluate_quality_metrics(seq, encoding)
             all_quality_metrics.append(quality)
@@ -615,10 +609,10 @@ def generate_with_steering(
                 np.nanmean([q["groove_consistency"] for q in all_quality_metrics])
             ),
         }
-        
+
         # Calculate degradation from ground truth
         degradation = calculate_degradation(avg_quality, GROUND_TRUTH_METRICS)
-        
+
         metrics = {
             "pitch_mean": float(np.mean(all_pitches)) if all_pitches else 0.0,
             "pitch_std": float(np.std(all_pitches)) if all_pitches else 0.0,
@@ -778,9 +772,12 @@ def analyze_steering_effect(all_results: dict, concept: str):
     logger.info(f"  Slope:                {duration_slope:+.4f} ticks per λ")
     logger.info(f"  Monotonic:            {'✓ Yes' if duration_monotonic else '✗ No'}")
 
-    logger.info("\n" + "-" * 80)    logger.info("QUALITY DEGRADATION ANALYSIS")
+    logger.info("\n" + "-" * 80)
+    logger.info("QUALITY DEGRADATION ANALYSIS")
     logger.info("-" * 80)
-    logger.info(f"Ground truth (from paper): entropy={GROUND_TRUTH_METRICS['pitch_class_entropy']:.3f}, scale={GROUND_TRUTH_METRICS['scale_consistency']:.2f}%, groove={GROUND_TRUTH_METRICS['groove_consistency']:.2f}%")
+    logger.info(
+        f"Ground truth (from paper): entropy={GROUND_TRUTH_METRICS['pitch_class_entropy']:.3f}, scale={GROUND_TRUTH_METRICS['scale_consistency']:.2f}%, groove={GROUND_TRUTH_METRICS['groove_consistency']:.2f}%"
+    )
     logger.info("\nDegradation across lambda values:")
     for lam in sorted_lambdas:
         r = all_results[lam]
@@ -793,7 +790,8 @@ def analyze_steering_effect(all_results: dict, concept: str):
             f"groove={qual.get('groove_consistency', np.nan):5.2f}%"
         )
 
-    logger.info(f"\n" + "-" * 80)    logger.info("PROGRESSION ACROSS LAMBDA")
+    logger.info(f"\n" + "-" * 80)
+    logger.info("PROGRESSION ACROSS LAMBDA")
     logger.info("-" * 80)
     for lam in sorted_lambdas:
         r = all_results[lam]
