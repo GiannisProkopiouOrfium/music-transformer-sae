@@ -35,9 +35,9 @@ model = music_x_transformers.MusicXTransformer(
 model.load_state_dict(torch.load(checkpoint_path, map_location="cpu"))
 model.eval()
 
-print("="*80)
+print("=" * 80)
 print("TRANSFORMER LAYER STRUCTURE ANALYSIS")
-print("="*80)
+print("=" * 80)
 
 # Navigate to attention layers
 decoder_wrapper = model.decoder
@@ -60,13 +60,15 @@ if isinstance(layer_0, torch.nn.ModuleList):
     print(f"  Length: {len(layer_0)}")
     for i, module in enumerate(layer_0):
         print(f"  [{i}] {type(module).__name__}")
-        if hasattr(module, '__class__'):
-            print(f"      Module: {module.__class__.__module__}.{module.__class__.__name__}")
+        if hasattr(module, "__class__"):
+            print(
+                f"      Module: {module.__class__.__module__}.{module.__class__.__name__}"
+            )
 
 # Test with dummy input to see activation shapes
-print(f"\n" + "="*80)
+print(f"\n" + "=" * 80)
 print("TESTING HOOK LOCATIONS WITH DUMMY INPUT")
-print("="*80)
+print("=" * 80)
 
 # Create dummy input
 sos = encoding["type_code_map"]["start-of-song"]
@@ -75,20 +77,23 @@ dummy_input[:, :, 0] = sos
 
 activations_collected = {}
 
+
 def create_hook(name):
     def hook_fn(module, input, output):
         if isinstance(output, tuple):
             actual_output = output[0]
         else:
             actual_output = output
-        
+
         if isinstance(actual_output, torch.Tensor):
             activations_collected[name] = {
-                'shape': actual_output.shape,
-                'mean': actual_output.mean().item(),
-                'std': actual_output.std().item(),
+                "shape": actual_output.shape,
+                "mean": actual_output.mean().item(),
+                "std": actual_output.std().item(),
             }
+
     return hook_fn
+
 
 # Register hooks on different components
 hooks = []
@@ -100,7 +105,9 @@ hooks.append(layer_0_full.register_forward_hook(create_hook("layer_0_full")))
 # Hook attention module (index 1)
 if isinstance(layer_0, torch.nn.ModuleList) and len(layer_0) > 1:
     attention_module = layer_0[1]
-    hooks.append(attention_module.register_forward_hook(create_hook("layer_0_attention")))
+    hooks.append(
+        attention_module.register_forward_hook(create_hook("layer_0_attention"))
+    )
 
 # Run forward pass
 with torch.no_grad():
@@ -118,19 +125,20 @@ for name, info in activations_collected.items():
 for hook in hooks:
     hook.remove()
 
-print("\n" + "="*80)
+print("\n" + "=" * 80)
 print("COMPARISON WITH DIFFMEAN")
-print("="*80)
+print("=" * 80)
 
 print("\nDiffMean baseline hooks: layer[1] (Attention module)")
 print("Current SAS implementation hooks: layer[1] (Attention module)")
 print("\n✓ CONSISTENT: Both methods hook the same location")
 
-print("\n" + "="*80)
+print("\n" + "=" * 80)
 print("THEORETICAL CONSIDERATION")
-print("="*80)
+print("=" * 80)
 
-print("""
+print(
+    """
 In transformer architectures:
 1. **Attention module output** (what we currently hook):
    - Output of attention mechanism before residual connection
@@ -147,13 +155,15 @@ In transformer architectures:
 - Reason: Fair comparison with DiffMean baseline
 - Both methods work on identical activation space
 - Scientific validity through controlled comparison
-""")
+"""
+)
 
-print("\n" + "="*80)
+print("\n" + "=" * 80)
 print("VERIFICATION")
-print("="*80)
+print("=" * 80)
 
-print("""
+print(
+    """
 To ensure correctness, verify:
 1. ✓ SAE training: Uses activation_extractor which hooks layer[1]
 2. ✓ Concept encoding: Uses activation_extractor which hooks layer[1]
@@ -161,4 +171,5 @@ To ensure correctness, verify:
 4. ✓ DiffMean baseline: Hooks layer[1]
 
 All four components now use the same activation space!
-""")
+"""
+)

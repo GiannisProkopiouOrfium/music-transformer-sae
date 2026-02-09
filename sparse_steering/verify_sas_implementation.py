@@ -3,15 +3,16 @@
 import pathlib
 import sys
 
-print("="*80)
+print("=" * 80)
 print("SPARSE ACTIVATION STEERING (SAS) - IMPLEMENTATION VERIFICATION")
-print("="*80)
+print("=" * 80)
 
-print("\n" + "="*80)
+print("\n" + "=" * 80)
 print("ALGORITHM 1: SAS VECTOR GENERATION")
-print("="*80)
+print("=" * 80)
 
-print("""
+print(
+    """
 Paper Algorithm 1 Steps:
   1. Extract sparse representations: S+ = f(a(positive)), S- = f(a(negative))
   2. Compute activation frequency: freq[c] = |R[c]| / |D|
@@ -23,37 +24,42 @@ Paper Algorithm 1 Steps:
   6. Compute final: v_SAS = v+ - v-
 
 Our Implementation:
-""")
+"""
+)
 
 # Check compute_sas_vectors.py
 sas_compute_path = pathlib.Path("sparse_steering/compute_sas_vectors.py")
 if sas_compute_path.exists():
     with open(sas_compute_path) as f:
         content = f.read()
-    
+
     checks = {
-        "Step 1 - Load sparse matrices": "sparse_high_dict" in content and "sparse_low_dict" in content,
-        "Step 2-3 - Frequency filtering": "freq >= tau" in content or "freq_high >= tau" in content,
+        "Step 1 - Load sparse matrices": "sparse_high_dict" in content
+        and "sparse_low_dict" in content,
+        "Step 2-3 - Frequency filtering": "freq >= tau" in content
+        or "freq_high >= tau" in content,
         "Step 4 - Non-zero averaging": "active_rows" in content or "R+" in content,
-        "Step 5 - Remove shared": "common_features" in content or "(v_pos != 0) & (v_neg != 0)" in content,
+        "Step 5 - Remove shared": "common_features" in content
+        or "(v_pos != 0) & (v_neg != 0)" in content,
         "Step 6 - Final vector": "v_pos - v_neg" in content,
     }
-    
+
     for check, passed in checks.items():
         status = "✓" if passed else "✗"
         print(f"  {status} {check}")
-    
+
     all_passed = all(checks.values())
     if all_passed:
         print("\n✓✓✓ Algorithm 1 implementation: CORRECT")
     else:
         print("\n✗ Algorithm 1 implementation: ISSUES FOUND")
 
-print("\n" + "="*80)
+print("\n" + "=" * 80)
 print("ALGORITHM 2: SAS VECTORS IN INFERENCE")
-print("="*80)
+print("=" * 80)
 
-print("""
+print(
+    """
 Paper Algorithm 2 Steps:
   1. Obtain dense activations from layer ℓ: a_ℓ
   2. Encode to sparse: f(a_ℓ)
@@ -64,13 +70,14 @@ Paper Algorithm 2 Steps:
   7. Add correction: ã_ℓ = a'_ℓ + Δ
 
 Our Implementation:
-""")
+"""
+)
 
 sas_gen_path = pathlib.Path("sparse_steering/steered_generator_sas.py")
 if sas_gen_path.exists():
     with open(sas_gen_path) as f:
         content = f.read()
-    
+
     checks = {
         "Step 1 - Get activations": "a_l = output" in content,
         "Step 2 - Encode": "f_a = sae.encode" in content,
@@ -81,26 +88,28 @@ if sas_gen_path.exists():
         "Step 6 - Decode": "sae.decode(s_l_activated)" in content,
         "Step 7 - Add correction": "a_steered = a_prime + delta" in content,
     }
-    
+
     for check, passed in checks.items():
         status = "✓" if passed else "✗"
         print(f"  {status} {check}")
-    
+
     all_passed = all(checks.values())
     if all_passed:
         print("\n✓✓✓ Algorithm 2 implementation: CORRECT")
     else:
         print("\n✗ Algorithm 2 implementation: ISSUES FOUND")
 
-print("\n" + "="*80)
+print("\n" + "=" * 80)
 print("ACTIVATION SPACE CONSISTENCY")
-print("="*80)
+print("=" * 80)
 
-print("""
+print(
+    """
 Critical requirement: All steps must use the SAME activation space!
 
 Pipeline verification:
-""")
+"""
+)
 
 # Check activation extraction
 act_ext_path = pathlib.Path("steering_interventions/activation_extractor.py")
@@ -114,10 +123,25 @@ if sas_gen_path.exists():
         gen_content = f.read()
 
 checks = {
-    "SAE training data extraction": "target_module = layer_module_list[1]" in act_content if act_ext_path.exists() else False,
-    "Concept activation extraction": "target_module = layer_module_list[1]" in act_content if act_ext_path.exists() else False,
-    "SAS inference steering": "target_module = layer[1]" in gen_content if sas_gen_path.exists() else False,
-    "DiffMean baseline steering": "target_module = layer_module_list[1]" in (open("steering_interventions/steered_generator.py").read() if pathlib.Path("steering_interventions/steered_generator.py").exists() else ""),
+    "SAE training data extraction": (
+        "target_module = layer_module_list[1]" in act_content
+        if act_ext_path.exists()
+        else False
+    ),
+    "Concept activation extraction": (
+        "target_module = layer_module_list[1]" in act_content
+        if act_ext_path.exists()
+        else False
+    ),
+    "SAS inference steering": (
+        "target_module = layer[1]" in gen_content if sas_gen_path.exists() else False
+    ),
+    "DiffMean baseline steering": "target_module = layer_module_list[1]"
+    in (
+        open("steering_interventions/steered_generator.py").read()
+        if pathlib.Path("steering_interventions/steered_generator.py").exists()
+        else ""
+    ),
 }
 
 for check, passed in checks.items():
@@ -132,44 +156,48 @@ else:
     print("\n⚠️  WARNING: Inconsistent hook locations detected!")
     print("    This could cause steering to fail or be inaccurate.")
 
-print("\n" + "="*80)
+print("\n" + "=" * 80)
 print("SAE ARCHITECTURE VERIFICATION")
-print("="*80)
+print("=" * 80)
 
 sae_model_path = pathlib.Path("sparse_steering/sae_model.py")
 if sae_model_path.exists():
     with open(sae_model_path) as f:
         sae_content = f.read()
-    
-    print("""
+
+    print(
+        """
 Paper SAE Architecture:
   Encoder: f(a) = σ(W_enc·a + b_enc)  where σ applies ReLU + TopK
   Decoder: â(s) = W_dec·s + b_dec
 
 Our Implementation:
-""")
-    
+"""
+    )
+
     checks = {
         "Encoder linear projection": "self.encoder = nn.Linear" in sae_content,
         "Encoder ReLU activation": "F.relu(h)" in sae_content,
-        "Encoder TopK sparsity": "self.topk(h)" in sae_content or "TopKActivation" in sae_content,
+        "Encoder TopK sparsity": "self.topk(h)" in sae_content
+        or "TopKActivation" in sae_content,
         "Decoder reconstruction": "self.decode" in sae_content,
         "Input normalization (optional)": "normalize_input" in sae_content,
     }
-    
+
     for check, passed in checks.items():
         status = "✓" if passed else "✗"
         print(f"  {status} {check}")
-    
+
     all_passed = all(checks.values())
     if all_passed:
         print("\n✓✓✓ SAE architecture: CORRECT")
 
-print("\n" + "="*80)
+print("\n" + "=" * 80)
 print("FINAL VERDICT")
-print("="*80)
+print("=" * 80)
 
-print("""
+print(
+    """
 Implementation Status:
 
 ✓ Algorithm 1 (SAS Vector Generation):
@@ -208,4 +236,5 @@ RECOMMENDATION:
   
   If steering is still backwards after these fixes, the dataset
   labels may truly be swapped in the source data.
-""")
+"""
+)

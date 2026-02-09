@@ -386,7 +386,7 @@ def register_steering_hooks(
             target_module = layer[1]  # The Attention module
         else:
             target_module = layer  # Fallback: hook the whole layer
-        
+
         handle = target_module.register_forward_hook(
             lambda module, input, output, idx=layer_idx: hook(
                 module, input, output, idx
