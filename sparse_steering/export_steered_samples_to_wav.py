@@ -22,10 +22,10 @@ from typing import Dict, List, Tuple
 import numpy as np
 import torch
 
-# Import from baseline
+# Import from mmt
 import sys
 
-sys.path.insert(0, str(pathlib.Path(__file__).parent.parent / "baseline"))
+sys.path.insert(0, str(pathlib.Path(__file__).parent.parent / "mmt"))
 import representation
 
 logging.basicConfig(
@@ -301,7 +301,7 @@ def main():
     parser.add_argument(
         "--encoding_path",
         type=pathlib.Path,
-        default=pathlib.Path("baseline/encoding_remi.json"),
+        default=pathlib.Path("data/sod/processed/notes/encoding.json"),
         help="Path to encoding JSON file",
     )
     parser.add_argument(
@@ -332,6 +332,15 @@ def main():
     if not args.samples_dir.exists():
         logger.error(f"Samples directory not found: {args.samples_dir}")
         logger.error("Please run steered_generator_sas.py first to generate samples")
+        return
+
+    # Check if encoding file exists
+    if not args.encoding_path.exists():
+        logger.error(f"Encoding file not found: {args.encoding_path}")
+        logger.error("Common locations:")
+        logger.error("  - data/sod/processed/notes/encoding.json")
+        logger.error("  - baseline/encoding_remi.json")
+        logger.error("  - mmt/encoding.json")
         return
 
     # Load encoding
