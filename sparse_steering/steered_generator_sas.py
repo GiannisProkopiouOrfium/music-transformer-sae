@@ -61,6 +61,13 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
+# Ground truth quality metrics from the paper
+GROUND_TRUTH_METRICS = {
+    "pitch_class_entropy": 2.974,
+    "scale_consistency": 92.26,
+    "groove_consistency": 93.05,
+}
+
 
 def extract_pitches_from_tokens(tokens: np.ndarray, encoding: dict) -> list:
     """Extract pitch values from generated tokens."""
@@ -88,6 +95,75 @@ def extract_durations_from_tokens(tokens: np.ndarray, encoding: dict) -> list:
     except Exception as e:
         logger.error(f"Error extracting durations: {e}")
         return []
+
+
+def evaluate_quality_metrics(tokens: np.ndarray, encoding: dict) -> dict:
+    """Evaluate objective quality metrics using muspy.
+
+    Args:
+        tokens: Token array (seq_len, 6)
+        encoding: Encoding dictionary
+
+    Returns:
+        Dictionary with quality metrics
+    """
+    try:
+        import muspy
+
+        music = representation.decode(tokens, encoding)
+        music.trim(music.resolution * 64)
+
+        if not music.tracks:
+            return {
+                "pitch_class_entropy": np.nan,
+                "scale_consistency": np.nan,
+                "groove_consistency": np.nan,
+            }
+
+        return {
+            "pitch_class_entropy": muspy.pitch_class_entropy(music),
+            "scale_consistency": muspy.scale_consistency(music) * 100,
+            "groove_consistency": muspy.groove_consistency(
+                music, 4 * music.resolution
+            )
+            * 100,
+        }
+    except Exception as e:
+        logger.error(f"Error evaluating quality: {e}")
+        return {
+            "pitch_class_entropy": np.nan,
+            "scale_consistency": np.nan,
+            "groove_consistency": np.nan,
+            "error": str(e),
+        }
+
+
+def calculate_degradation(metrics: dict, baseline: dict) -> dict:
+    """Calculate quality degradation from baseline.
+
+    Args:
+        metrics: Current quality metrics
+        baseline: Baseline quality metrics (GROUND_TRUTH_METRICS)
+
+    Returns:
+        Degradation scores
+    """
+    entropy_diff = abs(
+        metrics["pitch_class_entropy"] - baseline["pitch_class_entropy"]
+    )
+    scale_diff = max(0, baseline["scale_consistency"] - metrics["scale_consistency"])
+    groove_diff = max(
+        0, baseline["groove_consistency"] - metrics["groove_consistency"]
+    )
+
+    total_degradation = entropy_diff + scale_diff + groove_diff
+
+    return {
+        "entropy_diff": float(entropy_diff),
+        "scale_diff": float(scale_diff),
+        "groove_diff": float(groove_diff),
+        "total_degradation": float(total_degradation),
+    }
 
 
 class SASSteeringHook:
@@ -156,7 +232,7 @@ class SASSteeringHook:
         else:
             actual_output = output
             other_outputs = None
-        
+
         # Check if we should steer this layer
         if self.layers_to_steer is not None and layer_idx not in self.layers_to_steer:
             return output
@@ -515,13 +591,34 @@ def generate_with_steering(
         # Extract metrics from all generated sequences
         all_pitches = []
         all_durations = []
+        all_quality_metrics = []
+        
         for seq in generated_sequences:
             pitches = extract_pitches_from_tokens(seq, encoding)
             durations = extract_durations_from_tokens(seq, encoding)
             all_pitches.extend(pitches)
             all_durations.extend(durations)
+            
+            # Evaluate quality metrics for each sample
+            quality = evaluate_quality_metrics(seq, encoding)
+            all_quality_metrics.append(quality)
 
         # Compute aggregate statistics
+        avg_quality = {
+            "pitch_class_entropy": float(
+                np.nanmean([q["pitch_class_entropy"] for q in all_quality_metrics])
+            ),
+            "scale_consistency": float(
+                np.nanmean([q["scale_consistency"] for q in all_quality_metrics])
+            ),
+            "groove_consistency": float(
+                np.nanmean([q["groove_consistency"] for q in all_quality_metrics])
+            ),
+        }
+        
+        # Calculate degradation from ground truth
+        degradation = calculate_degradation(avg_quality, GROUND_TRUTH_METRICS)
+        
         metrics = {
             "pitch_mean": float(np.mean(all_pitches)) if all_pitches else 0.0,
             "pitch_std": float(np.std(all_pitches)) if all_pitches else 0.0,
@@ -530,6 +627,8 @@ def generate_with_steering(
             "duration_mean": float(np.mean(all_durations)) if all_durations else 0.0,
             "duration_std": float(np.std(all_durations)) if all_durations else 0.0,
             "n_notes": len(all_pitches),
+            "quality_metrics": avg_quality,
+            "degradation": degradation,
         }
 
         return generated_sequences, metrics
@@ -679,8 +778,22 @@ def analyze_steering_effect(all_results: dict, concept: str):
     logger.info(f"  Slope:                {duration_slope:+.4f} ticks per λ")
     logger.info(f"  Monotonic:            {'✓ Yes' if duration_monotonic else '✗ No'}")
 
-    logger.info("\n" + "-" * 80)
-    logger.info("PROGRESSION ACROSS LAMBDA")
+    logger.info("\n" + "-" * 80)    logger.info("QUALITY DEGRADATION ANALYSIS")
+    logger.info("-" * 80)
+    logger.info(f"Ground truth (from paper): entropy={GROUND_TRUTH_METRICS['pitch_class_entropy']:.3f}, scale={GROUND_TRUTH_METRICS['scale_consistency']:.2f}%, groove={GROUND_TRUTH_METRICS['groove_consistency']:.2f}%")
+    logger.info("\nDegradation across lambda values:")
+    for lam in sorted_lambdas:
+        r = all_results[lam]
+        deg = r.get("degradation", {})
+        qual = r.get("quality_metrics", {})
+        logger.info(
+            f"λ={lam:+5.1f}: total_deg={deg.get('total_degradation', np.nan):6.2f}, "
+            f"entropy={qual.get('pitch_class_entropy', np.nan):5.3f}, "
+            f"scale={qual.get('scale_consistency', np.nan):5.2f}%, "
+            f"groove={qual.get('groove_consistency', np.nan):5.2f}%"
+        )
+
+    logger.info(f"\n" + "-" * 80)    logger.info("PROGRESSION ACROSS LAMBDA")
     logger.info("-" * 80)
     for lam in sorted_lambdas:
         r = all_results[lam]
@@ -749,7 +862,7 @@ def main():
         "--steering_strengths",
         nargs="+",
         type=float,
-        default=[-2.0, -1.0, 0.0, 1.0, 2.0],
+        default=[-2.0, -1.5, -1.0, -0.5, 0.0, 0.5, 1.0, 1.5, 2.0],
         help="Steering strengths λ to test (positive=amplify, negative=suppress, 0=baseline)",
     )
     parser.add_argument(
