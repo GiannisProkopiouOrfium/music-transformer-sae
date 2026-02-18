@@ -152,9 +152,7 @@ def evaluate_quality_metrics(tokens: np.ndarray, encoding: dict) -> dict:
         return {
             "pitch_class_entropy": muspy.pitch_class_entropy(music),
             "scale_consistency": muspy.scale_consistency(music) * 100,
-            "groove_consistency": muspy.groove_consistency(
-                music, 4 * music.resolution
-            )
+            "groove_consistency": muspy.groove_consistency(music, 4 * music.resolution)
             * 100,
         }
     except Exception as e:
@@ -174,13 +172,11 @@ def calculate_degradation(metrics: dict, baseline: dict) -> dict:
     )
     scale_diff = max(
         0,
-        baseline.get("scale_consistency", 0)
-        - metrics.get("scale_consistency", 0),
+        baseline.get("scale_consistency", 0) - metrics.get("scale_consistency", 0),
     )
     groove_diff = max(
         0,
-        baseline.get("groove_consistency", 0)
-        - metrics.get("groove_consistency", 0),
+        baseline.get("groove_consistency", 0) - metrics.get("groove_consistency", 0),
     )
 
     total_degradation = entropy_diff + scale_diff + groove_diff
@@ -189,9 +185,9 @@ def calculate_degradation(metrics: dict, baseline: dict) -> dict:
         "entropy_diff": float(entropy_diff) if not np.isnan(entropy_diff) else 0.0,
         "scale_diff": float(scale_diff),
         "groove_diff": float(groove_diff),
-        "total_degradation": float(total_degradation)
-        if not np.isnan(total_degradation)
-        else 0.0,
+        "total_degradation": (
+            float(total_degradation) if not np.isnan(total_degradation) else 0.0
+        ),
     }
 
 
@@ -387,13 +383,15 @@ def evaluate_configuration(
 
     return {
         "mean_pitch": float(np.mean(all_pitches)) if all_pitches else 0.0,
-        "std_pitch": float(np.std(per_sample_pitch_means))
-        if per_sample_pitch_means
-        else 0.0,
+        "std_pitch": (
+            float(np.std(per_sample_pitch_means)) if per_sample_pitch_means else 0.0
+        ),
         "mean_duration": float(np.mean(all_durations)) if all_durations else 0.0,
-        "std_duration": float(np.std(per_sample_duration_means))
-        if per_sample_duration_means
-        else 0.0,
+        "std_duration": (
+            float(np.std(per_sample_duration_means))
+            if per_sample_duration_means
+            else 0.0
+        ),
         "n_notes": len(all_pitches),
         "n_samples": n_samples,
         "pitch_class_entropy": avg_entropy,
@@ -424,14 +422,10 @@ def analyze_layer_group(
 
     # Determine target metric
     if "pitch" in concept.lower():
-        target_values = np.array(
-            [results[lv]["mean_pitch"] for lv in valid_lambdas]
-        )
+        target_values = np.array([results[lv]["mean_pitch"] for lv in valid_lambdas])
         metric_name = "pitch"
     else:
-        target_values = np.array(
-            [results[lv]["mean_duration"] for lv in valid_lambdas]
-        )
+        target_values = np.array([results[lv]["mean_duration"] for lv in valid_lambdas])
         metric_name = "duration"
 
     # Correlation analysis
@@ -445,8 +439,7 @@ def analyze_layer_group(
 
     # Monotonicity check
     is_monotonic = all(
-        target_values[i] <= target_values[i + 1]
-        for i in range(len(target_values) - 1)
+        target_values[i] <= target_values[i + 1] for i in range(len(target_values) - 1)
     )
 
     # Range of effect (max - min target value)
@@ -472,15 +465,19 @@ def analyze_layer_group(
 
     # Degradation at extremes only (non-zero lambdas)
     extreme_lambdas = [lv for lv in valid_lambdas if abs(lv) > 1e-9]
-    avg_extreme_degradation = float(
-        np.mean(
-            [
-                results[lv]["degradation"]["total_degradation"]
-                for lv in extreme_lambdas
-                if "degradation" in results[lv]
-            ]
+    avg_extreme_degradation = (
+        float(
+            np.mean(
+                [
+                    results[lv]["degradation"]["total_degradation"]
+                    for lv in extreme_lambdas
+                    if "degradation" in results[lv]
+                ]
+            )
         )
-    ) if extreme_lambdas else 0.0
+        if extreme_lambdas
+        else 0.0
+    )
 
     # Composite score: reward high correlation & range, penalize degradation
     # Score = |r| * effect_range - degradation_penalty
@@ -495,7 +492,7 @@ def analyze_layer_group(
         "pearson_p": float(pearson_p),
         "spearman_r": float(spearman_r),
         "spearman_p": float(spearman_p),
-        "r_squared": float(r_value ** 2),
+        "r_squared": float(r_value**2),
         "slope": float(slope),
         "intercept": float(intercept),
         "std_err": float(std_err),
@@ -508,8 +505,7 @@ def analyze_layer_group(
         "avg_extreme_degradation": avg_extreme_degradation,
         "composite_score": float(composite_score),
         "lambda_to_value": {
-            str(lv): float(target_values[i])
-            for i, lv in enumerate(valid_lambdas)
+            str(lv): float(target_values[i]) for i, lv in enumerate(valid_lambdas)
         },
     }
 
@@ -555,9 +551,7 @@ def print_results_table(
     ranked_names = [name for name, _ in ranked]
 
     # Also show unranked ones
-    all_names = ranked_names + [
-        n for n in LAYER_GROUPS if n not in ranked_names
-    ]
+    all_names = ranked_names + [n for n in results if n not in ranked_names]
 
     for layer_name in all_names:
         if layer_name not in results:
@@ -625,20 +619,20 @@ def print_results_table(
         )
 
     # Best single layer
-    single_ranked = [
-        (n, a) for n, a in ranked if n.startswith("single_")
-    ]
+    single_ranked = [(n, a) for n, a in ranked if n.startswith("single_")]
     if single_ranked:
         best_single = single_ranked[0]
-        print(f"\n  Best single layer: {best_single[0]} (score={best_single[1]['composite_score']:+.3f})")
+        print(
+            f"\n  Best single layer: {best_single[0]} (score={best_single[1]['composite_score']:+.3f})"
+        )
 
     # Best group
-    group_ranked = [
-        (n, a) for n, a in ranked if not n.startswith("single_")
-    ]
+    group_ranked = [(n, a) for n, a in ranked if not n.startswith("single_")]
     if group_ranked:
         best_group = group_ranked[0]
-        print(f"  Best layer group:  {best_group[0]} (score={best_group[1]['composite_score']:+.3f})")
+        print(
+            f"  Best layer group:  {best_group[0]} (score={best_group[1]['composite_score']:+.3f})"
+        )
 
     print("=" * 120)
 
@@ -727,8 +721,16 @@ def main():
         action="store_true",
         help="Save generated .npy files for each configuration",
     )
+    parser.add_argument("--gpu", type=int, default=0, help="GPU device (default: 0)")
     parser.add_argument(
-        "--gpu", type=int, default=0, help="GPU device (default: 0)"
+        "--layers",
+        nargs="+",
+        type=str,
+        default=None,
+        help=(
+            "Layer groups to test (default: all groups). "
+            "E.g.: --layers single_8 single_10 single_11 late all"
+        ),
     )
 
     args = parser.parse_args()
@@ -737,12 +739,23 @@ def main():
     if args.lambda_values is None:
         args.lambda_values = DEFAULT_LAMBDA_VALUES
 
+    # Filter layer groups if specified
+    if args.layers is not None:
+        invalid = [lg for lg in args.layers if lg not in LAYER_GROUPS]
+        if invalid:
+            parser.error(
+                f"Unknown layer groups: {invalid}. "
+                f"Valid options: {list(LAYER_GROUPS.keys())}"
+            )
+        selected_layer_groups = {
+            name: LAYER_GROUPS[name] for name in args.layers
+        }
+    else:
+        selected_layer_groups = LAYER_GROUPS
+
     if args.output_dir is None:
         args.output_dir = (
-            args.exp_dir
-            / "sparse_steering"
-            / "layer_lambda_opt"
-            / args.concept
+            args.exp_dir / "sparse_steering" / "layer_lambda_opt" / args.concept
         )
 
     args.output_dir.mkdir(parents=True, exist_ok=True)
@@ -757,18 +770,16 @@ def main():
     logger.addHandler(file_handler)
 
     # Setup device
-    device = torch.device(
-        f"cuda:{args.gpu}" if torch.cuda.is_available() else "cpu"
-    )
+    device = torch.device(f"cuda:{args.gpu}" if torch.cuda.is_available() else "cpu")
 
-    total_configs = len(LAYER_GROUPS) * len(args.lambda_values)
+    total_configs = len(selected_layer_groups) * len(args.lambda_values)
 
     logger.info("=" * 80)
     logger.info("SAS LAYER-LAMBDA OPTIMIZATION EXPERIMENT")
     logger.info("=" * 80)
     logger.info(f"Concept:            {args.concept}")
     logger.info(f"Lambda values:      {args.lambda_values}")
-    logger.info(f"Layer groups:       {len(LAYER_GROUPS)}")
+    logger.info(f"Layer groups:       {len(selected_layer_groups)} — {list(selected_layer_groups.keys())}")
     logger.info(f"Samples per config: {args.n_samples}")
     logger.info(f"Max seq length:     {args.max_seq_len}")
     logger.info(f"Total configs:      {total_configs}")
@@ -812,7 +823,7 @@ def main():
     start_time = time.time()
     config_count = 0
 
-    for layer_name, layer_group in LAYER_GROUPS.items():
+    for layer_name, layer_group in selected_layer_groups.items():
         logger.info(f"\n{'='*60}")
         logger.info(f"Layer group: {layer_name} = {layer_group}")
         logger.info(f"{'='*60}")
@@ -820,7 +831,11 @@ def main():
         for lam in args.lambda_values:
             config_count += 1
             elapsed = time.time() - start_time
-            eta = (elapsed / config_count) * (total_configs - config_count) if config_count > 0 else 0
+            eta = (
+                (elapsed / config_count) * (total_configs - config_count)
+                if config_count > 0
+                else 0
+            )
 
             logger.info(
                 f"  [{config_count}/{total_configs}] "
@@ -883,7 +898,7 @@ def main():
 
     # ---- Analyze each layer group ----
     analyses = {}
-    for layer_name in LAYER_GROUPS:
+    for layer_name in selected_layer_groups:
         if layer_name in results:
             analyses[layer_name] = analyze_layer_group(
                 results[layer_name], layer_name, args.lambda_values, args.concept
@@ -906,7 +921,7 @@ def main():
                 "n_samples": args.n_samples,
                 "max_seq_len": args.max_seq_len,
                 "lambda_values": args.lambda_values,
-                "layer_groups": {k: list(v) for k, v in LAYER_GROUPS.items()},
+                "layer_groups": {k: list(v) for k, v in selected_layer_groups.items()},
                 "ground_truth_metrics": GROUND_TRUTH_METRICS,
                 "total_time_minutes": total_time / 60,
                 "results": results_dict,
@@ -927,7 +942,7 @@ def main():
         recommendation = {
             "concept": args.concept,
             "best_layer_group": best_name,
-            "best_layers": LAYER_GROUPS[best_name],
+            "best_layers": selected_layer_groups[best_name],
             "composite_score": best_analysis["composite_score"],
             "pearson_r": best_analysis["pearson_r"],
             "r_squared": best_analysis["r_squared"],
@@ -938,14 +953,14 @@ def main():
         }
 
         # Also find best single layer
-        single_ranked = [
-            (n, a) for n, a in ranked if n.startswith("single_")
-        ]
+        single_ranked = [(n, a) for n, a in ranked if n.startswith("single_")]
         if single_ranked:
             best_single_name, best_single_analysis = single_ranked[0]
             recommendation["best_single_layer"] = best_single_name
-            recommendation["best_single_layer_idx"] = LAYER_GROUPS[best_single_name][0]
-            recommendation["best_single_score"] = best_single_analysis["composite_score"]
+            recommendation["best_single_layer_idx"] = selected_layer_groups[best_single_name][0]
+            recommendation["best_single_score"] = best_single_analysis[
+                "composite_score"
+            ]
 
         rec_file = args.output_dir / f"best_config_{args.concept}.json"
         with open(rec_file, "w") as f:
