@@ -747,9 +747,7 @@ def main():
                 f"Unknown layer groups: {invalid}. "
                 f"Valid options: {list(LAYER_GROUPS.keys())}"
             )
-        selected_layer_groups = {
-            name: LAYER_GROUPS[name] for name in args.layers
-        }
+        selected_layer_groups = {name: LAYER_GROUPS[name] for name in args.layers}
     else:
         selected_layer_groups = LAYER_GROUPS
 
@@ -779,7 +777,9 @@ def main():
     logger.info("=" * 80)
     logger.info(f"Concept:            {args.concept}")
     logger.info(f"Lambda values:      {args.lambda_values}")
-    logger.info(f"Layer groups:       {len(selected_layer_groups)} — {list(selected_layer_groups.keys())}")
+    logger.info(
+        f"Layer groups:       {len(selected_layer_groups)} — {list(selected_layer_groups.keys())}"
+    )
     logger.info(f"Samples per config: {args.n_samples}")
     logger.info(f"Max seq length:     {args.max_seq_len}")
     logger.info(f"Total configs:      {total_configs}")
@@ -957,7 +957,9 @@ def main():
         if single_ranked:
             best_single_name, best_single_analysis = single_ranked[0]
             recommendation["best_single_layer"] = best_single_name
-            recommendation["best_single_layer_idx"] = selected_layer_groups[best_single_name][0]
+            recommendation["best_single_layer_idx"] = selected_layer_groups[
+                best_single_name
+            ][0]
             recommendation["best_single_score"] = best_single_analysis[
                 "composite_score"
             ]
