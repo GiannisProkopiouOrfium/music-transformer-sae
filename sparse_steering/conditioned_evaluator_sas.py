@@ -54,7 +54,7 @@ REPO_ROOT = pathlib.Path(__file__).parent.parent
 DEFAULT_CHECKPOINT = REPO_ROOT / "exp" / "sod" / "ape" / "checkpoints" / "best_model.pt"
 DEFAULT_TRAIN_ARGS = REPO_ROOT / "exp" / "sod" / "ape" / "train-args.json"
 DEFAULT_ENCODING = REPO_ROOT / "data" / "sod" / "processed" / "notes" / "encoding.json"
-DEFAULT_SAE_DIR = REPO_ROOT / "exp" / "sod" / "sparse_steering" / "sae_models"
+DEFAULT_SAE_DIR = REPO_ROOT / "exp" / "sod" / "sparse_steering" / "sae_checkpoints"
 DEFAULT_SAS_DIR = REPO_ROOT / "exp" / "sod" / "sparse_steering" / "sas_vectors"
 DEFAULT_NOTES_DIR = REPO_ROOT / "data" / "sod" / "processed" / "notes"
 
