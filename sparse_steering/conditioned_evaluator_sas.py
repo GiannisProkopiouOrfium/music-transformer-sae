@@ -885,11 +885,15 @@ def print_statistical_summary(stats: dict, concept: str) -> None:
         pr = cs["pearson_r"]
         pp = cs["pearson_p"]
         r2 = cs["linear_r2"]
-        expected_pos = category == "low"
+        # Direction-aware λ design: LOW songs get only positive λ, HIGH songs
+        # get only negative λ.  In both cases, as λ moves away from 0 the
+        # metric moves in the intended direction, so the correlation between
+        # the actual λ values and the metric is POSITIVE for both categories.
+        expected_pos = True
         direction_ok = (pr > 0) == expected_pos
 
         print(f"\n{label} Songs:")
-        print(f"  Expected: {'Positive' if expected_pos else 'Negative'} correlation")
+        print(f"  Expected: Positive correlation (direction-aware λ)")
         print(f"  Actual:   {'Positive' if pr > 0 else 'Negative'} (r = {pr:+.3f})")
         print(f"  Direction: {'CORRECT' if direction_ok else 'INCORRECT'}")
         print(f"  Strength: {_interpret_correlation(pr, pp)}")
