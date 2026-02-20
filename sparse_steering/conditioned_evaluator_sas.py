@@ -935,7 +935,7 @@ def print_statistical_summary(stats: dict, concept: str) -> None:
 
 
 def generate_listening_priority_list(
-    results: List[dict], output_dir: pathlib.Path
+    results: List[dict], output_dir: pathlib.Path, concept: str = ""
 ) -> None:
     """Rank samples by steering effectiveness + low degradation and save."""
     valid = [
@@ -1006,7 +1006,8 @@ def generate_listening_priority_list(
         lines.append(f"   File: {r['category']}/{lam_str}/{r['song_name']}.wav")
         lines.append("")
 
-    list_file = output_dir / "listening_priority_list.txt"
+    suffix = f"_{concept}" if concept else ""
+    list_file = output_dir / f"listening_priority_list{suffix}.txt"
     with open(list_file, "w") as f:
         f.write("\n".join(lines))
 
@@ -1203,7 +1204,7 @@ def main():
     stat_analysis = calculate_statistical_analysis(all_results, args.concept)
 
     # ── Persist ──────────────────────────────────────────────────────────
-    results_file = args.output_dir / "conditioned_results.json"
+    results_file = args.output_dir / f"conditioned_results_{args.concept}.json"
     with open(results_file, "w") as f:
         json.dump(
             {
@@ -1220,7 +1221,7 @@ def main():
     print_statistical_summary(stat_analysis, args.concept)
 
     logger.info("\nGenerating listening priority list...")
-    generate_listening_priority_list(all_results, args.output_dir)
+    generate_listening_priority_list(all_results, args.output_dir, args.concept)
 
     # ── Final summary ────────────────────────────────────────────────────
     print("\n" + "=" * 80)
