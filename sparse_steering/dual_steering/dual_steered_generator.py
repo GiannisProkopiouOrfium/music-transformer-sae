@@ -136,6 +136,173 @@ class DualSASSteeringHook:
 # ════════════════════════════════════════════════════════════════════════════
 
 
+class ExpandedKDualSASSteeringHook:
+    """Forward hook that temporarily increases TopK budget for dual steering.
+
+    During dual-concept steering, two concepts compete for the same K slots
+    in TopK re-sparsification.  This hook temporarily increases K by a
+    configurable factor (default 1.5×) so that both concepts can retain
+    enough active features.
+
+    The SAE decoder is a simple linear map and is reasonably robust to
+    moderate K increases.
+    """
+
+    def __init__(
+        self,
+        sae_models: Dict[int, nn.Module],
+        combined_vectors: Dict[int, np.ndarray],
+        layers_to_steer: Optional[List[int]] = None,
+        k_multiplier: float = 1.5,
+    ):
+        self.sae_models = sae_models
+        self.layers_to_steer = (
+            set(layers_to_steer) if layers_to_steer is not None else None
+        )
+        self.k_multiplier = k_multiplier
+
+        self.combined_torch = {
+            layer_idx: torch.from_numpy(vec).float()
+            for layer_idx, vec in combined_vectors.items()
+        }
+        self.device = None
+        self._initialised = False
+
+    def _ensure_device(self, activations: torch.Tensor):
+        if not self._initialised:
+            self.device = activations.device
+            for k in self.combined_torch:
+                self.combined_torch[k] = self.combined_torch[k].to(self.device)
+            self._initialised = True
+
+    def __call__(self, module, input, output, layer_idx: int):
+        is_tuple = isinstance(output, tuple)
+        actual = output[0] if is_tuple else output
+        others = output[1:] if is_tuple else None
+
+        if self.layers_to_steer is not None and layer_idx not in self.layers_to_steer:
+            return output
+        if layer_idx not in self.sae_models or layer_idx not in self.combined_torch:
+            return output
+
+        self._ensure_device(actual)
+
+        sae = self.sae_models[layer_idx]
+        v_combined = self.combined_torch[layer_idx]
+
+        a_l = actual
+        B, T, D = a_l.shape
+        a_flat = a_l.reshape(-1, D)
+
+        # 1. Encode
+        f_a = sae.encode(a_flat)
+
+        # 2. Correction
+        reconstructed = sae.decode(f_a)
+        delta = a_flat - reconstructed
+
+        # 3. Steer
+        s_l = f_a + v_combined.unsqueeze(0)
+
+        # 4. Re-sparsify with EXPANDED K
+        s_l = torch.relu(s_l)
+        original_k = sae.topk.k
+        expanded_k = min(int(original_k * self.k_multiplier), s_l.shape[-1])
+        sae.topk.k = expanded_k
+        try:
+            s_l = sae.topk(s_l)
+        finally:
+            sae.topk.k = original_k  # always restore
+
+        # 5. Decode + correct
+        a_prime = sae.decode(s_l)
+        a_steered = (a_prime + delta).reshape(B, T, D)
+
+        return (a_steered,) + others if is_tuple else a_steered
+
+
+class SequentialDualSASSteeringHook:
+    """Forward hook that applies pitch and duration as two sequential Algorithm 2 passes.
+
+    Pass 1:  a  → encode → add λ_p·v_pitch → TopK → decode + Δ₁ → a₁
+    Pass 2:  a₁ → encode → add λ_d·v_dur   → TopK → decode + Δ₂ → a₂
+
+    Each concept gets the full K budget independently (no competition).
+    Trade-off: 2× compute cost per layer, and potential order dependence.
+    """
+
+    def __init__(
+        self,
+        sae_models: Dict[int, nn.Module],
+        pitch_vectors: Dict[int, np.ndarray],
+        duration_vectors: Dict[int, np.ndarray],
+        layers_to_steer: Optional[List[int]] = None,
+    ):
+        self.sae_models = sae_models
+        self.layers_to_steer = (
+            set(layers_to_steer) if layers_to_steer is not None else None
+        )
+
+        self.pitch_torch = {
+            idx: torch.from_numpy(v).float() for idx, v in pitch_vectors.items()
+        }
+        self.duration_torch = {
+            idx: torch.from_numpy(v).float() for idx, v in duration_vectors.items()
+        }
+        self.device = None
+        self._initialised = False
+
+    def _ensure_device(self, activations: torch.Tensor):
+        if not self._initialised:
+            self.device = activations.device
+            for k in self.pitch_torch:
+                self.pitch_torch[k] = self.pitch_torch[k].to(self.device)
+            for k in self.duration_torch:
+                self.duration_torch[k] = self.duration_torch[k].to(self.device)
+            self._initialised = True
+
+    def _single_pass(self, sae, a_flat, v_concept):
+        """One full Algorithm 2 pass."""
+        f_a = sae.encode(a_flat)
+        reconstructed = sae.decode(f_a)
+        delta = a_flat - reconstructed
+
+        s_l = f_a + v_concept.unsqueeze(0)
+        s_l = torch.relu(s_l)
+        s_l = sae.topk(s_l)
+
+        a_prime = sae.decode(s_l)
+        return a_prime + delta
+
+    def __call__(self, module, input, output, layer_idx: int):
+        is_tuple = isinstance(output, tuple)
+        actual = output[0] if is_tuple else output
+        others = output[1:] if is_tuple else None
+
+        if self.layers_to_steer is not None and layer_idx not in self.layers_to_steer:
+            return output
+        if layer_idx not in self.sae_models:
+            return output
+
+        self._ensure_device(actual)
+        sae = self.sae_models[layer_idx]
+
+        a_l = actual
+        B, T, D = a_l.shape
+        a_flat = a_l.reshape(-1, D)
+
+        # Pass 1: pitch steering
+        if layer_idx in self.pitch_torch:
+            a_flat = self._single_pass(sae, a_flat, self.pitch_torch[layer_idx])
+
+        # Pass 2: duration steering (on already-pitch-steered activations)
+        if layer_idx in self.duration_torch:
+            a_flat = self._single_pass(sae, a_flat, self.duration_torch[layer_idx])
+
+        a_steered = a_flat.reshape(B, T, D)
+        return (a_steered,) + others if is_tuple else a_steered
+
+
 def register_dual_hooks(
     model,
     sae_models: Dict[int, nn.Module],
@@ -180,6 +347,79 @@ def remove_hooks(handles: List):
     for h in handles:
         h.remove()
     logger.info(f"Removed {len(handles)} hooks")
+
+
+def _register_hook_on_layers(model, hook_callable) -> List:
+    """Shared helper: attach a hook_callable to every attention module."""
+    handles = []
+    layers = model.decoder.net.attn_layers.layers
+    for layer_idx, layer in enumerate(layers):
+        if isinstance(layer, nn.ModuleList) and len(layer) > 1:
+            target_module = layer[1]
+        else:
+            target_module = layer
+        handle = target_module.register_forward_hook(
+            lambda module, inp, out, idx=layer_idx: hook_callable(module, inp, out, idx)
+        )
+        handles.append(handle)
+    return handles
+
+
+def register_expanded_k_hooks(
+    model,
+    sae_models: Dict[int, nn.Module],
+    combined_vectors: Dict[int, np.ndarray],
+    layers_to_steer: Optional[List[int]] = None,
+    k_multiplier: float = 1.5,
+) -> List:
+    """Register hooks that expand TopK budget during dual steering.
+
+    Args:
+        model:           MMT model
+        sae_models:      {layer: SparseAutoencoder}
+        combined_vectors: {layer: (4096,)} composed vector (direct addition)
+        layers_to_steer: layers to steer
+        k_multiplier:    factor to multiply K by (default 1.5)
+
+    Returns:
+        List of hook handles
+    """
+    hook = ExpandedKDualSASSteeringHook(
+        sae_models, combined_vectors, layers_to_steer, k_multiplier
+    )
+    handles = _register_hook_on_layers(model, hook)
+    logger.info(
+        f"Registered {len(handles)} expanded-K dual-steering hooks "
+        f"(K×{k_multiplier:.1f})"
+    )
+    return handles
+
+
+def register_sequential_hooks(
+    model,
+    sae_models: Dict[int, nn.Module],
+    pitch_vectors: Dict[int, np.ndarray],
+    duration_vectors: Dict[int, np.ndarray],
+    layers_to_steer: Optional[List[int]] = None,
+) -> List:
+    """Register hooks that apply pitch and duration as two sequential passes.
+
+    Args:
+        model:            MMT model
+        sae_models:       {layer: SparseAutoencoder}
+        pitch_vectors:    {layer: (4096,)} scaled pitch vector
+        duration_vectors: {layer: (4096,)} scaled duration vector
+        layers_to_steer:  layers to steer
+
+    Returns:
+        List of hook handles
+    """
+    hook = SequentialDualSASSteeringHook(
+        sae_models, pitch_vectors, duration_vectors, layers_to_steer
+    )
+    handles = _register_hook_on_layers(model, hook)
+    logger.info(f"Registered {len(handles)} sequential dual-steering hooks")
+    return handles
 
 
 # ════════════════════════════════════════════════════════════════════════════

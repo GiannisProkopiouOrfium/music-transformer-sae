@@ -65,6 +65,8 @@ from config_dual import (
 )
 from dual_steered_generator import (
     register_dual_hooks,
+    register_expanded_k_hooks,
+    register_sequential_hooks,
     remove_hooks,
 )
 from sparse_vector_composer import (
@@ -178,11 +180,20 @@ def evaluate_config(
     """Generate samples for one (strategy, λ_p, λ_d) config and evaluate."""
     eos = encoding["type_code_map"]["end-of-song"]
 
-    # Compose vectors
-    combined = composer.compose(lambda_pitch, lambda_duration, strategy)
-
-    # Register hooks
-    handles = register_dual_hooks(model, sae_models, combined, layers_to_steer)
+    # Register the appropriate hook type for this strategy
+    if strategy == "expanded_k":
+        combined = composer.compose(lambda_pitch, lambda_duration, strategy)
+        handles = register_expanded_k_hooks(
+            model, sae_models, combined, layers_to_steer, k_multiplier=1.5
+        )
+    elif strategy == "sequential":
+        pitch_vecs, dur_vecs = composer.compose_separate(lambda_pitch, lambda_duration)
+        handles = register_sequential_hooks(
+            model, sae_models, pitch_vecs, dur_vecs, layers_to_steer
+        )
+    else:
+        combined = composer.compose(lambda_pitch, lambda_duration, strategy)
+        handles = register_dual_hooks(model, sae_models, combined, layers_to_steer)
 
     all_pitches = []
     all_durations = []

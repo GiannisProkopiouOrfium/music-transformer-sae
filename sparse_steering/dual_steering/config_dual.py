@@ -64,6 +64,9 @@ STRATEGIES = [
     "cross_concept_masking",
     "gram_schmidt_pitch",
     "gram_schmidt_duration",
+    "cross_concept_sas",
+    "expanded_k",
+    "sequential",
 ]
 
 # ── Conditioned evaluation scenarios ────────────────────────────────────────

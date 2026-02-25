@@ -20,6 +20,21 @@ Strategy 3 — Gram-Schmidt: Orthogonalise Duration w.r.t. Pitch
 Strategy 4 — Gram-Schmidt: Orthogonalise Pitch w.r.t. Duration
   Symmetric to Strategy 3 but preserves duration and modifies pitch.
 
+Strategy 5 — Cross-Concept SAS (extend Algorithm 1 Step 5 across concepts)
+  Zero out all features that are non-zero in BOTH v_pitch and v_duration.
+  This extends the SAS paper's within-concept shared removal to the
+  cross-concept case.  Result: perfectly disjoint supports.
+  Then combine via direct addition.
+
+Strategy 6 — Expanded K (handled at the hook level, not here)
+  Uses direct addition for composition, but the *hook* temporarily
+  increases K during TopK re-sparsification to give both concepts
+  enough budget.
+
+Strategy 7 — Sequential (handled at the hook level, not here)
+  Two separate Algorithm 2 passes: first pitch, then duration.
+  Each concept gets the full K budget independently.
+
 Usage:
     from sparse_vector_composer import SparseVectorComposer
 
@@ -44,6 +59,9 @@ CompositionStrategy = Literal[
     "cross_concept_masking",
     "gram_schmidt_pitch",
     "gram_schmidt_duration",
+    "cross_concept_sas",
+    "expanded_k",
+    "sequential",
 ]
 
 ALL_STRATEGIES = [
@@ -51,7 +69,13 @@ ALL_STRATEGIES = [
     "cross_concept_masking",
     "gram_schmidt_pitch",
     "gram_schmidt_duration",
+    "cross_concept_sas",
+    "expanded_k",
+    "sequential",
 ]
+
+# Strategies that need special hook handling (not just a combined vector)
+HOOK_SPECIAL_STRATEGIES = {"expanded_k", "sequential"}
 
 
 class SparseVectorComposer:
@@ -129,10 +153,35 @@ class SparseVectorComposer:
             return self._gram_schmidt_pitch(lambda_pitch, lambda_duration)
         elif strategy == "gram_schmidt_duration":
             return self._gram_schmidt_duration(lambda_pitch, lambda_duration)
+        elif strategy == "cross_concept_sas":
+            return self._cross_concept_sas(lambda_pitch, lambda_duration)
+        elif strategy in ("expanded_k", "sequential"):
+            # These strategies use direct composition; the special handling
+            # happens at the hook level, not here.
+            return self._direct(lambda_pitch, lambda_duration)
         else:
             raise ValueError(
                 f"Unknown strategy '{strategy}'. " f"Choose from: {ALL_STRATEGIES}"
             )
+
+    def compose_separate(
+        self,
+        lambda_pitch: float,
+        lambda_duration: float,
+    ) -> tuple:
+        """Return scaled pitch and duration vectors separately.
+
+        Used by sequential strategy which needs to apply them in two passes.
+
+        Returns:
+            (pitch_vecs, duration_vecs) — each Dict[int, np.ndarray]
+        """
+        pitch_scaled = {}
+        dur_scaled = {}
+        for layer in self.layers:
+            pitch_scaled[layer] = lambda_pitch * self.pitch_vectors[layer]
+            dur_scaled[layer] = lambda_duration * self.duration_vectors[layer]
+        return pitch_scaled, dur_scaled
 
     def get_overlap_summary(self) -> dict:
         """Return pre-computed overlap statistics for diagnostic logging."""
@@ -228,6 +277,30 @@ class SparseVectorComposer:
             vd_orth_sparse = np.where(keep, vd_orth, 0.0)
 
             combined[layer] = lambda_pitch * vp + lambda_duration * vd_orth_sparse
+        return combined
+
+    def _cross_concept_sas(
+        self, lambda_pitch: float, lambda_duration: float
+    ) -> Dict[int, np.ndarray]:
+        """Strategy 5: Cross-concept SAS — extend Alg 1 Step 5 across concepts.
+
+        Zero out ALL features where BOTH v_pitch[c] ≠ 0 AND v_duration[c] ≠ 0.
+        This mirrors the SAS paper's within-concept shared removal but applied
+        between concepts.  Result: perfectly disjoint feature supports.
+
+        combined = λ_p · v_pitch_clean + λ_d · v_duration_clean
+        """
+        combined = {}
+        for layer in self.layers:
+            vp = self.pitch_vectors[layer].copy()
+            vd = self.duration_vectors[layer].copy()
+            shared = self._overlap_cache[layer]["shared_mask"]
+
+            # Zero shared features in BOTH vectors (SAS paper philosophy)
+            vp[shared] = 0.0
+            vd[shared] = 0.0
+
+            combined[layer] = lambda_pitch * vp + lambda_duration * vd
         return combined
 
     def _gram_schmidt_pitch(
