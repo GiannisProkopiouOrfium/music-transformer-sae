@@ -67,7 +67,7 @@ SONG_COLORS = [
     "#17becf",  # cyan
 ]
 
-LOW_COLOR = "#1f77b4"   # blue
+LOW_COLOR = "#1f77b4"  # blue
 HIGH_COLOR = "#d62728"  # red
 BASELINE_COLOR = "#7f7f7f"
 
@@ -491,12 +491,8 @@ def plot_per_song_curves(
         per_song = data["per_song"]
 
         # Separate by category
-        low_songs = {
-            k: v for k, v in per_song.items() if v["category"] == "low"
-        }
-        high_songs = {
-            k: v for k, v in per_song.items() if v["category"] == "high"
-        }
+        low_songs = {k: v for k, v in per_song.items() if v["category"] == "low"}
+        high_songs = {k: v for k, v in per_song.items() if v["category"] == "high"}
 
         # --- LOW songs (positive λ) ---
         for i, (name, sdata) in enumerate(
@@ -569,9 +565,7 @@ def plot_per_song_curves(
 # ============================================================================
 
 
-def plot_effect_sizes(
-    pitch_data: dict, duration_data: dict, output_dir: pathlib.Path
-):
+def plot_effect_sizes(pitch_data: dict, duration_data: dict, output_dir: pathlib.Path):
     """Cohen's d effect size bar chart for both concepts."""
     fig, axes = plt.subplots(1, 2, figsize=(14, 5.5))
 
@@ -665,21 +659,35 @@ def plot_conditioned_summary(
 
         for cat_key, ax, color, direction in [
             (
-                [k for k in comps if "low" in k][0] if any("low" in k for k in comps) else None,
+                (
+                    [k for k in comps if "low" in k][0]
+                    if any("low" in k for k in comps)
+                    else None
+                ),
                 ax_low,
                 LOW_COLOR,
                 "LOW → Push UP",
             ),
             (
-                [k for k in comps if "high" in k][0] if any("high" in k for k in comps) else None,
+                (
+                    [k for k in comps if "high" in k][0]
+                    if any("high" in k for k in comps)
+                    else None
+                ),
                 ax_high,
                 HIGH_COLOR,
                 "HIGH → Push DOWN",
             ),
         ]:
             if cat_key is None:
-                ax.text(0.5, 0.5, "No data", ha="center", va="center",
-                        transform=ax.transAxes)
+                ax.text(
+                    0.5,
+                    0.5,
+                    "No data",
+                    ha="center",
+                    va="center",
+                    transform=ax.transAxes,
+                )
                 continue
 
             cat_comps = comps[cat_key]
@@ -696,9 +704,7 @@ def plot_conditioned_summary(
             )
 
             # Annotate with delta values
-            for i, (bar, delta, success) in enumerate(
-                zip(bars, deltas, successes)
-            ):
+            for i, (bar, delta, success) in enumerate(zip(bars, deltas, successes)):
                 va = "bottom" if delta >= 0 else "top"
                 offset = abs(delta) * 0.05 if abs(delta) > 5 else 1
                 offset = offset if delta >= 0 else -offset
@@ -856,9 +862,7 @@ def plot_sas_vs_diffmean(output_dir: pathlib.Path):
         label=f"SAS L10 (avg={np.mean(sas_pitch['degs']):.2f})",
     )
     ax.set_xticks(x_dm)
-    ax.set_xticklabels(
-        [f"{a:+.1f}" for a in diffmean_pitch["alphas"]], fontsize=9
-    )
+    ax.set_xticklabels([f"{a:+.1f}" for a in diffmean_pitch["alphas"]], fontsize=9)
     ax.set_xlabel("Steering Strength")
     ax.set_ylabel("Total Degradation")
     ax.set_title("Pitch Quality Degradation")
@@ -889,9 +893,7 @@ def plot_sas_vs_diffmean(output_dir: pathlib.Path):
         label=f"SAS L10 (avg={np.mean(sas_duration['degs']):.2f})",
     )
     ax.set_xticks(x_dm)
-    ax.set_xticklabels(
-        [f"{a:+.1f}" for a in diffmean_duration["alphas"]], fontsize=9
-    )
+    ax.set_xticklabels([f"{a:+.1f}" for a in diffmean_duration["alphas"]], fontsize=9)
     ax.set_xlabel("Steering Strength")
     ax.set_ylabel("Total Degradation")
     ax.set_title("Duration Quality Degradation")
