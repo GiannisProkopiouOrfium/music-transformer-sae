@@ -61,7 +61,9 @@ CompositionStrategy = Literal[
     "gram_schmidt_duration",
     "cross_concept_sas",
     "expanded_k",
+    "expanded_k_2x",
     "sequential",
+    "topk_budget",
 ]
 
 ALL_STRATEGIES = [
@@ -71,11 +73,13 @@ ALL_STRATEGIES = [
     "gram_schmidt_duration",
     "cross_concept_sas",
     "expanded_k",
+    "expanded_k_2x",
     "sequential",
+    "topk_budget",
 ]
 
 # Strategies that need special hook handling (not just a combined vector)
-HOOK_SPECIAL_STRATEGIES = {"expanded_k", "sequential"}
+HOOK_SPECIAL_STRATEGIES = {"expanded_k", "expanded_k_2x", "sequential", "topk_budget"}
 
 
 class SparseVectorComposer:
@@ -155,7 +159,7 @@ class SparseVectorComposer:
             return self._gram_schmidt_duration(lambda_pitch, lambda_duration)
         elif strategy == "cross_concept_sas":
             return self._cross_concept_sas(lambda_pitch, lambda_duration)
-        elif strategy in ("expanded_k", "sequential"):
+        elif strategy in ("expanded_k", "expanded_k_2x", "sequential", "topk_budget"):
             # These strategies use direct composition; the special handling
             # happens at the hook level, not here.
             return self._direct(lambda_pitch, lambda_duration)

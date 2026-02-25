@@ -66,7 +66,9 @@ STRATEGIES = [
     "gram_schmidt_duration",
     "cross_concept_sas",
     "expanded_k",
+    "expanded_k_2x",
     "sequential",
+    "topk_budget",
 ]
 
 # ── Conditioned evaluation scenarios ────────────────────────────────────────

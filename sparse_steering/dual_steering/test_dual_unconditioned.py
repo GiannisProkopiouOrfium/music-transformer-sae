@@ -67,6 +67,7 @@ from dual_steered_generator import (
     register_dual_hooks,
     register_expanded_k_hooks,
     register_sequential_hooks,
+    register_budget_allocation_hooks,
     remove_hooks,
 )
 from sparse_vector_composer import (
@@ -176,20 +177,33 @@ def evaluate_config(
     device: torch.device,
     save_midi: bool = False,
     output_dir: Optional[pathlib.Path] = None,
+    k_multiplier: float = 1.5,
 ) -> dict:
     """Generate samples for one (strategy, λ_p, λ_d) config and evaluate."""
     eos = encoding["type_code_map"]["end-of-song"]
 
     # Register the appropriate hook type for this strategy
-    if strategy == "expanded_k":
+    if strategy in ("expanded_k", "expanded_k_2x"):
+        km = 2.0 if strategy == "expanded_k_2x" else k_multiplier
         combined = composer.compose(lambda_pitch, lambda_duration, strategy)
         handles = register_expanded_k_hooks(
-            model, sae_models, combined, layers_to_steer, k_multiplier=1.5
+            model, sae_models, combined, layers_to_steer, k_multiplier=km
         )
     elif strategy == "sequential":
         pitch_vecs, dur_vecs = composer.compose_separate(lambda_pitch, lambda_duration)
         handles = register_sequential_hooks(
             model, sae_models, pitch_vecs, dur_vecs, layers_to_steer
+        )
+    elif strategy == "topk_budget":
+        combined = composer.compose(lambda_pitch, lambda_duration, strategy)
+        # Pass raw (unscaled) vectors so the hook can compute feature masks
+        handles = register_budget_allocation_hooks(
+            model,
+            sae_models,
+            combined,
+            composer.pitch_vectors,
+            composer.duration_vectors,
+            layers_to_steer,
         )
     else:
         combined = composer.compose(lambda_pitch, lambda_duration, strategy)
@@ -367,6 +381,12 @@ def main():
     parser.add_argument("--n_samples", type=int, default=N_SAMPLES_PER_CONFIG)
     parser.add_argument("--seq_len", type=int, default=SEQ_LEN)
     parser.add_argument("--save_midi", action="store_true")
+    parser.add_argument(
+        "--k_multiplier",
+        type=float,
+        default=1.5,
+        help="K multiplier for expanded_k strategy (default 1.5)",
+    )
     parser.add_argument("--gpu", type=int, default=None)
     args = parser.parse_args()
 
@@ -451,6 +471,7 @@ def main():
                 device=device,
                 save_midi=args.save_midi,
                 output_dir=args.output_dir,
+                k_multiplier=args.k_multiplier,
             )
             results.append(result)
         except Exception as e:

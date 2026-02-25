@@ -303,6 +303,152 @@ class SequentialDualSASSteeringHook:
         return (a_steered,) + others if is_tuple else a_steered
 
 
+class TopKBudgetAllocationHook:
+    """Forward hook that guarantees each concept a minimum TopK budget.
+
+    Instead of applying global TopK(K) after adding the combined vector
+    (where one concept can dominate), this hook:
+
+    1. Partitions the 4096 features into concept groups based on the
+       original SAS vectors:
+         - pitch_only:   non-zero in v_pitch only
+         - duration_only: non-zero in v_duration only
+         - shared:       non-zero in both
+         - neutral:      zero in both (the vast majority)
+
+    2. After steering, applies TopK within each concept's features
+       separately, then merges:
+         - K_pitch slots reserved for pitch_only + shared features
+         - K_dur slots reserved for duration_only + shared features
+         - K_neutral slots for the remaining neutral features
+         - Total budget = K_pitch + K_dur + K_neutral
+
+    This ensures neither concept is starved.  The budget split defaults to:
+         K_pitch = K_dur = K // 3,  K_neutral = K - 2*(K//3)
+    """
+
+    def __init__(
+        self,
+        sae_models: Dict[int, nn.Module],
+        combined_vectors: Dict[int, np.ndarray],
+        pitch_vectors_raw: Dict[int, np.ndarray],
+        duration_vectors_raw: Dict[int, np.ndarray],
+        layers_to_steer: Optional[List[int]] = None,
+        budget_split: str = "equal",  # "equal" or "proportional"
+    ):
+        self.sae_models = sae_models
+        self.layers_to_steer = (
+            set(layers_to_steer) if layers_to_steer is not None else None
+        )
+        self.budget_split = budget_split
+
+        self.combined_torch = {
+            idx: torch.from_numpy(v).float() for idx, v in combined_vectors.items()
+        }
+
+        # Pre-compute feature group masks per layer
+        self.pitch_mask = {}  # features in pitch only
+        self.duration_mask = {}  # features in duration only
+        self.shared_mask = {}  # features in both
+        self.neutral_mask = {}  # features in neither
+
+        for layer_idx in combined_vectors:
+            vp = pitch_vectors_raw.get(layer_idx)
+            vd = duration_vectors_raw.get(layer_idx)
+            if vp is None or vd is None:
+                continue
+            nz_p = vp != 0
+            nz_d = vd != 0
+            shared = nz_p & nz_d
+            p_only = nz_p & ~nz_d
+            d_only = nz_d & ~nz_p
+            neutral = ~nz_p & ~nz_d
+
+            self.pitch_mask[layer_idx] = torch.from_numpy(p_only | shared).bool()
+            self.duration_mask[layer_idx] = torch.from_numpy(d_only | shared).bool()
+            self.neutral_mask[layer_idx] = torch.from_numpy(neutral).bool()
+
+        self.device = None
+        self._initialised = False
+
+    def _ensure_device(self, activations: torch.Tensor):
+        if not self._initialised:
+            self.device = activations.device
+            for k in self.combined_torch:
+                self.combined_torch[k] = self.combined_torch[k].to(self.device)
+            for k in self.pitch_mask:
+                self.pitch_mask[k] = self.pitch_mask[k].to(self.device)
+                self.duration_mask[k] = self.duration_mask[k].to(self.device)
+                self.neutral_mask[k] = self.neutral_mask[k].to(self.device)
+            self._initialised = True
+
+    def _topk_within_mask(self, x: torch.Tensor, mask: torch.Tensor, k: int):
+        """Apply TopK only on features where mask=True, zero the rest."""
+        # x: (B*T, 4096), mask: (4096,) bool
+        if k <= 0 or not mask.any():
+            return torch.zeros_like(x)
+        masked = x * mask.unsqueeze(0)  # zero out non-concept features
+        n_active = int(mask.sum().item())
+        actual_k = min(k, n_active)
+        topk_vals, topk_idx = torch.topk(masked, actual_k, dim=-1)
+        result = torch.zeros_like(x)
+        result.scatter_(-1, topk_idx, topk_vals)
+        return result
+
+    def __call__(self, module, input, output, layer_idx: int):
+        is_tuple = isinstance(output, tuple)
+        actual = output[0] if is_tuple else output
+        others = output[1:] if is_tuple else None
+
+        if self.layers_to_steer is not None and layer_idx not in self.layers_to_steer:
+            return output
+        if layer_idx not in self.sae_models or layer_idx not in self.combined_torch:
+            return output
+        if layer_idx not in self.pitch_mask:
+            return output
+
+        self._ensure_device(actual)
+
+        sae = self.sae_models[layer_idx]
+        v_combined = self.combined_torch[layer_idx]
+        K = sae.topk.k  # original K budget
+
+        a_l = actual
+        B, T, D = a_l.shape
+        a_flat = a_l.reshape(-1, D)
+
+        # 1. Encode
+        f_a = sae.encode(a_flat)
+
+        # 2. Correction
+        reconstructed = sae.decode(f_a)
+        delta = a_flat - reconstructed
+
+        # 3. Steer
+        s_l = f_a + v_combined.unsqueeze(0)
+        s_l = torch.relu(s_l)
+
+        # 4. Budget-allocated TopK
+        # Split K into: pitch_budget + duration_budget + neutral_budget = K
+        K_concept = K // 3
+        K_neutral = K - 2 * K_concept
+
+        s_pitch = self._topk_within_mask(s_l, self.pitch_mask[layer_idx], K_concept)
+        s_dur = self._topk_within_mask(s_l, self.duration_mask[layer_idx], K_concept)
+        s_neutral = self._topk_within_mask(s_l, self.neutral_mask[layer_idx], K_neutral)
+
+        # Merge (masks are non-overlapping for pitch_only/dur_only/neutral,
+        # but shared features can appear in both pitch and duration masks.
+        # Take the max activation to avoid double-counting.)
+        s_merged = torch.max(torch.max(s_pitch, s_dur), s_neutral)
+
+        # 5. Decode + correct
+        a_prime = sae.decode(s_merged)
+        a_steered = (a_prime + delta).reshape(B, T, D)
+
+        return (a_steered,) + others if is_tuple else a_steered
+
+
 def register_dual_hooks(
     model,
     sae_models: Dict[int, nn.Module],
@@ -419,6 +565,39 @@ def register_sequential_hooks(
     )
     handles = _register_hook_on_layers(model, hook)
     logger.info(f"Registered {len(handles)} sequential dual-steering hooks")
+    return handles
+
+
+def register_budget_allocation_hooks(
+    model,
+    sae_models: Dict[int, nn.Module],
+    combined_vectors: Dict[int, np.ndarray],
+    pitch_vectors_raw: Dict[int, np.ndarray],
+    duration_vectors_raw: Dict[int, np.ndarray],
+    layers_to_steer: Optional[List[int]] = None,
+) -> List:
+    """Register hooks with TopK budget allocation per concept.
+
+    Args:
+        model:                MMT model
+        sae_models:           {layer: SparseAutoencoder}
+        combined_vectors:     {layer: (4096,)} composed vector
+        pitch_vectors_raw:    {layer: (4096,)} raw pitch SAS vectors (for masks)
+        duration_vectors_raw: {layer: (4096,)} raw duration SAS vectors (for masks)
+        layers_to_steer:      layers to steer
+
+    Returns:
+        List of hook handles
+    """
+    hook = TopKBudgetAllocationHook(
+        sae_models,
+        combined_vectors,
+        pitch_vectors_raw,
+        duration_vectors_raw,
+        layers_to_steer,
+    )
+    handles = _register_hook_on_layers(model, hook)
+    logger.info(f"Registered {len(handles)} budget-allocation dual-steering hooks")
     return handles
 
 
