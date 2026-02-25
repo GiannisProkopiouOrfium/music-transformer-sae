@@ -252,33 +252,27 @@ def extract_conditioning_prefix(
 
 def extract_pitches(tokens, encoding):
     try:
-        type_codes = tokens[:, 0]
-        note_mask = type_codes == encoding["type_code_map"].get("note", -1)
-        if not note_mask.any():
-            return []
-        pitch_vocab = encoding["code_type_map"].get("3", {})
-        return [
-            float(pitch_vocab[str(int(c))])
-            for c in tokens[note_mask, 3]
-            if str(int(c)) in pitch_vocab
-        ]
-    except Exception:
+        music = representation.decode(tokens, encoding)
+        pitches = []
+        for track in music.tracks:
+            for note in track.notes:
+                pitches.append(note.pitch)
+        return pitches
+    except Exception as e:
+        logger.warning(f"Error extracting pitches: {e}")
         return []
 
 
 def extract_durations(tokens, encoding):
     try:
-        type_codes = tokens[:, 0]
-        note_mask = type_codes == encoding["type_code_map"].get("note", -1)
-        if not note_mask.any():
-            return []
-        dur_vocab = encoding["code_type_map"].get("4", {})
-        return [
-            float(dur_vocab[str(int(c))])
-            for c in tokens[note_mask, 4]
-            if str(int(c)) in dur_vocab
-        ]
-    except Exception:
+        music = representation.decode(tokens, encoding)
+        durations = []
+        for track in music.tracks:
+            for note in track.notes:
+                durations.append(note.duration)
+        return durations
+    except Exception as e:
+        logger.warning(f"Error extracting durations: {e}")
         return []
 
 
@@ -287,21 +281,19 @@ def evaluate_quality(tokens, encoding):
         import muspy
 
         music = representation.decode(tokens, encoding)
-        if hasattr(music, "to_music21"):
-            ms = muspy.from_music21(music.to_music21())
-        else:
-            ms = music
-        if not ms.tracks or not ms.tracks[0].notes:
+        music.trim(music.resolution * 64)
+
+        if not music.tracks or not music.tracks[0].notes:
             return {
                 "pitch_class_entropy": 0,
                 "scale_consistency": 0,
                 "groove_consistency": 0,
             }
         return {
-            "pitch_class_entropy": float(muspy.pitch_class_entropy(ms)),
-            "scale_consistency": float(muspy.scale_consistency(ms)) * 100,
+            "pitch_class_entropy": float(muspy.pitch_class_entropy(music)),
+            "scale_consistency": float(muspy.scale_consistency(music)) * 100,
             "groove_consistency": float(
-                muspy.groove_consistency(ms, measure_resolution=ms.resolution)
+                muspy.groove_consistency(music, 4 * music.resolution)
             )
             * 100,
         }

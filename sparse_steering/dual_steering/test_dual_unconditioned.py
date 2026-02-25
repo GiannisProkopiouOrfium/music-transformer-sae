@@ -83,38 +83,28 @@ logger = logging.getLogger(__name__)
 def extract_pitches(tokens: np.ndarray, encoding: dict) -> List[float]:
     """Extract MIDI pitch values from generated tokens."""
     try:
-        type_codes = tokens[:, 0]
-        note_mask = type_codes == encoding["type_code_map"].get("note", -1)
-        if not note_mask.any():
-            return []
-        pitch_vocab = encoding["code_type_map"].get("3", {})
-        pitch_codes = tokens[note_mask, 3]
+        music = representation.decode(tokens, encoding)
         pitches = []
-        for code in pitch_codes:
-            val = pitch_vocab.get(str(int(code)))
-            if val is not None:
-                pitches.append(float(val))
+        for track in music.tracks:
+            for note in track.notes:
+                pitches.append(note.pitch)
         return pitches
-    except Exception:
+    except Exception as e:
+        logger.warning(f"Error extracting pitches: {e}")
         return []
 
 
 def extract_durations(tokens: np.ndarray, encoding: dict) -> List[float]:
     """Extract duration values (ticks) from generated tokens."""
     try:
-        type_codes = tokens[:, 0]
-        note_mask = type_codes == encoding["type_code_map"].get("note", -1)
-        if not note_mask.any():
-            return []
-        dur_vocab = encoding["code_type_map"].get("4", {})
-        dur_codes = tokens[note_mask, 4]
+        music = representation.decode(tokens, encoding)
         durations = []
-        for code in dur_codes:
-            val = dur_vocab.get(str(int(code)))
-            if val is not None:
-                durations.append(float(val))
+        for track in music.tracks:
+            for note in track.notes:
+                durations.append(note.duration)
         return durations
-    except Exception:
+    except Exception as e:
+        logger.warning(f"Error extracting durations: {e}")
         return []
 
 
@@ -124,24 +114,18 @@ def evaluate_quality(tokens: np.ndarray, encoding: dict) -> dict:
         import muspy
 
         music = representation.decode(tokens, encoding)
-        if hasattr(music, "to_music21"):
-            ms = muspy.from_music21(music.to_music21())
-        else:
-            ms = music
+        music.trim(music.resolution * 64)
 
-        if not ms.tracks or not ms.tracks[0].notes:
+        if not music.tracks or not music.tracks[0].notes:
             return {
                 "pitch_class_entropy": 0.0,
                 "scale_consistency": 0.0,
                 "groove_consistency": 0.0,
             }
 
-        pce = float(muspy.pitch_class_entropy(ms))
-        sc = float(muspy.scale_consistency(ms)) * 100.0
-        gc = (
-            float(muspy.groove_consistency(ms, measure_resolution=ms.resolution))
-            * 100.0
-        )
+        pce = float(muspy.pitch_class_entropy(music))
+        sc = float(muspy.scale_consistency(music)) * 100.0
+        gc = float(muspy.groove_consistency(music, 4 * music.resolution)) * 100.0
 
         return {
             "pitch_class_entropy": pce,
@@ -506,6 +490,51 @@ def main():
     print(f"Total generations: {total_gens}")
     print(f"Time: {elapsed / 60:.1f} minutes")
     print(f"Results: {out_path}")
+
+    # Per-strategy summary
+    valid_results = [r for r in results if r.get("pitch_mean") is not None]
+    if valid_results:
+        print("\n" + "-" * 72)
+        print("PER-STRATEGY SUMMARY")
+        print("-" * 72)
+        for strat in args.strategies:
+            sr = [r for r in valid_results if r["strategy"] == strat]
+            if not sr:
+                print(f"\n  {strat}: NO valid samples")
+                continue
+            pitches = [r["pitch_mean"] for r in sr]
+            durations = [r["duration_mean"] for r in sr]
+            degs = [
+                r["degradation"]["total_degradation"]
+                for r in sr
+                if r.get("degradation")
+            ]
+            pitch_range = max(pitches) - min(pitches)
+            dur_range = max(durations) - min(durations)
+            # Find baseline (0,0)
+            baseline = [
+                r for r in sr if r["lambda_pitch"] == 0 and r["lambda_duration"] == 0
+            ]
+            bl_pitch = baseline[0]["pitch_mean"] if baseline else np.mean(pitches)
+            bl_dur = baseline[0]["duration_mean"] if baseline else np.mean(durations)
+            print(f"\n  {strat}:")
+            print(
+                f"    Valid configs: {len(sr)}/{len([r for r in results if r['strategy'] == strat])}"
+            )
+            print(f"    Baseline (0,0): pitch={bl_pitch:.1f}, duration={bl_dur:.1f}")
+            print(
+                f"    Pitch range:    {min(pitches):.1f} → {max(pitches):.1f} (Δ={pitch_range:.1f})"
+            )
+            print(
+                f"    Duration range: {min(durations):.1f} → {max(durations):.1f} (Δ={dur_range:.1f})"
+            )
+            print(
+                f"    Mean degradation: {np.mean(degs):.2f}"
+                if degs
+                else "    Degradation: N/A"
+            )
+    else:
+        print("\n  WARNING: All results have null values — check extraction functions!")
 
 
 if __name__ == "__main__":
