@@ -449,6 +449,125 @@ class TopKBudgetAllocationHook:
         return (a_steered,) + others if is_tuple else a_steered
 
 
+class DenseSASSteeringHook:
+    """Forward hook that steers in dense 512-dim space using SAE-projected SAS vectors.
+
+    Instead of the full encode → steer → TopK → decode cycle (Algorithm 2),
+    this projects the SAS vectors from 4096-dim sparse space to 512-dim dense
+    space via the SAE decoder, then adds them directly to activations:
+
+        v_dense = (W_dec @ v_SAS) * input_std
+        h' = h + v_dense
+
+    Benefits:
+      • No reconstruction error (no encode/decode round-trip)
+      • No TopK information loss (no feature competition)
+      • SAS-quality directions (derived from interpretable sparse features)
+      • Same computational cost as difference-in-means steering
+    """
+
+    def __init__(
+        self,
+        dense_vectors: Dict[int, np.ndarray],
+        layers_to_steer: Optional[List[int]] = None,
+    ):
+        """
+        Args:
+            dense_vectors:   {layer_idx: (512,) np.ndarray} projected vectors
+            layers_to_steer: restrict steering to these layers
+        """
+        self.layers_to_steer = (
+            set(layers_to_steer) if layers_to_steer is not None else None
+        )
+        self.dense_torch = {
+            idx: torch.from_numpy(v).float() for idx, v in dense_vectors.items()
+        }
+        self.device = None
+        self._initialised = False
+
+    def _ensure_device(self, activations: torch.Tensor):
+        if not self._initialised:
+            self.device = activations.device
+            for k in self.dense_torch:
+                self.dense_torch[k] = self.dense_torch[k].to(self.device)
+            self._initialised = True
+
+    def __call__(self, module, input, output, layer_idx: int):
+        is_tuple = isinstance(output, tuple)
+        actual = output[0] if is_tuple else output
+        others = output[1:] if is_tuple else None
+
+        if self.layers_to_steer is not None and layer_idx not in self.layers_to_steer:
+            return output
+        if layer_idx not in self.dense_torch:
+            return output
+
+        self._ensure_device(actual)
+        v_dense = self.dense_torch[layer_idx]  # (512,)
+
+        # Direct dense-space addition — no encode/decode/TopK cycle
+        a_steered = actual + v_dense.unsqueeze(0).unsqueeze(0)  # (1, 1, 512) broadcast
+
+        return (a_steered,) + others if is_tuple else a_steered
+
+
+def project_sas_to_dense(
+    combined_vectors: Dict[int, np.ndarray],
+    sae_models: Dict[int, nn.Module],
+) -> Dict[int, np.ndarray]:
+    """Project SAS vectors from 4096-dim sparse to 512-dim dense via SAE decoder.
+
+    The SAE decode path is:
+        reconstruction_norm = sparse @ W_encoder + decoder_bias
+        reconstruction = reconstruction_norm * input_std + input_mean
+
+    So the *directional* effect of adding v_SAS in sparse space is:
+        Δ_output = (v_SAS @ W_encoder) * input_std
+
+    We compute this projection without the bias/mean terms (which are constant
+    offsets, not directional).
+
+    Args:
+        combined_vectors: {layer_idx: (4096,)} combined SAS vector (λ already baked in)
+        sae_models:       {layer_idx: trained SparseAutoencoder}
+
+    Returns:
+        {layer_idx: (512,) np.ndarray} projected dense vectors
+    """
+    dense_vectors = {}
+    for layer_idx, v_sparse in combined_vectors.items():
+        if layer_idx not in sae_models:
+            continue
+        sae = sae_models[layer_idx]
+        v_t = torch.from_numpy(v_sparse).float()
+
+        with torch.no_grad():
+            # Get effective decoder weight matrix: sparse(4096) → dense(512)
+            if sae.tied_weights:
+                W_dec = sae.encoder.weight  # (4096, 512)
+            else:
+                W_dec = sae.decoder.weight.t()  # (512, out) → t() → (out, 512)
+
+            # Project: v_sparse (4096,) @ W_dec (4096, 512) → (512,)
+            v_dense = v_t @ W_dec
+
+            # Account for denormalization: decode output is
+            # reconstruction_norm * input_std + input_mean
+            # The directional component is scaled by input_std
+            if sae.normalize_input:
+                v_dense = v_dense * sae.input_std.cpu()
+
+        dense_vectors[layer_idx] = v_dense.numpy()
+        norm_sparse = float(np.linalg.norm(v_sparse))
+        norm_dense = float(np.linalg.norm(dense_vectors[layer_idx]))
+        logger.info(
+            f"L{layer_idx}: projected 4096→512  "
+            f"||v_sparse||={norm_sparse:.3f} → ||v_dense||={norm_dense:.3f}"
+        )
+
+    return dense_vectors
+
+
 def register_dual_hooks(
     model,
     sae_models: Dict[int, nn.Module],
@@ -598,6 +717,36 @@ def register_budget_allocation_hooks(
     )
     handles = _register_hook_on_layers(model, hook)
     logger.info(f"Registered {len(handles)} budget-allocation dual-steering hooks")
+    return handles
+
+
+def register_dense_sas_hooks(
+    model,
+    sae_models: Dict[int, nn.Module],
+    combined_vectors: Dict[int, np.ndarray],
+    layers_to_steer: Optional[List[int]] = None,
+) -> List:
+    """Register hooks for SAS-informed dense-space steering.
+
+    Projects combined SAS vectors from 4096-dim sparse to 512-dim dense
+    using the SAE decoder, then steers via direct addition in dense space.
+    No encode/decode/TopK cycle — minimal quality degradation.
+
+    Args:
+        model:            MMT model
+        sae_models:       {layer: SparseAutoencoder}
+        combined_vectors: {layer: (4096,)} composed SAS vector (λ baked in)
+        layers_to_steer:  layers to steer
+
+    Returns:
+        List of hook handles
+    """
+    # Project sparse → dense
+    dense_vectors = project_sas_to_dense(combined_vectors, sae_models)
+
+    hook = DenseSASSteeringHook(dense_vectors, layers_to_steer)
+    handles = _register_hook_on_layers(model, hook)
+    logger.info(f"Registered {len(handles)} dense-SAS steering hooks")
     return handles
 
 

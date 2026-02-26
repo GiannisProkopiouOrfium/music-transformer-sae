@@ -68,6 +68,7 @@ from dual_steered_generator import (
     register_expanded_k_hooks,
     register_sequential_hooks,
     register_budget_allocation_hooks,
+    register_dense_sas_hooks,
     remove_hooks,
 )
 from sparse_vector_composer import (
@@ -210,6 +211,12 @@ def evaluate_config(
             composer.pitch_vectors,
             composer.duration_vectors,
             layers_to_steer,
+        )
+    elif strategy == "sas_dense":
+        # SAS-informed dense steering: project sparse→dense via SAE decoder
+        combined = composer.compose(lambda_pitch, lambda_duration, strategy)
+        handles = register_dense_sas_hooks(
+            model, sae_models, combined, layers_to_steer
         )
     else:
         combined = composer.compose(lambda_pitch, lambda_duration, strategy)
