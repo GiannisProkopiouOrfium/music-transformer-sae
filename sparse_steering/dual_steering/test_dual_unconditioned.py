@@ -215,9 +215,7 @@ def evaluate_config(
     elif strategy == "sas_dense":
         # SAS-informed dense steering: project sparse→dense via SAE decoder
         combined = composer.compose(lambda_pitch, lambda_duration, strategy)
-        handles = register_dense_sas_hooks(
-            model, sae_models, combined, layers_to_steer
-        )
+        handles = register_dense_sas_hooks(model, sae_models, combined, layers_to_steer)
     else:
         combined = composer.compose(lambda_pitch, lambda_duration, strategy)
         handles = register_dual_hooks(model, sae_models, combined, layers_to_steer)

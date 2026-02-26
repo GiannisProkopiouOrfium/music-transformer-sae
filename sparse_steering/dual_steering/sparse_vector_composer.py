@@ -183,7 +183,13 @@ class SparseVectorComposer:
         elif strategy == "cross_concept_masking_ek2":
             # Full shared-feature masking composition; hook uses expanded K
             return self._cross_concept_masking(lambda_pitch, lambda_duration)
-        elif strategy in ("expanded_k", "expanded_k_2x", "sequential", "topk_budget", "sas_dense"):
+        elif strategy in (
+            "expanded_k",
+            "expanded_k_2x",
+            "sequential",
+            "topk_budget",
+            "sas_dense",
+        ):
             # These strategies use direct composition; the special handling
             # happens at the hook level, not here.
             return self._direct(lambda_pitch, lambda_duration)
