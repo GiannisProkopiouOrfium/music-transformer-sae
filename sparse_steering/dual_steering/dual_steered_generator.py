@@ -542,22 +542,26 @@ def project_sas_to_dense(
         v_t = torch.from_numpy(v_sparse).float()
 
         with torch.no_grad():
+            # Move to same device as SAE weights
+            device = next(sae.parameters()).device
+            v_t = v_t.to(device)
+
             # Get effective decoder weight matrix: sparse(4096) → dense(512)
             if sae.tied_weights:
-                W_dec = sae.encoder.weight  # (4096, 512)
+                w_dec = sae.encoder.weight  # (4096, 512)
             else:
-                W_dec = sae.decoder.weight.t()  # (512, out) → t() → (out, 512)
+                w_dec = sae.decoder.weight.t()  # (512, out) → t() → (out, 512)
 
-            # Project: v_sparse (4096,) @ W_dec (4096, 512) → (512,)
-            v_dense = v_t @ W_dec
+            # Project: v_sparse (4096,) @ w_dec (4096, 512) → (512,)
+            v_dense = v_t @ w_dec
 
             # Account for denormalization: decode output is
             # reconstruction_norm * input_std + input_mean
             # The directional component is scaled by input_std
             if sae.normalize_input:
-                v_dense = v_dense * sae.input_std.cpu()
+                v_dense = v_dense * sae.input_std
 
-        dense_vectors[layer_idx] = v_dense.numpy()
+        dense_vectors[layer_idx] = v_dense.cpu().numpy()
         norm_sparse = float(np.linalg.norm(v_sparse))
         norm_dense = float(np.linalg.norm(dense_vectors[layer_idx]))
         logger.info(
