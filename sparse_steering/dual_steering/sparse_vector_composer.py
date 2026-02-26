@@ -64,6 +64,8 @@ CompositionStrategy = Literal[
     "expanded_k_2x",
     "sequential",
     "topk_budget",
+    "opposite_sign_masking",
+    "opposite_sign_masking_ek2",
 ]
 
 ALL_STRATEGIES = [
@@ -76,10 +78,18 @@ ALL_STRATEGIES = [
     "expanded_k_2x",
     "sequential",
     "topk_budget",
+    "opposite_sign_masking",
+    "opposite_sign_masking_ek2",
 ]
 
 # Strategies that need special hook handling (not just a combined vector)
-HOOK_SPECIAL_STRATEGIES = {"expanded_k", "expanded_k_2x", "sequential", "topk_budget"}
+HOOK_SPECIAL_STRATEGIES = {
+    "expanded_k",
+    "expanded_k_2x",
+    "sequential",
+    "topk_budget",
+    "opposite_sign_masking_ek2",
+}
 
 
 class SparseVectorComposer:
@@ -159,6 +169,11 @@ class SparseVectorComposer:
             return self._gram_schmidt_duration(lambda_pitch, lambda_duration)
         elif strategy == "cross_concept_sas":
             return self._cross_concept_sas(lambda_pitch, lambda_duration)
+        elif strategy == "opposite_sign_masking":
+            return self._opposite_sign_masking(lambda_pitch, lambda_duration)
+        elif strategy == "opposite_sign_masking_ek2":
+            # Composition uses opposite-sign masking; hook uses expanded K
+            return self._opposite_sign_masking(lambda_pitch, lambda_duration)
         elif strategy in ("expanded_k", "expanded_k_2x", "sequential", "topk_budget"):
             # These strategies use direct composition; the special handling
             # happens at the hook level, not here.
@@ -303,6 +318,45 @@ class SparseVectorComposer:
             # Zero shared features in BOTH vectors (SAS paper philosophy)
             vp[shared] = 0.0
             vd[shared] = 0.0
+
+            combined[layer] = lambda_pitch * vp + lambda_duration * vd
+        return combined
+
+    def _opposite_sign_masking(
+        self, lambda_pitch: float, lambda_duration: float
+    ) -> Dict[int, np.ndarray]:
+        """Opposite-sign shared feature masking.
+
+        Only zero out shared features where v_pitch[i] and v_duration[i]
+        have OPPOSITE signs (the root cause of cross-talk from the
+        anti-correlated overlap).  Same-sign shared features are kept
+        intact since they don't cause cross-talk.
+
+        This preserves ~83% of pitch signal and ~87% of duration signal
+        (vs ~45%/~57% for cross_concept_sas which zeros ALL shared).
+
+        combined = λ_p · v_pitch_clean + λ_d · v_duration_clean
+        """
+        combined = {}
+        for layer in self.layers:
+            vp = self.pitch_vectors[layer].copy()
+            vd = self.duration_vectors[layer].copy()
+            shared = self._overlap_cache[layer]["shared_mask"]
+
+            if shared.any():
+                # Identify opposite-sign shared features
+                opposite_sign = shared & (np.sign(vp) != np.sign(vd))
+                n_opposite = int(opposite_sign.sum())
+                n_same = int(shared.sum()) - n_opposite
+
+                # Zero opposite-sign features in BOTH vectors
+                vp[opposite_sign] = 0.0
+                vd[opposite_sign] = 0.0
+
+                logger.debug(
+                    f"L{layer}: zeroed {n_opposite} opposite-sign shared "
+                    f"features, kept {n_same} same-sign"
+                )
 
             combined[layer] = lambda_pitch * vp + lambda_duration * vd
         return combined

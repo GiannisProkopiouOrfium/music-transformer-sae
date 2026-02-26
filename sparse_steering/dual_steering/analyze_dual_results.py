@@ -60,6 +60,8 @@ STRATEGY_COLORS = {
     "expanded_k_2x": "#e377c2",
     "sequential": "#7f7f7f",
     "topk_budget": "#bcbd22",
+    "opposite_sign_masking": "#17becf",
+    "opposite_sign_masking_ek2": "#1a9850",
 }
 
 STRATEGY_LABELS = {
@@ -72,6 +74,8 @@ STRATEGY_LABELS = {
     "expanded_k_2x": "Expanded K (2.0×)",
     "sequential": "Sequential",
     "topk_budget": "TopK Budget Alloc.",
+    "opposite_sign_masking": "Opp-Sign Masking",
+    "opposite_sign_masking_ek2": "Opp-Sign + EK 2×",
 }
 
 if HAS_MPL:

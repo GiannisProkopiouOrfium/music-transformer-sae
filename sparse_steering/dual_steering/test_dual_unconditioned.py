@@ -189,6 +189,12 @@ def evaluate_config(
         handles = register_expanded_k_hooks(
             model, sae_models, combined, layers_to_steer, k_multiplier=km
         )
+    elif strategy == "opposite_sign_masking_ek2":
+        # Opposite-sign masking composition + expanded K (2×) hook
+        combined = composer.compose(lambda_pitch, lambda_duration, strategy)
+        handles = register_expanded_k_hooks(
+            model, sae_models, combined, layers_to_steer, k_multiplier=2.0
+        )
     elif strategy == "sequential":
         pitch_vecs, dur_vecs = composer.compose_separate(lambda_pitch, lambda_duration)
         handles = register_sequential_hooks(
