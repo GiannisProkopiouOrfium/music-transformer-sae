@@ -73,6 +73,8 @@ STRATEGIES = [
     "opposite_sign_masking_ek2",
     "cross_concept_masking_ek2",
     "sas_dense",
+    "gram_schmidt_ek2",
+    "norm_balanced_ek175",
 ]
 
 # ── Conditioned evaluation scenarios ────────────────────────────────────────

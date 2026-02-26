@@ -64,6 +64,8 @@ STRATEGY_COLORS = {
     "opposite_sign_masking_ek2": "#1a9850",
     "cross_concept_masking_ek2": "#ff6600",
     "sas_dense": "#e6194b",
+    "gram_schmidt_ek2": "#aa6e28",
+    "norm_balanced_ek175": "#800000",
 }
 
 STRATEGY_LABELS = {

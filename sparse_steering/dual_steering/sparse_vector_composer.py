@@ -68,6 +68,8 @@ CompositionStrategy = Literal[
     "opposite_sign_masking_ek2",
     "cross_concept_masking_ek2",
     "sas_dense",
+    "gram_schmidt_ek2",
+    "norm_balanced_ek175",
 ]
 
 ALL_STRATEGIES = [
@@ -84,6 +86,8 @@ ALL_STRATEGIES = [
     "opposite_sign_masking_ek2",
     "cross_concept_masking_ek2",
     "sas_dense",
+    "gram_schmidt_ek2",
+    "norm_balanced_ek175",
 ]
 
 # Strategies that need special hook handling (not just a combined vector)
@@ -95,6 +99,8 @@ HOOK_SPECIAL_STRATEGIES = {
     "opposite_sign_masking_ek2",
     "cross_concept_masking_ek2",
     "sas_dense",
+    "gram_schmidt_ek2",
+    "norm_balanced_ek175",
 }
 
 
@@ -183,6 +189,12 @@ class SparseVectorComposer:
         elif strategy == "cross_concept_masking_ek2":
             # Full shared-feature masking composition; hook uses expanded K
             return self._cross_concept_masking(lambda_pitch, lambda_duration)
+        elif strategy == "gram_schmidt_ek2":
+            # Gram-Schmidt (orth duration) composition; hook uses expanded K 2x
+            return self._gram_schmidt_duration(lambda_pitch, lambda_duration)
+        elif strategy == "norm_balanced_ek175":
+            # Norm-balanced composition; hook uses expanded K 1.75x
+            return self._norm_balanced(lambda_pitch, lambda_duration)
         elif strategy in (
             "expanded_k",
             "expanded_k_2x",
@@ -405,6 +417,47 @@ class SparseVectorComposer:
             vp_orth_sparse = np.where(keep, vp_orth, 0.0)
 
             combined[layer] = lambda_pitch * vp_orth_sparse + lambda_duration * vd
+        return combined
+
+    def _norm_balanced(
+        self, lambda_pitch: float, lambda_duration: float
+    ) -> Dict[int, np.ndarray]:
+        """Norm-balanced direct addition.
+
+        Pre-normalize both vectors to have the same L2 norm so that equal
+        λ values produce equal-magnitude effects.  This prevents the
+        stronger concept (duration, ~2× pitch norm) from dominating at
+        extreme lambdas and causing unnecessary degradation.
+
+        The target norm is the geometric mean of the two original norms
+        to avoid inflating or deflating the overall perturbation scale.
+
+        combined = λ_p · v_pitch_balanced + λ_d · v_duration_balanced
+        """
+        combined = {}
+        for layer in self.layers:
+            vp = self.pitch_vectors[layer]
+            vd = self.duration_vectors[layer]
+
+            norm_p = np.linalg.norm(vp)
+            norm_d = np.linalg.norm(vd)
+
+            if norm_p < 1e-12 or norm_d < 1e-12:
+                combined[layer] = lambda_pitch * vp + lambda_duration * vd
+                continue
+
+            # Target norm: geometric mean
+            target_norm = np.sqrt(norm_p * norm_d)
+
+            vp_balanced = vp * (target_norm / norm_p)
+            vd_balanced = vd * (target_norm / norm_d)
+
+            logger.debug(
+                f"L{layer}: norm_p={norm_p:.2f} → {target_norm:.2f}, "
+                f"norm_d={norm_d:.2f} → {target_norm:.2f}"
+            )
+
+            combined[layer] = lambda_pitch * vp_balanced + lambda_duration * vd_balanced
         return combined
 
 

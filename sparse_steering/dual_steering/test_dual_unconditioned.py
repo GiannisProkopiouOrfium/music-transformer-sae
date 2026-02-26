@@ -190,11 +190,21 @@ def evaluate_config(
         handles = register_expanded_k_hooks(
             model, sae_models, combined, layers_to_steer, k_multiplier=km
         )
-    elif strategy in ("opposite_sign_masking_ek2", "cross_concept_masking_ek2"):
-        # Masking composition + expanded K (2×) hook
+    elif strategy in (
+        "opposite_sign_masking_ek2",
+        "cross_concept_masking_ek2",
+        "gram_schmidt_ek2",
+    ):
+        # Masking/orthogonal composition + expanded K (2×) hook
         combined = composer.compose(lambda_pitch, lambda_duration, strategy)
         handles = register_expanded_k_hooks(
             model, sae_models, combined, layers_to_steer, k_multiplier=2.0
+        )
+    elif strategy == "norm_balanced_ek175":
+        # Norm-balanced composition + expanded K (1.75×) hook
+        combined = composer.compose(lambda_pitch, lambda_duration, strategy)
+        handles = register_expanded_k_hooks(
+            model, sae_models, combined, layers_to_steer, k_multiplier=1.75
         )
     elif strategy == "sequential":
         pitch_vecs, dur_vecs = composer.compose_separate(lambda_pitch, lambda_duration)
