@@ -66,6 +66,7 @@ CompositionStrategy = Literal[
     "topk_budget",
     "opposite_sign_masking",
     "opposite_sign_masking_ek2",
+    "cross_concept_masking_ek2",
 ]
 
 ALL_STRATEGIES = [
@@ -80,6 +81,7 @@ ALL_STRATEGIES = [
     "topk_budget",
     "opposite_sign_masking",
     "opposite_sign_masking_ek2",
+    "cross_concept_masking_ek2",
 ]
 
 # Strategies that need special hook handling (not just a combined vector)
@@ -89,6 +91,7 @@ HOOK_SPECIAL_STRATEGIES = {
     "sequential",
     "topk_budget",
     "opposite_sign_masking_ek2",
+    "cross_concept_masking_ek2",
 }
 
 
@@ -174,6 +177,9 @@ class SparseVectorComposer:
         elif strategy == "opposite_sign_masking_ek2":
             # Composition uses opposite-sign masking; hook uses expanded K
             return self._opposite_sign_masking(lambda_pitch, lambda_duration)
+        elif strategy == "cross_concept_masking_ek2":
+            # Full shared-feature masking composition; hook uses expanded K
+            return self._cross_concept_masking(lambda_pitch, lambda_duration)
         elif strategy in ("expanded_k", "expanded_k_2x", "sequential", "topk_budget"):
             # These strategies use direct composition; the special handling
             # happens at the hook level, not here.

@@ -189,8 +189,8 @@ def evaluate_config(
         handles = register_expanded_k_hooks(
             model, sae_models, combined, layers_to_steer, k_multiplier=km
         )
-    elif strategy == "opposite_sign_masking_ek2":
-        # Opposite-sign masking composition + expanded K (2×) hook
+    elif strategy in ("opposite_sign_masking_ek2", "cross_concept_masking_ek2"):
+        # Masking composition + expanded K (2×) hook
         combined = composer.compose(lambda_pitch, lambda_duration, strategy)
         handles = register_expanded_k_hooks(
             model, sae_models, combined, layers_to_steer, k_multiplier=2.0

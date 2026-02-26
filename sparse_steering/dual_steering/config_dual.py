@@ -71,6 +71,7 @@ STRATEGIES = [
     "topk_budget",
     "opposite_sign_masking",
     "opposite_sign_masking_ek2",
+    "cross_concept_masking_ek2",
 ]
 
 # ── Conditioned evaluation scenarios ────────────────────────────────────────

@@ -62,6 +62,7 @@ STRATEGY_COLORS = {
     "topk_budget": "#bcbd22",
     "opposite_sign_masking": "#17becf",
     "opposite_sign_masking_ek2": "#1a9850",
+    "cross_concept_masking_ek2": "#ff6600",
 }
 
 STRATEGY_LABELS = {
@@ -76,6 +77,7 @@ STRATEGY_LABELS = {
     "topk_budget": "TopK Budget Alloc.",
     "opposite_sign_masking": "Opp-Sign Masking",
     "opposite_sign_masking_ek2": "Opp-Sign + EK 2×",
+    "cross_concept_masking_ek2": "Full Masking + EK 2×",
 }
 
 if HAS_MPL:
