@@ -75,7 +75,14 @@ from config_dual import (
     SEQ_LEN,
     STRATEGIES,
 )
-from dual_steered_generator import register_dual_hooks, remove_hooks
+from dual_steered_generator import (
+    register_dual_hooks,
+    register_expanded_k_hooks,
+    register_sequential_hooks,
+    register_budget_allocation_hooks,
+    register_dense_sas_hooks,
+    remove_hooks,
+)
 from sparse_vector_composer import SparseVectorComposer, load_and_create_composer
 
 logger = logging.getLogger(__name__)
@@ -374,11 +381,48 @@ def evaluate_conditioned_scenario(
 
         for lp in pitch_alphas:
             for ld in dur_alphas:
-                # Compose & generate
-                combined = composer.compose(lp, ld, strategy)
-                handles = register_dual_hooks(
-                    model, sae_models, combined, layers_to_steer
-                )
+                # Compose & register the appropriate hook type
+                if strategy in ("expanded_k", "expanded_k_2x"):
+                    km = 2.0 if strategy == "expanded_k_2x" else 1.5
+                    combined = composer.compose(lp, ld, strategy)
+                    handles = register_expanded_k_hooks(
+                        model, sae_models, combined, layers_to_steer, k_multiplier=km
+                    )
+                elif strategy in (
+                    "opposite_sign_masking_ek2",
+                    "cross_concept_masking_ek2",
+                    "gram_schmidt_ek2",
+                ):
+                    combined = composer.compose(lp, ld, strategy)
+                    handles = register_expanded_k_hooks(
+                        model, sae_models, combined, layers_to_steer, k_multiplier=2.0
+                    )
+                elif strategy == "norm_balanced_ek175":
+                    combined = composer.compose(lp, ld, strategy)
+                    handles = register_expanded_k_hooks(
+                        model, sae_models, combined, layers_to_steer, k_multiplier=1.75
+                    )
+                elif strategy == "sequential":
+                    pitch_vecs, dur_vecs = composer.compose_separate(lp, ld)
+                    handles = register_sequential_hooks(
+                        model, sae_models, pitch_vecs, dur_vecs, layers_to_steer
+                    )
+                elif strategy == "topk_budget":
+                    combined = composer.compose(lp, ld, strategy)
+                    handles = register_budget_allocation_hooks(
+                        model, sae_models, combined, composer.pitch_vectors,
+                        composer.duration_vectors, layers_to_steer,
+                    )
+                elif strategy == "sas_dense":
+                    combined = composer.compose(lp, ld, strategy)
+                    handles = register_dense_sas_hooks(
+                        model, sae_models, combined, layers_to_steer
+                    )
+                else:
+                    combined = composer.compose(lp, ld, strategy)
+                    handles = register_dual_hooks(
+                        model, sae_models, combined, layers_to_steer
+                    )
 
                 try:
                     with torch.no_grad():
