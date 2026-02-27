@@ -292,9 +292,9 @@ def evaluate_quality(tokens, encoding):
 
         if not music.tracks or not music.tracks[0].notes:
             return {
-                "pitch_class_entropy": 0,
-                "scale_consistency": 0,
-                "groove_consistency": 0,
+                "pitch_class_entropy": np.nan,
+                "scale_consistency": np.nan,
+                "groove_consistency": np.nan,
             }
         return {
             "pitch_class_entropy": float(muspy.pitch_class_entropy(music)),
@@ -304,24 +304,30 @@ def evaluate_quality(tokens, encoding):
             )
             * 100,
         }
-    except Exception:
+    except Exception as e:
+        logger.warning(f"Error evaluating quality: {e}")
         return {
-            "pitch_class_entropy": 0,
-            "scale_consistency": 0,
-            "groove_consistency": 0,
+            "pitch_class_entropy": np.nan,
+            "scale_consistency": np.nan,
+            "groove_consistency": np.nan,
         }
 
 
 def calculate_degradation(metrics):
+    """Calculate quality degradation from ground truth.
+
+    Returns NaN for total_degradation if any metric is NaN
+    (matching DiffMean behaviour: failed samples are excluded from averages).
+    """
     gt = GROUND_TRUTH_METRICS
     ed = abs(metrics["pitch_class_entropy"] - gt["pitch_class_entropy"])
     sd = max(0, gt["scale_consistency"] - metrics["scale_consistency"])
     gd = max(0, gt["groove_consistency"] - metrics["groove_consistency"])
     return {
-        "entropy_diff": ed,
-        "scale_diff": sd,
-        "groove_diff": gd,
-        "total_degradation": ed + sd + gd,
+        "entropy_diff": float(ed),
+        "scale_diff": float(sd),
+        "groove_diff": float(gd),
+        "total_degradation": float(ed + sd + gd),
     }
 
 
@@ -345,6 +351,7 @@ def evaluate_conditioned_scenario(
     conditioning_beats: int,
     seq_len: int,
     device: torch.device,
+    output_dir: Optional[pathlib.Path] = None,
 ) -> List[dict]:
     """Evaluate one scenario across all songs and alpha combos."""
     eos = encoding["type_code_map"]["end-of-song"]
@@ -429,13 +436,26 @@ def evaluate_conditioned_scenario(
                         generated = model.generate(
                             cond_tensor.clone(), seq_len, eos_token=eos
                         )
-                    tokens = generated[0].cpu().numpy()
+                    # model.generate() already strips the input tokens,
+                    # so `generated` contains ONLY the new continuation.
+                    continuation = generated[0].cpu().numpy()
                 finally:
                     remove_hooks(handles)
 
-                # Measure continuation only (skip conditioning prefix)
-                cond_len = cond_tensor.shape[1]
-                continuation = tokens[cond_len:] if len(tokens) > cond_len else tokens
+                # Save full sequence (conditioning + continuation) as .npy
+                if output_dir is not None:
+                    save_dir = (
+                        output_dir
+                        / scenario_name
+                        / strategy
+                        / f"lp{lp:+.2f}_ld{ld:+.2f}"
+                    )
+                    save_dir.mkdir(parents=True, exist_ok=True)
+                    full_seq = np.concatenate(
+                        [cond_tensor[0].cpu().numpy(), continuation], axis=0
+                    )
+                    npy_name = song_path.stem + ".npy"
+                    np.save(save_dir / npy_name, full_seq)
 
                 pitches = extract_pitches(continuation, encoding)
                 durations = extract_durations(continuation, encoding)
@@ -533,6 +553,8 @@ def analyze_results(results: List[dict]) -> dict:
             r["duration_delta"] for r in steered if r["duration_delta"] is not None
         ]
 
+        # Use nanmean to skip NaN degradation from failed quality evaluations
+        deg_vals = [r["degradation"]["total_degradation"] for r in steered]
         entry = {
             "n_configs": n_total,
             "both_success_rate": n_both_success / n_total if n_total else 0,
@@ -541,7 +563,7 @@ def analyze_results(results: List[dict]) -> dict:
             "mean_pitch_delta": float(np.mean(pitch_deltas)) if pitch_deltas else 0,
             "mean_duration_delta": float(np.mean(dur_deltas)) if dur_deltas else 0,
             "mean_degradation": (
-                float(np.mean([r["degradation"]["total_degradation"] for r in steered]))
+                float(np.nanmean(deg_vals))
                 if steered
                 else 0
             ),
@@ -571,7 +593,7 @@ def analyze_results(results: List[dict]) -> dict:
                 sum(1 for r in steered if r["duration_success"]) / n if n else 0
             ),
             "mean_degradation": (
-                float(np.mean([r["degradation"]["total_degradation"] for r in steered]))
+                float(np.nanmean([r["degradation"]["total_degradation"] for r in steered]))
                 if steered
                 else 0
             ),
@@ -773,6 +795,7 @@ def main():
                 conditioning_beats=args.conditioning_beats,
                 seq_len=args.seq_len,
                 device=device,
+                output_dir=args.output_dir,
             )
             all_results.extend(scenario_results)
 

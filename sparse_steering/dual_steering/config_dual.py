@@ -117,5 +117,5 @@ CONDITIONING_BEATS = 16
 
 # Alphas used during conditioned evaluation (only the direction appropriate
 # for each scenario is kept)
-CONDITIONED_ALPHA_PITCH = [0.0, 0.25, 0.5, 0.75, 1.0, 1.5]
-CONDITIONED_ALPHA_DURATION = [0.0, 0.5, 1.0, 1.5]
+CONDITIONED_ALPHA_PITCH = [0.0, 0.25, 0.5, 0.75, 1.0]
+CONDITIONED_ALPHA_DURATION = [0.0, 0.25, 0.5, 0.75, 1.0]
