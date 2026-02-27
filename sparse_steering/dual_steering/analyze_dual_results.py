@@ -798,6 +798,18 @@ def main():
         default=None,
         help="Restrict analysis to these strategies (default: all in JSON)",
     )
+    parser.add_argument(
+        "--alpha_min",
+        type=float,
+        default=None,
+        help="Min alpha value to include (filters both pitch and duration alphas)",
+    )
+    parser.add_argument(
+        "--alpha_max",
+        type=float,
+        default=None,
+        help="Max alpha value to include (filters both pitch and duration alphas)",
+    )
     args = parser.parse_args()
 
     if not args.json.exists():
@@ -811,6 +823,18 @@ def main():
     if args.strategies:
         strategies = [s for s in strategies if s in args.strategies]
         results = [r for r in results if r["strategy"] in strategies]
+
+    # Alpha range filtering
+    if args.alpha_min is not None or args.alpha_max is not None:
+        a_min = args.alpha_min if args.alpha_min is not None else -float("inf")
+        a_max = args.alpha_max if args.alpha_max is not None else float("inf")
+        results = [
+            r for r in results
+            if a_min <= r["lambda_pitch"] <= a_max
+            and a_min <= r["lambda_duration"] <= a_max
+        ]
+        print(f"Filtered to alpha range [{a_min}, {a_max}]: {len(results)} results")
+
     print(f"Analyzing strategies: {strategies}")
 
     # Compute metrics
