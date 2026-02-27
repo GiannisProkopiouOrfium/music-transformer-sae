@@ -61,8 +61,9 @@ def main():
     parser.add_argument("--results_json", type=pathlib.Path, required=True)
     parser.add_argument("--npy_root", type=pathlib.Path, required=True)
     parser.add_argument("--out_dir", type=pathlib.Path, required=True)
-    parser.add_argument("--top", type=int, default=5,
-                        help="How many to export per scenario")
+    parser.add_argument(
+        "--top", type=int, default=5, help="How many to export per scenario"
+    )
     parser.add_argument("--skip_wav", action="store_true", help="Only MIDI (faster)")
     parser.add_argument(
         "--w_control",
@@ -105,7 +106,9 @@ def main():
         sc_top = sc_results[: args.top]
 
         print(f"\n{'─'*95}")
-        print(f"  {sc_label}  ({len(sc_results)} both-success with both λ≠0)  — top {len(sc_top)}")
+        print(
+            f"  {sc_label}  ({len(sc_results)} both-success with both λ≠0)  — top {len(sc_top)}"
+        )
         print(f"{'─'*95}")
         print(
             f"  {'#':>2}  {'Score':>6}  {'Deg':>5}  {'dPitch':>7}  {'dDur':>7}  "
@@ -190,7 +193,9 @@ def main():
 
     print(f"\nDone! Files in: {args.out_dir}")
     print("Structure: <out_dir>/<scenario>/00_baseline_*.wav + NN_steered_*.wav")
-    print("Within each scenario folder, sort alphabetically: baselines first, then steered by rank.")
+    print(
+        "Within each scenario folder, sort alphabetically: baselines first, then steered by rank."
+    )
 
 
 if __name__ == "__main__":
