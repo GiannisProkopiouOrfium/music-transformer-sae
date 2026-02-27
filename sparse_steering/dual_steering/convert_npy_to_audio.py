@@ -71,9 +71,7 @@ def convert_npy_to_audio(
 
 
 def main():
-    parser = argparse.ArgumentParser(
-        description="Convert .npy token files to MIDI/WAV"
-    )
+    parser = argparse.ArgumentParser(description="Convert .npy token files to MIDI/WAV")
     parser.add_argument(
         "--input_dir",
         type=pathlib.Path,

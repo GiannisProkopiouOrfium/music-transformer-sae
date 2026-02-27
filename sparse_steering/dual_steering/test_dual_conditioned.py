@@ -417,8 +417,12 @@ def evaluate_conditioned_scenario(
                 elif strategy == "topk_budget":
                     combined = composer.compose(lp, ld, strategy)
                     handles = register_budget_allocation_hooks(
-                        model, sae_models, combined, composer.pitch_vectors,
-                        composer.duration_vectors, layers_to_steer,
+                        model,
+                        sae_models,
+                        combined,
+                        composer.pitch_vectors,
+                        composer.duration_vectors,
+                        layers_to_steer,
                     )
                 elif strategy == "sas_dense":
                     combined = composer.compose(lp, ld, strategy)
@@ -562,11 +566,7 @@ def analyze_results(results: List[dict]) -> dict:
             "duration_success_rate": n_dur_success / n_total if n_total else 0,
             "mean_pitch_delta": float(np.mean(pitch_deltas)) if pitch_deltas else 0,
             "mean_duration_delta": float(np.mean(dur_deltas)) if dur_deltas else 0,
-            "mean_degradation": (
-                float(np.nanmean(deg_vals))
-                if steered
-                else 0
-            ),
+            "mean_degradation": (float(np.nanmean(deg_vals)) if steered else 0),
         }
 
         analysis["by_scenario"].setdefault(scenario, {})[strategy] = entry
@@ -593,7 +593,9 @@ def analyze_results(results: List[dict]) -> dict:
                 sum(1 for r in steered if r["duration_success"]) / n if n else 0
             ),
             "mean_degradation": (
-                float(np.nanmean([r["degradation"]["total_degradation"] for r in steered]))
+                float(
+                    np.nanmean([r["degradation"]["total_degradation"] for r in steered])
+                )
                 if steered
                 else 0
             ),
