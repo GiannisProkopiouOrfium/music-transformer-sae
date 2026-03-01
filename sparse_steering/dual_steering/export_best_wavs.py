@@ -82,7 +82,7 @@ def main():
     with open(args.results_json) as f:
         data = json.load(f)
 
-    # Filter: both_success, both lambdas non-zero, degradation exists
+    # Filter: both_success, both lambdas non-zero, degradation exists and is not NaN
     results = [
         r
         for r in data["results"]
@@ -90,6 +90,9 @@ def main():
         and r["degradation"] is not None
         and r["lambda_pitch"] != 0
         and r["lambda_duration"] != 0
+        and r["degradation"].get("total_degradation") is not None
+        and not (isinstance(r["degradation"]["total_degradation"], float)
+                 and np.isnan(r["degradation"]["total_degradation"]))
     ]
 
     # Score all results
