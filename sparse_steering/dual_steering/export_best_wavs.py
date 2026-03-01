@@ -91,8 +91,10 @@ def main():
         and r["lambda_pitch"] != 0
         and r["lambda_duration"] != 0
         and r["degradation"].get("total_degradation") is not None
-        and not (isinstance(r["degradation"]["total_degradation"], float)
-                 and np.isnan(r["degradation"]["total_degradation"]))
+        and not (
+            isinstance(r["degradation"]["total_degradation"], float)
+            and np.isnan(r["degradation"]["total_degradation"])
+        )
     ]
 
     # Score all results
