@@ -153,6 +153,8 @@ def main():
     exported_baselines = set()
 
     print(f"\nConverting {len(top)} steered + baselines...")
+    skipped = 0
+    converted = 0
     for r in top:
         sc = SCENARIO_SHORT.get(r["scenario"], r["scenario"][:16])
         song = r["song_name"].split("/")[-1]
@@ -169,38 +171,53 @@ def main():
             f"_lp{r['lambda_pitch']:+.2f}_ld{r['lambda_duration']:+.2f}"
             f"_deg{deg:.2f}"
         )
-        steered_npy = npy_path_for(args.npy_root, r)
-        if steered_npy.exists():
-            tokens = np.load(steered_npy)
-            music = representation.decode(tokens, encoding)
-            music.write(str(sc_dir / f"{steered_name}.mid"))
-            if not args.skip_wav:
-                music.write_audio(str(sc_dir / f"{steered_name}.wav"))
-            print(f"  {sc}/{steered_name}")
+        steered_mid = sc_dir / f"{steered_name}.mid"
+        steered_wav = sc_dir / f"{steered_name}.wav"
+
+        # Skip if already generated
+        if steered_mid.exists() and (args.skip_wav or steered_wav.exists()):
+            print(f"  SKIP {sc}/{steered_name} (exists)")
+            skipped += 1
         else:
-            print(f"  MISSING: {steered_npy}")
+            steered_npy = npy_path_for(args.npy_root, r)
+            if steered_npy.exists():
+                tokens = np.load(steered_npy)
+                music = representation.decode(tokens, encoding)
+                music.write(str(steered_mid))
+                if not args.skip_wav:
+                    music.write_audio(str(steered_wav))
+                print(f"  {sc}/{steered_name}")
+                converted += 1
+            else:
+                print(f"  MISSING: {steered_npy}")
 
         # Baseline (one per song+scenario)
         baseline_key = (r["scenario"], r["song_name"])
         if baseline_key not in exported_baselines:
             exported_baselines.add(baseline_key)
             baseline_name = f"00_baseline_{song}"
-            baseline_npy = baseline_npy_path_for(args.npy_root, r)
-            if baseline_npy.exists():
-                tokens = np.load(baseline_npy)
-                music = representation.decode(tokens, encoding)
-                music.write(str(sc_dir / f"{baseline_name}.mid"))
-                if not args.skip_wav:
-                    music.write_audio(str(sc_dir / f"{baseline_name}.wav"))
-                print(f"  {sc}/{baseline_name} (baseline)")
-            else:
-                print(f"  BASELINE MISSING: {baseline_npy}")
+            baseline_mid = sc_dir / f"{baseline_name}.mid"
+            baseline_wav = sc_dir / f"{baseline_name}.wav"
 
-    print(f"\nDone! Files in: {args.out_dir}")
-    print("Structure: <out_dir>/<scenario>/00_baseline_*.wav + NN_steered_*.wav")
-    print(
-        "Within each scenario folder, sort alphabetically: baselines first, then steered by rank."
-    )
+            # Skip if already generated
+            if baseline_mid.exists() and (args.skip_wav or baseline_wav.exists()):
+                print(f"  SKIP {sc}/{baseline_name} (exists)")
+                skipped += 1
+            else:
+                baseline_npy = baseline_npy_path_for(args.npy_root, r)
+                if baseline_npy.exists():
+                    tokens = np.load(baseline_npy)
+                    music = representation.decode(tokens, encoding)
+                    music.write(str(baseline_mid))
+                    if not args.skip_wav:
+                        music.write_audio(str(baseline_wav))
+                    print(f"  {sc}/{baseline_name} (baseline)")
+                    converted += 1
+                else:
+                    print(f"  BASELINE MISSING: {baseline_npy}")
+
+    print(f"\nDone! Converted: {converted}, Skipped: {skipped}")
+    print(f"Files in: {args.out_dir}")
 
 
 if __name__ == "__main__":
