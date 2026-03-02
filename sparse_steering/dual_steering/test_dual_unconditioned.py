@@ -122,9 +122,9 @@ def evaluate_quality(tokens: np.ndarray, encoding: dict) -> dict:
 
         if not music.tracks or not music.tracks[0].notes:
             return {
-                "pitch_class_entropy": 0.0,
-                "scale_consistency": 0.0,
-                "groove_consistency": 0.0,
+                "pitch_class_entropy": np.nan,
+                "scale_consistency": np.nan,
+                "groove_consistency": np.nan,
             }
 
         pce = float(muspy.pitch_class_entropy(music))
@@ -139,9 +139,9 @@ def evaluate_quality(tokens: np.ndarray, encoding: dict) -> dict:
     except Exception as e:
         logger.warning(f"Quality evaluation failed: {e}")
         return {
-            "pitch_class_entropy": 0.0,
-            "scale_consistency": 0.0,
-            "groove_consistency": 0.0,
+            "pitch_class_entropy": np.nan,
+            "scale_consistency": np.nan,
+            "groove_consistency": np.nan,
         }
 
 
@@ -280,16 +280,16 @@ def evaluate_config(
             "degradation": None,
         }
 
-    # Aggregate quality
+    # Aggregate quality (skip NaN entries from failed evaluations)
     avg_quality = {}
     for key in ["pitch_class_entropy", "scale_consistency", "groove_consistency"]:
-        vals = [q[key] for q in all_quality if q[key] > 0]
-        avg_quality[key] = float(np.mean(vals)) if vals else 0.0
+        vals = [q[key] for q in all_quality if not np.isnan(q[key])]
+        avg_quality[key] = float(np.mean(vals)) if vals else np.nan
 
     avg_deg = {}
     for key in ["entropy_diff", "scale_diff", "groove_diff", "total_degradation"]:
-        vals = [d[key] for d in all_degradation]
-        avg_deg[key] = float(np.mean(vals))
+        vals = [d[key] for d in all_degradation if not np.isnan(d[key])]
+        avg_deg[key] = float(np.mean(vals)) if vals else np.nan
 
     return {
         "strategy": strategy,
@@ -561,6 +561,8 @@ def main():
                 r["degradation"]["total_degradation"]
                 for r in sr
                 if r.get("degradation")
+                and r["degradation"]["total_degradation"] is not None
+                and not np.isnan(r["degradation"]["total_degradation"])
             ]
             pitch_range = max(pitches) - min(pitches)
             dur_range = max(durations) - min(durations)
