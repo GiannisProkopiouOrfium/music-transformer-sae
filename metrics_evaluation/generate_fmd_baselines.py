@@ -26,7 +26,9 @@ PROJECT_ROOT = pathlib.Path(__file__).parent.parent
 sys.path.insert(0, str(PROJECT_ROOT / "mmt"))
 sys.path.insert(0, str(PROJECT_ROOT / "sparse_steering" / "dual_steering"))
 
+import music_x_transformers
 import representation
+import utils
 
 logging.basicConfig(
     level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s"
@@ -35,45 +37,33 @@ logger = logging.getLogger(__name__)
 
 
 def load_model(checkpoint_path, train_args_path, encoding_path, device):
-    """Load MMT model."""
+    """Load MMT model (same as test_dual_conditioned)."""
     from config_dual import DEFAULT_CHECKPOINT, DEFAULT_TRAIN_ARGS, DEFAULT_ENCODING
 
-    cp = checkpoint_path or DEFAULT_CHECKPOINT
-    ta = train_args_path or DEFAULT_TRAIN_ARGS
-    en = encoding_path or DEFAULT_ENCODING
+    cp = str(checkpoint_path or DEFAULT_CHECKPOINT)
+    ta = str(train_args_path or DEFAULT_TRAIN_ARGS)
+    en = str(encoding_path or DEFAULT_ENCODING)
 
-    encoding = representation.load_encoding(str(en))
+    train_args = utils.load_json(ta)
+    encoding = representation.load_encoding(en)
 
-    import json
-
-    with open(ta) as f:
-        train_args = json.load(f)
-
-    from x_transformers import TransformerWrapper, Decoder
-
-    dim = train_args.get("dim", 512)
-    depth = train_args.get("layers", 12)
-    heads = train_args.get("heads", 8)
-    max_seq_len = train_args.get("max_seq_len", 1024)
-    abs_pos_emb = train_args.get("abs_pos_emb", True)
-
-    n_tokens = [len(v) for v in encoding["code_type_map"].values()]
-
-    model = TransformerWrapper(
-        num_tokens=n_tokens,
-        max_seq_len=max_seq_len,
-        attn_layers=Decoder(
-            dim=dim,
-            depth=depth,
-            heads=heads,
-            rotary_pos_emb=not abs_pos_emb,
-            attn_flash=True,
-        ),
+    model = music_x_transformers.MusicXTransformer(
+        dim=train_args["dim"],
+        encoding=encoding,
+        depth=train_args["layers"],
+        heads=train_args["heads"],
+        max_seq_len=train_args["max_seq_len"],
+        max_beat=train_args["max_beat"],
+        rotary_pos_emb=train_args["rel_pos_emb"],
+        use_abs_pos_emb=train_args["abs_pos_emb"],
+        emb_dropout=train_args["dropout"],
+        attn_dropout=train_args["dropout"],
+        ff_dropout=train_args["dropout"],
     ).to(device)
 
-    ckpt = torch.load(str(cp), map_location=device, weights_only=True)
-    if "model_state_dict" in ckpt:
-        model.load_state_dict(ckpt["model_state_dict"])
+    ckpt = torch.load(cp, map_location=device)
+    if isinstance(ckpt, dict) and "model" in ckpt:
+        model.load_state_dict(ckpt["model"])
     else:
         model.load_state_dict(ckpt)
     model.eval()
