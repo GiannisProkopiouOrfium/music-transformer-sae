@@ -63,7 +63,10 @@ def load_model(checkpoint_path, train_args_path, encoding_path, device):
         num_tokens=n_tokens,
         max_seq_len=max_seq_len,
         attn_layers=Decoder(
-            dim=dim, depth=depth, heads=heads, rotary_pos_emb=not abs_pos_emb,
+            dim=dim,
+            depth=depth,
+            heads=heads,
+            rotary_pos_emb=not abs_pos_emb,
             attn_flash=True,
         ),
     ).to(device)
@@ -109,7 +112,9 @@ def load_primer_from_json(json_path, encoding, n_beats=16):
     return tokens[:cond_len]
 
 
-def generate_unconditioned_baselines(model, encoding, n_samples, seq_len, device, output_dir):
+def generate_unconditioned_baselines(
+    model, encoding, n_samples, seq_len, device, output_dir
+):
     """Generate N unconditioned baseline samples (no hooks)."""
     output_dir.mkdir(parents=True, exist_ok=True)
     eos = encoding["type_code_map"]["end-of-song"]
@@ -131,7 +136,9 @@ def generate_unconditioned_baselines(model, encoding, n_samples, seq_len, device
     return success
 
 
-def generate_conditioned_baselines(model, encoding, n_samples, seq_len, device, output_dir, seed=42):
+def generate_conditioned_baselines(
+    model, encoding, n_samples, seq_len, device, output_dir, seed=42
+):
     """Generate N conditioned baseline samples from random SOD primers (no hooks)."""
     output_dir.mkdir(parents=True, exist_ok=True)
     eos = encoding["type_code_map"]["end-of-song"]
@@ -161,7 +168,9 @@ def generate_conditioned_baselines(model, encoding, n_samples, seq_len, device, 
             full_seq = np.concatenate([primer_tokens, continuation], axis=0)
 
             song_name = pathlib.Path(jp).stem
-            np.save(output_dir / f"baseline_cond_{song_name}_s{success:03d}.npy", full_seq)
+            np.save(
+                output_dir / f"baseline_cond_{song_name}_s{success:03d}.npy", full_seq
+            )
             success += 1
 
             if success % 10 == 0:
@@ -174,13 +183,24 @@ def generate_conditioned_baselines(model, encoding, n_samples, seq_len, device, 
 
 
 def main():
-    parser = argparse.ArgumentParser(description="Generate baseline MIDI samples for FMD")
-    parser.add_argument("--n_uncond", type=int, default=50, help="Number of unconditioned baselines")
-    parser.add_argument("--n_cond", type=int, default=50, help="Number of conditioned baselines")
+    parser = argparse.ArgumentParser(
+        description="Generate baseline MIDI samples for FMD"
+    )
+    parser.add_argument(
+        "--n_uncond", type=int, default=50, help="Number of unconditioned baselines"
+    )
+    parser.add_argument(
+        "--n_cond", type=int, default=50, help="Number of conditioned baselines"
+    )
     parser.add_argument(
         "--output_dir",
         type=pathlib.Path,
-        default=PROJECT_ROOT / "exp" / "sod" / "sparse_steering" / "fmd_workspace" / "baselines",
+        default=PROJECT_ROOT
+        / "exp"
+        / "sod"
+        / "sparse_steering"
+        / "fmd_workspace"
+        / "baselines",
     )
     parser.add_argument("--checkpoint", type=pathlib.Path, default=None)
     parser.add_argument("--train_args", type=pathlib.Path, default=None)
@@ -194,19 +214,25 @@ def main():
     logger.info(f"Device: {device}")
 
     logger.info("Loading model...")
-    model, encoding = load_model(args.checkpoint, args.train_args, args.encoding_path, device)
+    model, encoding = load_model(
+        args.checkpoint, args.train_args, args.encoding_path, device
+    )
 
     # 1. Unconditioned baselines
     if args.n_uncond > 0:
         logger.info(f"Generating {args.n_uncond} unconditioned baselines...")
         uncond_dir = args.output_dir / "unconditioned"
-        generate_unconditioned_baselines(model, encoding, args.n_uncond, args.seq_len, device, uncond_dir)
+        generate_unconditioned_baselines(
+            model, encoding, args.n_uncond, args.seq_len, device, uncond_dir
+        )
 
     # 2. Conditioned baselines
     if args.n_cond > 0:
         logger.info(f"Generating {args.n_cond} conditioned baselines...")
         cond_dir = args.output_dir / "conditioned"
-        generate_conditioned_baselines(model, encoding, args.n_cond, args.seq_len, device, cond_dir, args.seed)
+        generate_conditioned_baselines(
+            model, encoding, args.n_cond, args.seq_len, device, cond_dir, args.seed
+        )
 
     logger.info("Done!")
 

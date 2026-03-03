@@ -395,7 +395,9 @@ def main():
                     if npy_to_midi(npy, midi_path, encoding):
                         n_converted += 1
             existing = len(list(dst.glob("*.mid")))
-            logger.info(f"  {mode} baselines: {n_converted} new + {existing - n_converted} existing = {existing} total")
+            logger.info(
+                f"  {mode} baselines: {n_converted} new + {existing - n_converted} existing = {existing} total"
+            )
 
     # 2. Conditioned
     logger.info("=" * 60)

@@ -253,7 +253,9 @@ def main():
     # ── Run per-lambda comparisons ──
     per_lambda_results = []
     if per_lambda_comparisons:
-        logger.info(f"\nRunning {len(per_lambda_comparisons)} per-lambda FMD comparisons...\n")
+        logger.info(
+            f"\nRunning {len(per_lambda_comparisons)} per-lambda FMD comparisons...\n"
+        )
         for label, ref, test in per_lambda_comparisons:
             logger.info(f"Computing: {label}")
             result = compute_fmd(ref, test, metric)
@@ -321,6 +323,7 @@ def main():
 
         # Parse lambda values from comparison labels and group by (strategy, mode)
         import re
+
         groups = {}  # (strategy, mode) -> {(lp, ld): fmd}
         for r in per_lambda_results:
             label = r["comparison"]  # e.g. "[cond] expanded_k_2x__lp+0.50_ld+0.75"
@@ -379,7 +382,9 @@ def main():
                 print(row)
 
             if best_pair:
-                print(f"  → Best: λ_p={best_pair[0]:+.2f}, λ_d={best_pair[1]:+.2f} → FMD={best_fmd:.1f}")
+                print(
+                    f"  → Best: λ_p={best_pair[0]:+.2f}, λ_d={best_pair[1]:+.2f} → FMD={best_fmd:.1f}"
+                )
 
     print("=" * 90)
 
