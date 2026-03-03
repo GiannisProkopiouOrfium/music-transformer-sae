@@ -176,7 +176,7 @@ def evaluate_config(
     n_samples: int,
     seq_len: int,
     device: torch.device,
-    save_midi: bool = False,
+    save_midi: bool = True,
     output_dir: Optional[pathlib.Path] = None,
     k_multiplier: float = 1.5,
 ) -> dict:
@@ -401,7 +401,18 @@ def main():
     )
     parser.add_argument("--n_samples", type=int, default=N_SAMPLES_PER_CONFIG)
     parser.add_argument("--seq_len", type=int, default=SEQ_LEN)
-    parser.add_argument("--save_midi", action="store_true")
+    parser.add_argument(
+        "--save_midi",
+        action="store_true",
+        default=True,
+        help="Save .npy token files (default: True)",
+    )
+    parser.add_argument(
+        "--no_save_midi",
+        dest="save_midi",
+        action="store_false",
+        help="Disable .npy saving",
+    )
     parser.add_argument(
         "--k_multiplier",
         type=float,

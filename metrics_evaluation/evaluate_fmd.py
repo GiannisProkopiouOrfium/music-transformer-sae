@@ -148,6 +148,25 @@ def main():
     ref_cond = manifest.get("baseline_conditioned", {}).get("path")
     ref_uncond = manifest.get("baseline_unconditioned", {}).get("path")
 
+    # Skip references with too few MIDIs
+    min_midis = 2
+    if (
+        ref_cond
+        and manifest.get("baseline_conditioned", {}).get("n_midis", 0) < min_midis
+    ):
+        logger.warning(
+            f"Skipping conditioned baseline — only {manifest['baseline_conditioned']['n_midis']} MIDIs"
+        )
+        ref_cond = None
+    if (
+        ref_uncond
+        and manifest.get("baseline_unconditioned", {}).get("n_midis", 0) < min_midis
+    ):
+        logger.warning(
+            f"Skipping unconditioned baseline — only {manifest['baseline_unconditioned']['n_midis']} MIDIs"
+        )
+        ref_uncond = None
+
     strategies = ["expanded_k_2x", "gram_schmidt_ek2"]
 
     # 1. Baseline quality: FMD(SOD, baselines)
