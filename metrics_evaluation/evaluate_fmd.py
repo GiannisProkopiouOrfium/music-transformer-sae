@@ -216,8 +216,23 @@ def main():
             if ref_sod:
                 comparisons.append((f"SOD vs {label}", ref_sod, info["path"]))
 
-    # ── Run comparisons ──
-    logger.info(f"\nRunning {len(comparisons)} FMD comparisons...\n")
+    # 5. Per-lambda: FMD(SOD, lambda_pair) — for heatmap
+    per_lambda_comparisons = []
+    for key, info in sorted(manifest.items()):
+        if "/per_lambda/" in key:
+            n = info.get("n_midis", 0)
+            if n < 2:
+                continue
+            # key like "conditioned/per_lambda/expanded_k_2x__lp+0.50_ld+0.75"
+            #       or "unconditioned/per_lambda/expanded_k_2x__p+0.50_d+1.00"
+            short = key.split("/per_lambda/")[1]
+            mode = "cond" if key.startswith("conditioned") else "uncond"
+            label = f"[{mode}] {short}"
+            if ref_sod:
+                per_lambda_comparisons.append((label, ref_sod, info["path"]))
+
+    # ── Run main comparisons ──
+    logger.info(f"\nRunning {len(comparisons)} main FMD comparisons...\n")
     results = []
 
     for label, ref, test in comparisons:
@@ -235,21 +250,29 @@ def main():
         if "error" in result:
             logger.warning(f"  Error: {result['error']}")
 
+    # ── Run per-lambda comparisons ──
+    per_lambda_results = []
+    if per_lambda_comparisons:
+        logger.info(f"\nRunning {len(per_lambda_comparisons)} per-lambda FMD comparisons...\n")
+        for label, ref, test in per_lambda_comparisons:
+            logger.info(f"Computing: {label}")
+            result = compute_fmd(ref, test, metric)
+            result["comparison"] = label
+            result["reference"] = ref
+            result["test"] = test
+            per_lambda_results.append(result)
+
+            fmd_str = f"{result['fmd']:.4f}" if result["fmd"] is not None else "FAILED"
+            logger.info(
+                f"  FMD = {fmd_str}  (ref={result['n_ref']}, test={result['n_test']})"
+            )
+            if "error" in result:
+                logger.warning(f"  Error: {result['error']}")
+
     # ── Print summary table ──
     print("\n" + "=" * 90)
     print(" FRECHET MUSIC DISTANCE (FMD) RESULTS")
     print("=" * 90)
-
-    # Group by type
-    sections = [
-        ("Model Quality (FMD vs SOD Ground Truth)", "SOD vs Baseline"),
-        ("Steered Quality (FMD vs SOD Ground Truth)", "SOD vs "),
-        ("Steering Cost (FMD vs Baseline)", "Baseline vs "),
-        (
-            "Per-Scenario (FMD vs SOD)",
-            "SOD vs expanded_k_2x__\|SOD vs gram_schmidt_ek2__",
-        ),
-    ]
 
     # Simpler: just print all in order
     print(f"\n{'Comparison':<55} {'FMD':>8} {'#Ref':>5} {'#Test':>5}")
@@ -289,13 +312,83 @@ def main():
             label = r["comparison"].replace("SOD vs ", "  ")
             print(f"{label:<55} {fmd:>8} {r['n_ref']:>5} {r['n_test']:>5}")
 
+    # Per-lambda heatmap
+    if per_lambda_results:
+        print()
+        print("=" * 90)
+        print(" PER-LAMBDA FMD HEATMAP (FMD vs SOD)")
+        print("=" * 90)
+
+        # Parse lambda values from comparison labels and group by (strategy, mode)
+        import re
+        groups = {}  # (strategy, mode) -> {(lp, ld): fmd}
+        for r in per_lambda_results:
+            label = r["comparison"]  # e.g. "[cond] expanded_k_2x__lp+0.50_ld+0.75"
+            mode_match = re.match(r"\[(cond|uncond)\]\s+(.+?)__(.*)", label)
+            if not mode_match:
+                continue
+            mode = mode_match.group(1)
+            strat = mode_match.group(2)
+            lam_str = mode_match.group(3)
+
+            # Parse lambda values
+            if mode == "cond":
+                lam_match = re.match(r"lp([+-]?\d+\.\d+)_ld([+-]?\d+\.\d+)", lam_str)
+            else:
+                lam_match = re.match(r"p([+-]?\d+\.\d+)_d([+-]?\d+\.\d+)", lam_str)
+
+            if not lam_match:
+                continue
+
+            lp_val = float(lam_match.group(1))
+            ld_val = float(lam_match.group(2))
+
+            key = (strat, mode)
+            if key not in groups:
+                groups[key] = {}
+            groups[key][(lp_val, ld_val)] = r["fmd"]
+
+        for (strat, mode), fmd_map in sorted(groups.items()):
+            print(f"\n  {strat} ({mode}):")
+
+            # Build grid
+            all_lp = sorted(set(lp for lp, _ in fmd_map.keys()))
+            all_ld = sorted(set(ld for _, ld in fmd_map.keys()))
+
+            # Header
+            header = f"  {'λ_p \\ λ_d':>10}"
+            for ld in all_ld:
+                header += f" {ld:>8.2f}"
+            print(header)
+            print("  " + "-" * (11 + 9 * len(all_ld)))
+
+            # Rows
+            best_fmd = None
+            best_pair = None
+            for lp in all_lp:
+                row = f"  {lp:>10.2f}"
+                for ld in all_ld:
+                    val = fmd_map.get((lp, ld))
+                    if val is not None:
+                        row += f" {val:>8.1f}"
+                        if best_fmd is None or val < best_fmd:
+                            best_fmd = val
+                            best_pair = (lp, ld)
+                    else:
+                        row += f" {'N/A':>8}"
+                print(row)
+
+            if best_pair:
+                print(f"  → Best: λ_p={best_pair[0]:+.2f}, λ_d={best_pair[1]:+.2f} → FMD={best_fmd:.1f}")
+
     print("=" * 90)
 
-    # Save results
+    # Save all results
+    all_results = results + per_lambda_results
     results_path = args.workspace_dir / "fmd_results.json"
     with open(results_path, "w") as f:
-        json.dump(results, f, indent=2)
-    logger.info(f"Saved results: {results_path}")
+        json.dump(all_results, f, indent=2)
+    logger.info(f"Saved {len(all_results)} results: {results_path}")
 
 
 if __name__ == "__main__":

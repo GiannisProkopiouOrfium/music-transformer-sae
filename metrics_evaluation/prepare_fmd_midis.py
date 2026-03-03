@@ -10,12 +10,15 @@ Organises all necessary MIDI files into a clean directory structure:
     ├── conditioned/
     │   ├── expanded_k_2x/        # All non-zero-alpha conditioned steered
     │   ├── gram_schmidt_ek2/
-    │   └── per_scenario/
-    │       ├── expanded_k_2x__high_pitch_long_duration_to_low_short/
-    │       └── ...
+    │   ├── per_scenario/
+    │   │   └── ...
+    │   └── per_lambda/           # Per-(λ_p,λ_d) conditioned dirs
+    │       └── <strategy>__lp+X.XX_ld+Y.YY/
     └── unconditioned/
         ├── expanded_k_2x/        # All non-zero-alpha unconditioned steered
-        └── gram_schmidt_ek2/
+        ├── gram_schmidt_ek2/
+        └── per_lambda/           # Per-(λ_p,λ_d) unconditioned dirs
+            └── <strategy>__p+X.XX_d+Y.YY/
 
 Usage:
     python metrics_evaluation/prepare_fmd_midis.py \
@@ -179,6 +182,18 @@ def prepare_conditioned(
                 if not (per_sc_dir / per_sc_midi).exists():
                     npy_to_midi(npy, per_sc_dir / per_sc_midi, encoding)
 
+                # Also per-lambda dir (pooled across scenarios)
+                per_lam_dir = (
+                    workspace
+                    / "conditioned"
+                    / "per_lambda"
+                    / f"{strategy}__lp{lp:+.2f}_ld{ld:+.2f}"
+                )
+                per_lam_dir.mkdir(parents=True, exist_ok=True)
+                per_lam_midi = f"{scenario}_{npy.stem}.mid"
+                if not (per_lam_dir / per_lam_midi).exists():
+                    npy_to_midi(npy, per_lam_dir / per_lam_midi, encoding)
+
         dirs[f"conditioned/{strategy}"] = steered_dir
         logger.info(f"Conditioned {strategy}: {steered_count} steered MIDIs")
 
@@ -191,6 +206,13 @@ def prepare_conditioned(
         for d in sorted(per_sc_base.iterdir()):
             if d.is_dir():
                 dirs[f"conditioned/per_scenario/{d.name}"] = d
+
+    # Collect per-lambda dirs
+    per_lam_base = workspace / "conditioned" / "per_lambda"
+    if per_lam_base.exists():
+        for d in sorted(per_lam_base.iterdir()):
+            if d.is_dir():
+                dirs[f"conditioned/per_lambda/{d.name}"] = d
 
     return dirs
 
@@ -254,11 +276,31 @@ def prepare_unconditioned(
                 if npy_to_midi(npy, steered_dir / midi_name, encoding):
                     steered_count += 1
 
+                # Also per-lambda dir
+                lambda_label = f"{parts[0]}_{parts[1]}"  # e.g. p+0.50_d+1.00
+                per_lam_dir = (
+                    workspace
+                    / "unconditioned"
+                    / "per_lambda"
+                    / f"{strategy}__{lambda_label}"
+                )
+                per_lam_dir.mkdir(parents=True, exist_ok=True)
+                per_lam_midi = f"{npy.stem}.mid"
+                if not (per_lam_dir / per_lam_midi).exists():
+                    npy_to_midi(npy, per_lam_dir / per_lam_midi, encoding)
+
         dirs[f"unconditioned/{strategy}"] = steered_dir
         logger.info(f"Unconditioned {strategy}: {steered_count} steered MIDIs")
 
     dirs["baseline_unconditioned"] = baseline_dir
     logger.info(f"Unconditioned baselines: {baseline_count} MIDIs (pooled)")
+
+    # Collect per-lambda dirs
+    per_lam_base = workspace / "unconditioned" / "per_lambda"
+    if per_lam_base.exists():
+        for d in sorted(per_lam_base.iterdir()):
+            if d.is_dir():
+                dirs[f"unconditioned/per_lambda/{d.name}"] = d
 
     return dirs
 
@@ -334,6 +376,26 @@ def main():
     logger.info("=" * 60)
     logger.info("Preparing SOD reference...")
     prepare_sod_reference(args.workspace_dir, args.n_sod_samples)
+
+    # 1b. Dedicated baselines (from generate_fmd_baselines.py)
+    baseline_gen_dir = args.workspace_dir / "baselines"
+    if baseline_gen_dir.exists():
+        logger.info("=" * 60)
+        logger.info("Converting dedicated baseline .npy files to MIDI...")
+        for mode in ("conditioned", "unconditioned"):
+            src = baseline_gen_dir / mode
+            if not src.exists():
+                continue
+            dst = args.workspace_dir / f"baseline_{mode}"
+            dst.mkdir(parents=True, exist_ok=True)
+            n_converted = 0
+            for npy in sorted(src.glob("*.npy")):
+                midi_path = dst / f"{npy.stem}.mid"
+                if not midi_path.exists():
+                    if npy_to_midi(npy, midi_path, encoding):
+                        n_converted += 1
+            existing = len(list(dst.glob("*.mid")))
+            logger.info(f"  {mode} baselines: {n_converted} new + {existing - n_converted} existing = {existing} total")
 
     # 2. Conditioned
     logger.info("=" * 60)
