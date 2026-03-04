@@ -359,7 +359,8 @@ def main():
             all_ld = sorted(set(ld for _, ld in fmd_map.keys()))
 
             # Header
-            header = f"  {'λ_p \\ λ_d':>10}"
+            col_label = "λ_p \\ λ_d"
+            header = f"  {col_label:>10}"
             for ld in all_ld:
                 header += f" {ld:>8.2f}"
             print(header)
