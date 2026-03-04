@@ -108,17 +108,34 @@ def generate_unconditioned_baselines(
     """Generate N unconditioned baseline samples (no hooks)."""
     output_dir.mkdir(parents=True, exist_ok=True)
     eos = encoding["type_code_map"]["end-of-song"]
-    success = 0
 
-    for i in range(n_samples):
+    # Count existing to allow incremental runs
+    existing = len(list(output_dir.glob("*.npy")))
+    if existing >= n_samples:
+        logger.info(
+            f"Already have {existing}/{n_samples} unconditioned baselines, skipping"
+        )
+        return existing
+
+    start_idx = existing
+    success = existing
+
+    for i in range(start_idx, n_samples):
+        npy_path = output_dir / f"baseline_uncond_s{i:04d}.npy"
+        if npy_path.exists():
+            success += 1
+            continue
         try:
             with torch.no_grad():
                 start = torch.zeros(1, 1, 6, dtype=torch.long, device=device)
                 generated = model.generate(start, seq_len, eos_token=eos)
 
             tokens = generated[0].cpu().numpy()
-            np.save(output_dir / f"baseline_uncond_s{i:03d}.npy", tokens)
+            np.save(npy_path, tokens)
             success += 1
+
+            if (success - existing) % 50 == 0:
+                logger.info(f"  Unconditioned baselines: {success}/{n_samples}")
         except Exception as e:
             logger.warning(f"Unconditioned sample {i} failed: {e}")
 
@@ -127,17 +144,29 @@ def generate_unconditioned_baselines(
 
 
 def generate_conditioned_baselines(
-    model, encoding, n_samples, seq_len, device, output_dir, seed=42
+    model, encoding, n_samples, seq_len, device, output_dir, n_beats=16, seed=42
 ):
-    """Generate N conditioned baseline samples from random SOD primers (no hooks)."""
+    """Generate N conditioned baseline samples from random SOD primers (no hooks).
+
+    Args:
+        n_beats: Number of beats to use as primer (16 = paper default).
+    """
     output_dir.mkdir(parents=True, exist_ok=True)
     eos = encoding["type_code_map"]["end-of-song"]
+
+    # Count existing to allow incremental runs
+    existing = len(list(output_dir.glob("*.npy")))
+    if existing >= n_samples:
+        logger.info(
+            f"Already have {existing}/{n_samples} conditioned baselines, skipping"
+        )
+        return existing
 
     all_jsons = get_sod_json_paths()
     random.seed(seed)
     random.shuffle(all_jsons)
 
-    success = 0
+    success = existing
     json_idx = 0
 
     while success < n_samples and json_idx < len(all_jsons):
@@ -145,7 +174,7 @@ def generate_conditioned_baselines(
         json_idx += 1
 
         try:
-            primer_tokens = load_primer_from_json(jp, encoding)
+            primer_tokens = load_primer_from_json(jp, encoding, n_beats=n_beats)
             if primer_tokens is None:
                 continue
 
@@ -159,11 +188,11 @@ def generate_conditioned_baselines(
 
             song_name = pathlib.Path(jp).stem
             np.save(
-                output_dir / f"baseline_cond_{song_name}_s{success:03d}.npy", full_seq
+                output_dir / f"baseline_cond_{song_name}_s{success:04d}.npy", full_seq
             )
             success += 1
 
-            if success % 10 == 0:
+            if (success - existing) % 50 == 0 and success > existing:
                 logger.info(f"  Conditioned baselines: {success}/{n_samples}")
         except Exception as e:
             logger.debug(f"Failed on {jp}: {e}")
@@ -177,10 +206,22 @@ def main():
         description="Generate baseline MIDI samples for FMD"
     )
     parser.add_argument(
-        "--n_uncond", type=int, default=50, help="Number of unconditioned baselines"
+        "--n_uncond",
+        type=int,
+        default=1000,
+        help="Number of unconditioned baselines (paper uses 1000)",
     )
     parser.add_argument(
-        "--n_cond", type=int, default=50, help="Number of conditioned baselines"
+        "--n_cond",
+        type=int,
+        default=1000,
+        help="Number of 16-beat conditioned baselines (paper uses 1000)",
+    )
+    parser.add_argument(
+        "--n_beats",
+        type=int,
+        default=16,
+        help="Conditioning beats for conditioned mode (paper uses 16)",
     )
     parser.add_argument(
         "--output_dir",
@@ -216,12 +257,21 @@ def main():
             model, encoding, args.n_uncond, args.seq_len, device, uncond_dir
         )
 
-    # 2. Conditioned baselines
+    # 2. Conditioned baselines (16-beat continuation, matching paper)
     if args.n_cond > 0:
-        logger.info(f"Generating {args.n_cond} conditioned baselines...")
+        logger.info(
+            f"Generating {args.n_cond} conditioned baselines ({args.n_beats}-beat continuation)..."
+        )
         cond_dir = args.output_dir / "conditioned"
         generate_conditioned_baselines(
-            model, encoding, args.n_cond, args.seq_len, device, cond_dir, args.seed
+            model,
+            encoding,
+            args.n_cond,
+            args.seq_len,
+            device,
+            cond_dir,
+            n_beats=args.n_beats,
+            seed=args.seed,
         )
 
     logger.info("Done!")

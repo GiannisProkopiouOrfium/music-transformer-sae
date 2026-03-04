@@ -64,30 +64,46 @@ def npy_to_midi(
 
 
 def prepare_sod_reference(
-    workspace: pathlib.Path, n_samples: int = 200, seed: int = 42
+    workspace: pathlib.Path, n_samples: int = 0, seed: int = 42
 ) -> pathlib.Path:
-    """Sample SOD ground-truth JSONs and convert to MIDI."""
+    """Convert SOD ground-truth JSONs to MIDI.
+
+    Args:
+        n_samples: Number of SOD samples to use. 0 = use ALL (recommended
+                   for matching the FMD paper which uses 5710).
+    """
     out_dir = workspace / "reference_sod"
-    if out_dir.exists() and len(list(out_dir.glob("*.mid"))) >= n_samples:
+    json_dir = PROJECT_ROOT / "data" / "sod" / "processed" / "json"
+    all_jsons = sorted(glob.glob(str(json_dir / "**" / "*.json"), recursive=True))
+    logger.info(f"Found {len(all_jsons)} SOD JSON files")
+
+    if n_samples > 0:
+        random.seed(seed)
+        selected = random.sample(all_jsons, min(n_samples, len(all_jsons)))
+    else:
+        selected = all_jsons  # Use all
+
+    target = len(selected)
+
+    # Skip if already have enough
+    if out_dir.exists() and len(list(out_dir.glob("*.mid"))) >= target:
         logger.info(
             f"SOD reference already prepared ({len(list(out_dir.glob('*.mid')))} MIDIs)"
         )
         return out_dir
 
     out_dir.mkdir(parents=True, exist_ok=True)
-    json_dir = PROJECT_ROOT / "data" / "sod" / "processed" / "json"
-    all_jsons = sorted(glob.glob(str(json_dir / "**" / "*.json"), recursive=True))
-    logger.info(f"Found {len(all_jsons)} SOD JSON files")
-
-    random.seed(seed)
-    selected = random.sample(all_jsons, min(n_samples, len(all_jsons)))
 
     success = 0
     for jp in selected:
+        name = pathlib.Path(jp).stem
+        midi_path = out_dir / f"{name}.mid"
+        if midi_path.exists():
+            success += 1
+            continue
         try:
             music = muspy.load_json(jp)
-            name = pathlib.Path(jp).stem
-            music.write(str(out_dir / f"{name}.mid"))
+            music.write(str(midi_path))
             success += 1
         except Exception as e:
             logger.debug(f"Failed SOD {jp}: {e}")
@@ -154,35 +170,41 @@ def prepare_conditioned(
                     if npy_to_midi(npy, midi_path, encoding):
                         baseline_count += 1
             else:
-                # Check both lambdas are non-zero from folder name
+                # Parse lambda values
                 parts = parent_name.split("_")
                 try:
                     lp = float(parts[0].replace("lp", ""))
                     ld = float(parts[1].replace("ld", ""))
-                    if lp == 0.0 or ld == 0.0:
-                        continue
                 except (ValueError, IndexError):
                     continue
 
-                # Unique name to avoid collisions
                 scenario = npy.parent.parent.parent.name
-                midi_name = f"{scenario}_{parent_name}_{npy.stem}.mid"
-                if npy_to_midi(npy, steered_dir / midi_name, encoding):
-                    steered_count += 1
+                is_dual = abs(lp) > 1e-6 and abs(ld) > 1e-6
+                is_single_pitch = abs(lp) > 1e-6 and abs(ld) < 1e-6
+                is_single_duration = abs(lp) < 1e-6 and abs(ld) > 1e-6
 
-                # Also per-scenario dir
-                per_sc_dir = (
-                    workspace
-                    / "conditioned"
-                    / "per_scenario"
-                    / f"{strategy}__{scenario}"
-                )
-                per_sc_dir.mkdir(parents=True, exist_ok=True)
-                per_sc_midi = f"{parent_name}_{npy.stem}.mid"
-                if not (per_sc_dir / per_sc_midi).exists():
-                    npy_to_midi(npy, per_sc_dir / per_sc_midi, encoding)
+                if not (is_dual or is_single_pitch or is_single_duration):
+                    continue  # both zero = baseline, already handled
 
-                # Also per-lambda dir (pooled across scenarios)
+                # --- Pooled steered dir (dual only, for backward compat) ---
+                if is_dual:
+                    midi_name = f"{scenario}_{parent_name}_{npy.stem}.mid"
+                    if npy_to_midi(npy, steered_dir / midi_name, encoding):
+                        steered_count += 1
+
+                    # Per-scenario dir
+                    per_sc_dir = (
+                        workspace
+                        / "conditioned"
+                        / "per_scenario"
+                        / f"{strategy}__{scenario}"
+                    )
+                    per_sc_dir.mkdir(parents=True, exist_ok=True)
+                    per_sc_midi = f"{parent_name}_{npy.stem}.mid"
+                    if not (per_sc_dir / per_sc_midi).exists():
+                        npy_to_midi(npy, per_sc_dir / per_sc_midi, encoding)
+
+                # --- Per-lambda-pair dir (includes single-concept) ---
                 per_lam_dir = (
                     workspace
                     / "conditioned"
@@ -193,6 +215,32 @@ def prepare_conditioned(
                 per_lam_midi = f"{scenario}_{npy.stem}.mid"
                 if not (per_lam_dir / per_lam_midi).exists():
                     npy_to_midi(npy, per_lam_dir / per_lam_midi, encoding)
+
+                # --- Marginal per-λ_pitch dir (all λ_d grouped together) ---
+                if abs(lp) > 1e-6:
+                    pitch_dir = (
+                        workspace
+                        / "conditioned"
+                        / "per_lambda_pitch"
+                        / f"{strategy}__lp{lp:+.2f}"
+                    )
+                    pitch_dir.mkdir(parents=True, exist_ok=True)
+                    pitch_midi = f"{scenario}_{parent_name}_{npy.stem}.mid"
+                    if not (pitch_dir / pitch_midi).exists():
+                        npy_to_midi(npy, pitch_dir / pitch_midi, encoding)
+
+                # --- Marginal per-λ_duration dir (all λ_p grouped together) ---
+                if abs(ld) > 1e-6:
+                    dur_dir = (
+                        workspace
+                        / "conditioned"
+                        / "per_lambda_duration"
+                        / f"{strategy}__ld{ld:+.2f}"
+                    )
+                    dur_dir.mkdir(parents=True, exist_ok=True)
+                    dur_midi = f"{scenario}_{parent_name}_{npy.stem}.mid"
+                    if not (dur_dir / dur_midi).exists():
+                        npy_to_midi(npy, dur_dir / dur_midi, encoding)
 
         dirs[f"conditioned/{strategy}"] = steered_dir
         logger.info(f"Conditioned {strategy}: {steered_count} steered MIDIs")
@@ -213,6 +261,20 @@ def prepare_conditioned(
         for d in sorted(per_lam_base.iterdir()):
             if d.is_dir():
                 dirs[f"conditioned/per_lambda/{d.name}"] = d
+
+    # Collect marginal per-λ_pitch dirs
+    plp_base = workspace / "conditioned" / "per_lambda_pitch"
+    if plp_base.exists():
+        for d in sorted(plp_base.iterdir()):
+            if d.is_dir():
+                dirs[f"conditioned/per_lambda_pitch/{d.name}"] = d
+
+    # Collect marginal per-λ_duration dirs
+    pld_base = workspace / "conditioned" / "per_lambda_duration"
+    if pld_base.exists():
+        for d in sorted(pld_base.iterdir()):
+            if d.is_dir():
+                dirs[f"conditioned/per_lambda_duration/{d.name}"] = d
 
     return dirs
 
@@ -262,22 +324,29 @@ def prepare_unconditioned(
                     if npy_to_midi(npy, midi_path, encoding):
                         baseline_count += 1
             else:
-                # Check both alphas are non-zero
+                # Parse lambda values
                 try:
                     parts = name.split("_")
                     ap = float(parts[0].replace("p", ""))
                     ad = float(parts[1].replace("d", ""))
-                    if ap == 0.0 or ad == 0.0:
-                        continue
                 except (ValueError, IndexError):
                     continue
 
-                midi_name = f"{npy.stem}.mid"
-                if npy_to_midi(npy, steered_dir / midi_name, encoding):
-                    steered_count += 1
+                is_dual = abs(ap) > 1e-6 and abs(ad) > 1e-6
+                is_single_pitch = abs(ap) > 1e-6 and abs(ad) < 1e-6
+                is_single_duration = abs(ap) < 1e-6 and abs(ad) > 1e-6
 
-                # Also per-lambda dir
-                lambda_label = f"{parts[0]}_{parts[1]}"  # e.g. p+0.50_d+1.00
+                if not (is_dual or is_single_pitch or is_single_duration):
+                    continue
+
+                # --- Pooled steered dir (dual only) ---
+                if is_dual:
+                    midi_name = f"{npy.stem}.mid"
+                    if npy_to_midi(npy, steered_dir / midi_name, encoding):
+                        steered_count += 1
+
+                # --- Per-lambda-pair dir (includes single) ---
+                lambda_label = f"{parts[0]}_{parts[1]}"
                 per_lam_dir = (
                     workspace
                     / "unconditioned"
@@ -288,6 +357,32 @@ def prepare_unconditioned(
                 per_lam_midi = f"{npy.stem}.mid"
                 if not (per_lam_dir / per_lam_midi).exists():
                     npy_to_midi(npy, per_lam_dir / per_lam_midi, encoding)
+
+                # --- Marginal per-λ_pitch (all λ_d grouped) ---
+                if abs(ap) > 1e-6:
+                    pitch_dir = (
+                        workspace
+                        / "unconditioned"
+                        / "per_lambda_pitch"
+                        / f"{strategy}__p{ap:+.2f}"
+                    )
+                    pitch_dir.mkdir(parents=True, exist_ok=True)
+                    pitch_midi = f"{npy.stem}.mid"
+                    if not (pitch_dir / pitch_midi).exists():
+                        npy_to_midi(npy, pitch_dir / pitch_midi, encoding)
+
+                # --- Marginal per-λ_duration (all λ_p grouped) ---
+                if abs(ad) > 1e-6:
+                    dur_dir = (
+                        workspace
+                        / "unconditioned"
+                        / "per_lambda_duration"
+                        / f"{strategy}__d{ad:+.2f}"
+                    )
+                    dur_dir.mkdir(parents=True, exist_ok=True)
+                    dur_midi = f"{npy.stem}.mid"
+                    if not (dur_dir / dur_midi).exists():
+                        npy_to_midi(npy, dur_dir / dur_midi, encoding)
 
         dirs[f"unconditioned/{strategy}"] = steered_dir
         logger.info(f"Unconditioned {strategy}: {steered_count} steered MIDIs")
@@ -302,6 +397,20 @@ def prepare_unconditioned(
             if d.is_dir():
                 dirs[f"unconditioned/per_lambda/{d.name}"] = d
 
+    # Collect marginal per-λ_pitch dirs
+    plp_base = workspace / "unconditioned" / "per_lambda_pitch"
+    if plp_base.exists():
+        for d in sorted(plp_base.iterdir()):
+            if d.is_dir():
+                dirs[f"unconditioned/per_lambda_pitch/{d.name}"] = d
+
+    # Collect marginal per-λ_duration dirs
+    pld_base = workspace / "unconditioned" / "per_lambda_duration"
+    if pld_base.exists():
+        for d in sorted(pld_base.iterdir()):
+            if d.is_dir():
+                dirs[f"unconditioned/per_lambda_duration/{d.name}"] = d
+
     return dirs
 
 
@@ -314,7 +423,12 @@ def main():
         type=pathlib.Path,
         default=PROJECT_ROOT / "exp" / "sod" / "sparse_steering" / "fmd_workspace",
     )
-    parser.add_argument("--n_sod_samples", type=int, default=200)
+    parser.add_argument(
+        "--n_sod_samples",
+        type=int,
+        default=0,
+        help="Number of SOD reference samples (0 = use ALL ~5710, matching the FMD paper)",
+    )
 
     # Conditioned experiment dirs (one per strategy)
     parser.add_argument(

@@ -216,20 +216,48 @@ def main():
             if ref_sod:
                 comparisons.append((f"SOD vs {label}", ref_sod, info["path"]))
 
-    # 5. Per-lambda: FMD(SOD, lambda_pair) — for heatmap
+    # 5. Per-lambda-pair: FMD(SOD, lambda_pair) — for heatmap (dual)
     per_lambda_comparisons = []
     for key, info in sorted(manifest.items()):
-        if "/per_lambda/" in key:
+        if (
+            "/per_lambda/" in key
+            and "/per_lambda_pitch/" not in key
+            and "/per_lambda_duration/" not in key
+        ):
             n = info.get("n_midis", 0)
             if n < 2:
                 continue
-            # key like "conditioned/per_lambda/expanded_k_2x__lp+0.50_ld+0.75"
-            #       or "unconditioned/per_lambda/expanded_k_2x__p+0.50_d+1.00"
             short = key.split("/per_lambda/")[1]
             mode = "cond" if key.startswith("conditioned") else "uncond"
             label = f"[{mode}] {short}"
             if ref_sod:
                 per_lambda_comparisons.append((label, ref_sod, info["path"]))
+
+    # 6. Marginal per-λ_pitch: FMD(SOD, all samples at this λ_p) — for line plots
+    marginal_pitch_comparisons = []
+    for key, info in sorted(manifest.items()):
+        if "/per_lambda_pitch/" in key:
+            n = info.get("n_midis", 0)
+            if n < 2:
+                continue
+            short = key.split("/per_lambda_pitch/")[1]
+            mode = "cond" if key.startswith("conditioned") else "uncond"
+            label = f"[{mode}][pitch] {short}"
+            if ref_sod:
+                marginal_pitch_comparisons.append((label, ref_sod, info["path"]))
+
+    # 7. Marginal per-λ_duration: FMD(SOD, all samples at this λ_d) — for line plots
+    marginal_duration_comparisons = []
+    for key, info in sorted(manifest.items()):
+        if "/per_lambda_duration/" in key:
+            n = info.get("n_midis", 0)
+            if n < 2:
+                continue
+            short = key.split("/per_lambda_duration/")[1]
+            mode = "cond" if key.startswith("conditioned") else "uncond"
+            label = f"[{mode}][duration] {short}"
+            if ref_sod:
+                marginal_duration_comparisons.append((label, ref_sod, info["path"]))
 
     # ── Run main comparisons ──
     logger.info(f"\nRunning {len(comparisons)} main FMD comparisons...\n")
@@ -263,6 +291,48 @@ def main():
             result["reference"] = ref
             result["test"] = test
             per_lambda_results.append(result)
+
+            fmd_str = f"{result['fmd']:.4f}" if result["fmd"] is not None else "FAILED"
+            logger.info(
+                f"  FMD = {fmd_str}  (ref={result['n_ref']}, test={result['n_test']})"
+            )
+            if "error" in result:
+                logger.warning(f"  Error: {result['error']}")
+
+    # ── Run marginal pitch comparisons ──
+    marginal_pitch_results = []
+    if marginal_pitch_comparisons:
+        logger.info(
+            f"\nRunning {len(marginal_pitch_comparisons)} marginal-pitch FMD comparisons...\n"
+        )
+        for label, ref, test in marginal_pitch_comparisons:
+            logger.info(f"Computing: {label}")
+            result = compute_fmd(ref, test, metric)
+            result["comparison"] = label
+            result["reference"] = ref
+            result["test"] = test
+            marginal_pitch_results.append(result)
+
+            fmd_str = f"{result['fmd']:.4f}" if result["fmd"] is not None else "FAILED"
+            logger.info(
+                f"  FMD = {fmd_str}  (ref={result['n_ref']}, test={result['n_test']})"
+            )
+            if "error" in result:
+                logger.warning(f"  Error: {result['error']}")
+
+    # ── Run marginal duration comparisons ──
+    marginal_duration_results = []
+    if marginal_duration_comparisons:
+        logger.info(
+            f"\nRunning {len(marginal_duration_comparisons)} marginal-duration FMD comparisons...\n"
+        )
+        for label, ref, test in marginal_duration_comparisons:
+            logger.info(f"Computing: {label}")
+            result = compute_fmd(ref, test, metric)
+            result["comparison"] = label
+            result["reference"] = ref
+            result["test"] = test
+            marginal_duration_results.append(result)
 
             fmd_str = f"{result['fmd']:.4f}" if result["fmd"] is not None else "FAILED"
             logger.info(
@@ -387,10 +457,181 @@ def main():
                     f"  → Best: λ_p={best_pair[0]:+.2f}, λ_d={best_pair[1]:+.2f} → FMD={best_fmd:.1f}"
                 )
 
+    # ── Marginal λ_pitch line-plot table ──
+    if marginal_pitch_results:
+        print()
+        print("=" * 90)
+        print(" MARGINAL FMD vs λ_pitch  (pooled over all λ_duration values)")
+        print("=" * 90)
+
+        # Group by (strategy, mode) → {lambda_p: fmd}
+        pitch_groups = {}  # (strat, mode) -> [(lp, fmd, n_test)]
+        for r in marginal_pitch_results:
+            label = r["comparison"]
+            # e.g. "[cond][pitch] expanded_k_2x__lp+0.50"
+            m = re.match(
+                r"\[(cond|uncond)\]\[pitch\]\s+(.+?)__lp([+-]?\d+\.\d+)", label
+            )
+            if not m:
+                continue
+            mode, strat, lp_str = m.group(1), m.group(2), m.group(3)
+            key = (strat, mode)
+            pitch_groups.setdefault(key, []).append(
+                (float(lp_str), r["fmd"], r["n_test"])
+            )
+
+        for (strat, mode), vals in sorted(pitch_groups.items()):
+            print(f"\n  {strat} ({mode}):")
+            print(f"  {'λ_pitch':>10} {'FMD':>10} {'#samples':>10}")
+            print("  " + "-" * 32)
+            vals.sort()
+            best = min(vals, key=lambda x: x[1] if x[1] is not None else float("inf"))
+            for lp, fmd, n in vals:
+                fmd_s = f"{fmd:.1f}" if fmd is not None else "N/A"
+                marker = " ◀ best" if (lp, fmd, n) == best and fmd is not None else ""
+                print(f"  {lp:>+10.2f} {fmd_s:>10} {n:>10}{marker}")
+
+    # ── Marginal λ_duration line-plot table ──
+    if marginal_duration_results:
+        print()
+        print("=" * 90)
+        print(" MARGINAL FMD vs λ_duration  (pooled over all λ_pitch values)")
+        print("=" * 90)
+
+        dur_groups = {}
+        for r in marginal_duration_results:
+            label = r["comparison"]
+            m = re.match(
+                r"\[(cond|uncond)\]\[duration\]\s+(.+?)__ld([+-]?\d+\.\d+)", label
+            )
+            if not m:
+                continue
+            mode, strat, ld_str = m.group(1), m.group(2), m.group(3)
+            key = (strat, mode)
+            dur_groups.setdefault(key, []).append(
+                (float(ld_str), r["fmd"], r["n_test"])
+            )
+
+        for (strat, mode), vals in sorted(dur_groups.items()):
+            print(f"\n  {strat} ({mode}):")
+            print(f"  {'λ_duration':>10} {'FMD':>10} {'#samples':>10}")
+            print("  " + "-" * 32)
+            vals.sort()
+            best = min(vals, key=lambda x: x[1] if x[1] is not None else float("inf"))
+            for ld, fmd, n in vals:
+                fmd_s = f"{fmd:.1f}" if fmd is not None else "N/A"
+                marker = " ◀ best" if (ld, fmd, n) == best and fmd is not None else ""
+                print(f"  {ld:>+10.2f} {fmd_s:>10} {n:>10}{marker}")
+
     print("=" * 90)
 
-    # Save all results
-    all_results = results + per_lambda_results
+    # ── Save CSV for plotting ──
+    csv_rows = []
+
+    # Per-lambda-pair rows
+    for r in per_lambda_results:
+        label = r["comparison"]
+        m = re.match(
+            r"\[(cond|uncond)\]\s+(.+?)__(?:lp|p)([+-]?\d+\.\d+)_(?:ld|d)([+-]?\d+\.\d+)",
+            label,
+        )
+        if not m:
+            continue
+        csv_rows.append(
+            {
+                "mode": m.group(1),
+                "strategy": m.group(2),
+                "concept": "dual",
+                "lambda_pitch": float(m.group(3)),
+                "lambda_duration": float(m.group(4)),
+                "fmd": r["fmd"],
+                "n_ref": r["n_ref"],
+                "n_test": r["n_test"],
+            }
+        )
+
+    # Marginal pitch rows
+    for r in marginal_pitch_results:
+        label = r["comparison"]
+        m = re.match(r"\[(cond|uncond)\]\[pitch\]\s+(.+?)__lp([+-]?\d+\.\d+)", label)
+        if not m:
+            continue
+        csv_rows.append(
+            {
+                "mode": m.group(1),
+                "strategy": m.group(2),
+                "concept": "marginal_pitch",
+                "lambda_pitch": float(m.group(3)),
+                "lambda_duration": None,
+                "fmd": r["fmd"],
+                "n_ref": r["n_ref"],
+                "n_test": r["n_test"],
+            }
+        )
+
+    # Marginal duration rows
+    for r in marginal_duration_results:
+        label = r["comparison"]
+        m = re.match(r"\[(cond|uncond)\]\[duration\]\s+(.+?)__ld([+-]?\d+\.\d+)", label)
+        if not m:
+            continue
+        csv_rows.append(
+            {
+                "mode": m.group(1),
+                "strategy": m.group(2),
+                "concept": "marginal_duration",
+                "lambda_pitch": None,
+                "lambda_duration": float(m.group(3)),
+                "fmd": r["fmd"],
+                "n_ref": r["n_ref"],
+                "n_test": r["n_test"],
+            }
+        )
+
+    # Add baseline rows for reference in plots
+    for r in results:
+        if "Baseline" in r["comparison"] and "vs Baseline" in r["comparison"]:
+            mode = "cond" if "conditioned" in r["comparison"] else "uncond"
+            csv_rows.append(
+                {
+                    "mode": mode,
+                    "strategy": "baseline",
+                    "concept": "baseline",
+                    "lambda_pitch": 0.0,
+                    "lambda_duration": 0.0,
+                    "fmd": r["fmd"],
+                    "n_ref": r["n_ref"],
+                    "n_test": r["n_test"],
+                }
+            )
+
+    if csv_rows:
+        import csv
+
+        csv_path = args.workspace_dir / "fmd_per_lambda.csv"
+        fieldnames = [
+            "mode",
+            "strategy",
+            "concept",
+            "lambda_pitch",
+            "lambda_duration",
+            "fmd",
+            "n_ref",
+            "n_test",
+        ]
+        with open(csv_path, "w", newline="") as f:
+            writer = csv.DictWriter(f, fieldnames=fieldnames)
+            writer.writeheader()
+            writer.writerows(csv_rows)
+        logger.info(f"Saved {len(csv_rows)} rows to {csv_path}")
+
+    # Save all results as JSON
+    all_results = (
+        results
+        + per_lambda_results
+        + marginal_pitch_results
+        + marginal_duration_results
+    )
     results_path = args.workspace_dir / "fmd_results.json"
     with open(results_path, "w") as f:
         json.dump(all_results, f, indent=2)
