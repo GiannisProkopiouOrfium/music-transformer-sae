@@ -931,7 +931,7 @@ def main():
         "--pitch_vectors",
         type=pathlib.Path,
         default=pathlib.Path(
-            "outputs/steering_vectors/average_pitch_steering_vectors.pt"
+            "steering_interventions/outputs/steering_vectors/average_pitch_steering_vectors.pt"
         ),
         help="Pitch steering vectors",
     )
@@ -939,7 +939,7 @@ def main():
         "--duration_vectors",
         type=pathlib.Path,
         default=pathlib.Path(
-            "outputs/steering_vectors/average_duration_steering_vectors.pt"
+            "steering_interventions/outputs/steering_vectors/average_duration_steering_vectors.pt"
         ),
         help="Duration steering vectors",
     )
