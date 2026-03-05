@@ -218,6 +218,7 @@ def main():
 
     # 5. Per-lambda-pair: FMD(SOD, lambda_pair) — for heatmap (dual)
     per_lambda_comparisons = []
+    seen_per_lambda = set()
     for key, info in sorted(manifest.items()):
         if (
             "/per_lambda/" in key
@@ -230,6 +231,9 @@ def main():
             short = key.split("/per_lambda/")[1]
             mode = "cond" if key.startswith("conditioned") else "uncond"
             label = f"[{mode}] {short}"
+            if label in seen_per_lambda:
+                continue
+            seen_per_lambda.add(label)
             if ref_sod:
                 per_lambda_comparisons.append((label, ref_sod, info["path"]))
 
@@ -468,9 +472,9 @@ def main():
         pitch_groups = {}  # (strat, mode) -> [(lp, fmd, n_test)]
         for r in marginal_pitch_results:
             label = r["comparison"]
-            # e.g. "[cond][pitch] expanded_k_2x__lp+0.50"
+            # e.g. "[cond][pitch] expanded_k_2x__lp+0.50" or "[uncond][pitch] expanded_k_2x__p+0.25"
             m = re.match(
-                r"\[(cond|uncond)\]\[pitch\]\s+(.+?)__lp([+-]?\d+\.\d+)", label
+                r"\[(cond|uncond)\]\[pitch\]\s+(.+?)__(?:lp|p)([+-]?\d+\.\d+)", label
             )
             if not m:
                 continue
@@ -501,8 +505,9 @@ def main():
         dur_groups = {}
         for r in marginal_duration_results:
             label = r["comparison"]
+            # e.g. "[cond][duration] expanded_k_2x__ld+0.50" or "[uncond][duration] expanded_k_2x__d+0.25"
             m = re.match(
-                r"\[(cond|uncond)\]\[duration\]\s+(.+?)__ld([+-]?\d+\.\d+)", label
+                r"\[(cond|uncond)\]\[duration\]\s+(.+?)__(?:ld|d)([+-]?\d+\.\d+)", label
             )
             if not m:
                 continue
@@ -553,7 +558,9 @@ def main():
     # Marginal pitch rows
     for r in marginal_pitch_results:
         label = r["comparison"]
-        m = re.match(r"\[(cond|uncond)\]\[pitch\]\s+(.+?)__lp([+-]?\d+\.\d+)", label)
+        m = re.match(
+            r"\[(cond|uncond)\]\[pitch\]\s+(.+?)__(?:lp|p)([+-]?\d+\.\d+)", label
+        )
         if not m:
             continue
         csv_rows.append(
@@ -572,7 +579,9 @@ def main():
     # Marginal duration rows
     for r in marginal_duration_results:
         label = r["comparison"]
-        m = re.match(r"\[(cond|uncond)\]\[duration\]\s+(.+?)__ld([+-]?\d+\.\d+)", label)
+        m = re.match(
+            r"\[(cond|uncond)\]\[duration\]\s+(.+?)__(?:ld|d)([+-]?\d+\.\d+)", label
+        )
         if not m:
             continue
         csv_rows.append(
@@ -622,7 +631,11 @@ def main():
         with open(csv_path, "w", newline="") as f:
             writer = csv.DictWriter(f, fieldnames=fieldnames)
             writer.writeheader()
-            writer.writerows(csv_rows)
+            # Replace None with empty string for CSV compatibility
+            for row in csv_rows:
+                writer.writerow(
+                    {k: (v if v is not None else "") for k, v in row.items()}
+                )
         logger.info(f"Saved {len(csv_rows)} rows to {csv_path}")
 
     # Save all results as JSON
