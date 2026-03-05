@@ -56,7 +56,6 @@ import argparse
 import csv
 import json
 import pathlib
-import re
 import sys
 
 import matplotlib
@@ -87,23 +86,52 @@ PAPER_FMD = {
     "16_beat": 328.74,
 }
 
-# Strategy display names
+# Strategy display names  (keys = CSV strategy column values)
+# SAS strategies appear without prefix in CSV; DiffMean with DM_ prefix.
 STRATEGY_LABELS = {
-    "expanded_k_2x": "Expanded-K 2×",
-    "gram_schmidt_ek2": "Gram-Schmidt + EK2",
+    # SAS (sparse)
+    "expanded_k_2x": "SAS Expanded-K 2×",
+    "gram_schmidt_ek2": "SAS Gram-Schmidt + EK2",
+    # DiffMean (dense)
+    "DM_gram_schmidt_pitch": "DM Gram-Schmidt (pitch)",
+    "DM_gram_schmidt_duration": "DM Gram-Schmidt (duration)",
+    "DM_direct": "DM Direct",
+    # Baseline
     "baseline": "Baseline (unsteered)",
 }
 
+# Aggregate comparison key → label lookup (JSON results use SAS_/DM_ prefix)
+AGG_KEY_LABELS = {
+    "SAS_expanded_k_2x": "SAS Expanded-K 2×",
+    "SAS_gram_schmidt_ek2": "SAS Gram-Schmidt + EK2",
+    "DM_gram_schmidt_pitch": "DM Gram-Schmidt (pitch)",
+    "DM_gram_schmidt_duration": "DM Gram-Schmidt (duration)",
+    "DM_direct": "DM Direct",
+}
+
 STRATEGY_COLORS = {
+    # SAS
     "expanded_k_2x": "#2196F3",
     "gram_schmidt_ek2": "#FF9800",
+    # DiffMean
+    "DM_gram_schmidt_pitch": "#4CAF50",
+    "DM_gram_schmidt_duration": "#9C27B0",
+    "DM_direct": "#00BCD4",
+    # Baseline
     "baseline": "#757575",
 }
 
 STRATEGY_MARKERS = {
     "expanded_k_2x": "o",
     "gram_schmidt_ek2": "s",
+    "DM_gram_schmidt_pitch": "D",
+    "DM_gram_schmidt_duration": "^",
+    "DM_direct": "v",
 }
+
+SAS_STRATEGIES = ["expanded_k_2x", "gram_schmidt_ek2"]
+DM_STRATEGIES = ["DM_gram_schmidt_pitch", "DM_gram_schmidt_duration", "DM_direct"]
+ALL_STRATEGIES = SAS_STRATEGIES + DM_STRATEGIES
 
 MODE_LABELS = {
     "cond": "Conditioned (16-beat)",
@@ -140,9 +168,14 @@ def plot_marginal_lines(csv_rows: list, results: list, output_dir: pathlib.Path)
     """Plot FMD vs λ_pitch and FMD vs λ_duration as line plots.
 
     Creates a 2×2 grid: rows = pitch / duration, columns = cond / uncond.
-    Each subplot shows both strategies + baseline reference line.
+    Each subplot shows all available strategies + baseline reference line.
     """
-    strategies = ["expanded_k_2x", "gram_schmidt_ek2"]
+    # Discover which strategies exist in CSV data
+    available_strats = sorted(
+        {r["strategy"] for r in csv_rows if r["strategy"] != "baseline"}
+    )
+    if not available_strats:
+        available_strats = ALL_STRATEGIES
 
     # Extract baseline FMDs from results
     baseline_fmd = {}
@@ -154,7 +187,7 @@ def plot_marginal_lines(csv_rows: list, results: list, output_dir: pathlib.Path)
             elif "unconditioned" in comp:
                 baseline_fmd["uncond"] = r["fmd"]
 
-    fig, axes = plt.subplots(2, 2, figsize=(12, 9), sharey="row")
+    fig, axes = plt.subplots(2, 2, figsize=(14, 9), sharey="row")
 
     for col, mode in enumerate(["cond", "uncond"]):
         for row, concept in enumerate(["marginal_pitch", "marginal_duration"]):
@@ -164,7 +197,7 @@ def plot_marginal_lines(csv_rows: list, results: list, output_dir: pathlib.Path)
             )
             concept_label = "λ_pitch" if concept == "marginal_pitch" else "λ_duration"
 
-            for strat in strategies:
+            for strat in available_strats:
                 # Filter rows for this strategy/mode/concept
                 subset = [
                     r
@@ -187,9 +220,9 @@ def plot_marginal_lines(csv_rows: list, results: list, output_dir: pathlib.Path)
                 ax.plot(
                     lambdas,
                     fmds,
-                    marker=STRATEGY_MARKERS[strat],
-                    color=STRATEGY_COLORS[strat],
-                    label=STRATEGY_LABELS[strat],
+                    marker=STRATEGY_MARKERS.get(strat, "o"),
+                    color=STRATEGY_COLORS.get(strat, "#333333"),
+                    label=STRATEGY_LABELS.get(strat, strat),
                     linewidth=2,
                     markersize=6,
                     zorder=3,
@@ -255,7 +288,7 @@ def plot_marginal_lines(csv_rows: list, results: list, output_dir: pathlib.Path)
     )
 
     fig.suptitle(
-        "FMD vs Steering Coefficient λ (Marginal Analysis)\n"
+        "FMD vs Steering Coefficient λ (Marginal Analysis — SAS + DiffMean)\n"
         "Lower FMD = closer to real SOD distribution",
         fontsize=14,
         fontweight="bold",
@@ -276,11 +309,26 @@ def plot_marginal_lines(csv_rows: list, results: list, output_dir: pathlib.Path)
 def plot_heatmaps(csv_rows: list, results: list, output_dir: pathlib.Path):
     """Plot FMD heatmaps for each (strategy, mode) combination.
 
-    Creates a 2×2 grid: rows = strategy, columns = cond / uncond.
+    Dynamically determines grid size based on available strategies.
     Each cell is a heatmap over (λ_p, λ_d).
     """
-    strategies = ["expanded_k_2x", "gram_schmidt_ek2"]
     modes = ["cond", "uncond"]
+
+    # Discover strategies that have dual (heatmap-able) data
+    available = sorted(
+        {
+            r["strategy"]
+            for r in csv_rows
+            if r["concept"] == "dual"
+            and r["strategy"] != "baseline"
+            and r["fmd"] is not None
+        }
+    )
+    if not available:
+        print("  No dual per-lambda data for heatmaps — skipping.")
+        return
+
+    strategies = available
 
     # Extract baseline FMDs
     baseline_fmd = {}
@@ -293,7 +341,7 @@ def plot_heatmaps(csv_rows: list, results: list, output_dir: pathlib.Path):
                 baseline_fmd["uncond"] = r["fmd"]
 
     fig, axes = plt.subplots(
-        len(strategies), len(modes), figsize=(14, 10), squeeze=False
+        len(strategies), len(modes), figsize=(14, 5 * len(strategies)), squeeze=False
     )
 
     for row, strat in enumerate(strategies):
@@ -384,7 +432,7 @@ def plot_heatmaps(csv_rows: list, results: list, output_dir: pathlib.Path):
                         )
 
             ax.set_title(
-                f"{STRATEGY_LABELS[strat]} — {MODE_LABELS[mode]}\n"
+                f"{STRATEGY_LABELS.get(strat, strat)} — {MODE_LABELS[mode]}\n"
                 f"Best: {best_fmd:.0f} (baseline: {bl:.0f})",
                 fontsize=10,
             )
@@ -398,7 +446,7 @@ def plot_heatmaps(csv_rows: list, results: list, output_dir: pathlib.Path):
                 cbar.ax.axhline(bl, color="black", linewidth=1.5, linestyle="--")
 
     fig.suptitle(
-        "FMD Heatmaps: λ_pitch × λ_duration\n"
+        "FMD Heatmaps: λ_pitch × λ_duration (SAS + DiffMean)\n"
         "Green = lower FMD (better); Red = higher FMD (worse)",
         fontsize=14,
         fontweight="bold",
@@ -419,6 +467,7 @@ def plot_heatmaps(csv_rows: list, results: list, output_dir: pathlib.Path):
 def plot_aggregate_bars(results: list, output_dir: pathlib.Path):
     """Bar chart comparing SOD vs baseline vs best-steered for each mode.
 
+    Shows SAS and DiffMean strategies side-by-side.
     Also shows FMD paper reference values for context.
     """
     # Extract key FMDs
@@ -468,16 +517,36 @@ def plot_aggregate_bars(results: list, output_dir: pathlib.Path):
     colors.append("white")
     edge_colors.append("white")
 
-    # Best steered
-    for strat in ["expanded_k_2x", "gram_schmidt_ek2"]:
+    # SAS steered (aggregate labels use SAS_ prefix)
+    for strat in SAS_STRATEGIES:
+        agg_key = f"SAS_{strat}"
         for mode in ["unconditioned", "conditioned"]:
-            key = f"SOD vs {strat} ({mode})"
-            if key in data:
+            comp_key = f"SOD vs {agg_key} ({mode})"
+            if comp_key in data:
                 mode_short = "uncond." if mode == "unconditioned" else "cond."
-                categories.append(f"{STRATEGY_LABELS[strat]}\n{mode_short}")
-                fmds.append(data[key])
-                colors.append(STRATEGY_COLORS[strat])
-                edge_colors.append(STRATEGY_COLORS[strat])
+                categories.append(f"{STRATEGY_LABELS.get(strat, strat)}\n{mode_short}")
+                fmds.append(data[comp_key])
+                colors.append(STRATEGY_COLORS.get(strat, "#333"))
+                edge_colors.append(STRATEGY_COLORS.get(strat, "#333"))
+
+    # DiffMean steered (aggregate labels use DM_ prefix directly)
+    has_dm = False
+    for strat in DM_STRATEGIES:
+        for mode in ["unconditioned", "conditioned"]:
+            comp_key = f"SOD vs {strat} ({mode})"
+            if comp_key in data:
+                if not has_dm:
+                    # spacer before DiffMean section
+                    categories.append("")
+                    fmds.append(0)
+                    colors.append("white")
+                    edge_colors.append("white")
+                    has_dm = True
+                mode_short = "uncond." if mode == "unconditioned" else "cond."
+                categories.append(f"{STRATEGY_LABELS.get(strat, strat)}\n{mode_short}")
+                fmds.append(data[comp_key])
+                colors.append(STRATEGY_COLORS.get(strat, "#333"))
+                edge_colors.append(STRATEGY_COLORS.get(strat, "#333"))
 
     fig, ax = plt.subplots(figsize=(14, 6))
 
@@ -503,7 +572,7 @@ def plot_aggregate_bars(results: list, output_dir: pathlib.Path):
     ax.set_xticklabels(categories, fontsize=9)
     ax.set_ylabel("FMD ↓  (lower = closer to SOD distribution)")
     ax.set_title(
-        "Fréchet Music Distance: Paper Baselines vs Our Baselines vs SAS-Steered\n"
+        "Fréchet Music Distance: Paper Baselines vs Our Baselines vs Steered (SAS + DiffMean)\n"
         "Paper uses 5710 SOD refs; we use 4474 → absolute values not directly comparable,\n"
         "but relative improvements from steering are meaningful",
         fontsize=12,
@@ -512,14 +581,15 @@ def plot_aggregate_bars(results: list, output_dir: pathlib.Path):
     ax.grid(axis="y", alpha=0.3)
     ax.set_ylim(0, max(fmds) * 1.15)
 
-    # Annotate improvement percentages
+    # Annotate improvement percentages for steered bars
     bl_uncond = data.get("SOD vs Baseline (unconditioned)")
     bl_cond = data.get("SOD vs Baseline (conditioned)")
 
     for i, (cat, fmd) in enumerate(zip(categories, fmds)):
         if fmd == 0 or cat == "":
             continue
-        if "Expanded" in cat or "Gram" in cat:
+        # Match any SAS or DM strategy bar (not paper, not baseline)
+        if any(tag in cat for tag in ("SAS", "DM ")):
             bl = bl_uncond if "uncond" in cat else bl_cond
             if bl is not None and bl > 0:
                 pct = (fmd - bl) / bl * 100
@@ -551,8 +621,7 @@ def plot_marginal_compact(csv_rows: list, results: list, output_dir: pathlib.Pat
 
     Left: FMD vs λ_pitch (pooled over λ_duration)
     Right: FMD vs λ_duration (pooled over λ_pitch)
-    Both modes (cond/uncond) shown with different line styles.
-    Both strategies averaged for cleaner presentation.
+    SAS mean and DiffMean curves shown separately for comparison.
     """
     baseline_fmd = {}
     for r in results:
@@ -563,68 +632,102 @@ def plot_marginal_compact(csv_rows: list, results: list, output_dir: pathlib.Pat
             elif "unconditioned" in comp:
                 baseline_fmd["uncond"] = r["fmd"]
 
-    fig, axes = plt.subplots(1, 2, figsize=(12, 5))
+    fig, axes = plt.subplots(1, 2, figsize=(13, 5.5))
 
     concepts = [
         ("marginal_pitch", "lambda_pitch", "λ_pitch", axes[0]),
         ("marginal_duration", "lambda_duration", "λ_duration", axes[1]),
     ]
 
+    # Group styles: SAS (averaged) and DiffMean curves (individual)
     mode_styles = {"uncond": "-", "cond": "--"}
-    mode_markers = {"uncond": "o", "cond": "s"}
+    mode_markers_map = {"uncond": "o", "cond": "s"}
+    method_colors = {
+        ("SAS", "uncond"): "#1565C0",
+        ("SAS", "cond"): "#42A5F5",
+        ("DM", "uncond"): "#2E7D32",
+        ("DM", "cond"): "#66BB6A",
+    }
 
     for concept, lam_key, xlabel, ax in concepts:
         for mode in ["uncond", "cond"]:
-            # Average over strategies for this mode
-            subset = [
-                r
-                for r in csv_rows
-                if r["mode"] == mode
-                and r["concept"] == concept
-                and r["fmd"] is not None
-                and r[lam_key] is not None
-            ]
-            if not subset:
-                continue
+            # --- SAS average ---
+            sas_by_lam = {}
+            for strat in SAS_STRATEGIES:
+                subset = [
+                    r
+                    for r in csv_rows
+                    if r["strategy"] == strat
+                    and r["mode"] == mode
+                    and r["concept"] == concept
+                    and r["fmd"] is not None
+                    and r[lam_key] is not None
+                ]
+                for r in subset:
+                    sas_by_lam.setdefault(r[lam_key], []).append(r["fmd"])
 
-            # Group by lambda, average FMD across strategies
-            lam_to_fmds = {}
-            for r in subset:
-                lam_to_fmds.setdefault(r[lam_key], []).append(r["fmd"])
+            if sas_by_lam:
+                lambdas = sorted(sas_by_lam.keys())
+                avg_fmds = [np.mean(sas_by_lam[lam]) for lam in lambdas]
+                ax.plot(
+                    lambdas,
+                    avg_fmds,
+                    marker=mode_markers_map[mode],
+                    linestyle=mode_styles[mode],
+                    color=method_colors[("SAS", mode)],
+                    label=f"SAS avg ({MODE_LABELS[mode]})",
+                    linewidth=2,
+                    markersize=6,
+                    zorder=3,
+                )
 
-            lambdas = sorted(lam_to_fmds.keys())
-            avg_fmds = [np.mean(lam_to_fmds[lam]) for lam in lambdas]
+            # --- DiffMean average ---
+            dm_by_lam = {}
+            for strat in DM_STRATEGIES:
+                subset = [
+                    r
+                    for r in csv_rows
+                    if r["strategy"] == strat
+                    and r["mode"] == mode
+                    and r["concept"] == concept
+                    and r["fmd"] is not None
+                    and r[lam_key] is not None
+                ]
+                for r in subset:
+                    dm_by_lam.setdefault(r[lam_key], []).append(r["fmd"])
 
-            ax.plot(
-                lambdas,
-                avg_fmds,
-                marker=mode_markers[mode],
-                linestyle=mode_styles[mode],
-                color="#1565C0" if mode == "uncond" else "#E65100",
-                label=f"{MODE_LABELS[mode]}",
-                linewidth=2,
-                markersize=6,
-                zorder=3,
-            )
+            if dm_by_lam:
+                lambdas = sorted(dm_by_lam.keys())
+                avg_fmds = [np.mean(dm_by_lam[lam]) for lam in lambdas]
+                ax.plot(
+                    lambdas,
+                    avg_fmds,
+                    marker="D" if mode == "uncond" else "^",
+                    linestyle=mode_styles[mode],
+                    color=method_colors[("DM", mode)],
+                    label=f"DiffMean avg ({MODE_LABELS[mode]})",
+                    linewidth=2,
+                    markersize=6,
+                    zorder=3,
+                )
 
             # Baseline line
             bl = baseline_fmd.get(mode)
             if bl is not None:
                 ax.axhline(
                     bl,
-                    color="#1565C0" if mode == "uncond" else "#E65100",
+                    color=method_colors.get(("SAS", mode), "#999"),
                     linestyle=":",
                     linewidth=1.2,
                     alpha=0.5,
                     zorder=1,
                 )
-                # Label baseline at right edge
                 ax.annotate(
                     f"BL {mode}: {bl:.0f}",
                     xy=(1.01, bl),
                     xycoords=("axes fraction", "data"),
                     fontsize=7,
-                    color="#1565C0" if mode == "uncond" else "#E65100",
+                    color=method_colors.get(("SAS", mode), "#999"),
                     va="center",
                 )
 
@@ -650,18 +753,14 @@ def plot_marginal_compact(csv_rows: list, results: list, output_dir: pathlib.Pat
         ax.axvline(0, color="grey", linestyle="-", linewidth=0.5, alpha=0.3)
         ax.set_xlabel(xlabel)
         ax.set_ylabel("FMD ↓")
-        ax.legend(fontsize=9, loc="upper right")
+        ax.legend(fontsize=8, loc="upper right")
         ax.grid(True, alpha=0.3)
 
-    axes[0].set_title(
-        "FMD vs λ_pitch\n(averaged over strategies, pooled over λ_duration)"
-    )
-    axes[1].set_title(
-        "FMD vs λ_duration\n(averaged over strategies, pooled over λ_pitch)"
-    )
+    axes[0].set_title("FMD vs λ_pitch\n(SAS vs DiffMean, pooled over λ_duration)")
+    axes[1].set_title("FMD vs λ_duration\n(SAS vs DiffMean, pooled over λ_pitch)")
 
     fig.suptitle(
-        "Marginal FMD Response to SAS Steering Coefficients\n"
+        "Marginal FMD: SAS (Sparse) vs DiffMean (Dense) Steering\n"
         "Lower = closer to SOD distribution  |  "
         "Paper ref: 5710 SOD refs, ours: 4474",
         fontsize=13,
@@ -671,6 +770,138 @@ def plot_marginal_compact(csv_rows: list, results: list, output_dir: pathlib.Pat
     fig.tight_layout()
 
     path = output_dir / "fmd_marginal_compact.pdf"
+    fig.savefig(path)
+    fig.savefig(path.with_suffix(".png"))
+    print(f"Saved: {path}")
+    plt.close(fig)
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Figure 5: SAS vs DiffMean grouped comparison bars
+# ─────────────────────────────────────────────────────────────────────────────
+def plot_sas_vs_dm_bars(results: list, output_dir: pathlib.Path):
+    """Grouped bar chart: SAS vs DiffMean for each mode.
+
+    Only plotted if both SAS and DiffMean aggregate results exist.
+    """
+    data = {}
+    for r in results:
+        comp = r.get("comparison", "")
+        fmd = r.get("fmd")
+        if fmd is not None:
+            data[comp] = fmd
+
+    # Check we have both SAS and DM data
+    has_sas = any("SOD vs SAS_" in k for k in data)
+    has_dm = any("SOD vs DM_" in k for k in data)
+    if not (has_sas and has_dm):
+        print("  Skipping SAS vs DM comparison — need both SAS and DiffMean data.")
+        return
+
+    # Collect bars: group_name → {method: fmd}
+    groups = {}  # (mode_label, strat_label) → fmd
+    group_order = []
+
+    baseline_fmd = {}
+    for comp, fmd in data.items():
+        if "SOD vs Baseline" in comp:
+            mode = "cond" if "conditioned" in comp else "uncond"
+            baseline_fmd[mode] = fmd
+
+    for mode, mode_label in [("unconditioned", "Uncond."), ("conditioned", "Cond.")]:
+        # Baseline
+        bl_key = f"SOD vs Baseline ({mode})"
+        if bl_key in data:
+            name = f"Baseline\n{mode_label}"
+            groups[name] = {
+                "fmd": data[bl_key],
+                "color": "#9E9E9E",
+                "method": "baseline",
+            }
+            group_order.append(name)
+
+        # SAS
+        for strat in SAS_STRATEGIES:
+            key = f"SOD vs SAS_{strat} ({mode})"
+            if key in data:
+                name = f"{STRATEGY_LABELS.get(strat, strat)}\n{mode_label}"
+                groups[name] = {
+                    "fmd": data[key],
+                    "color": STRATEGY_COLORS.get(strat, "#333"),
+                    "method": "SAS",
+                }
+                group_order.append(name)
+
+        # DiffMean
+        for strat in DM_STRATEGIES:
+            key = f"SOD vs {strat} ({mode})"
+            if key in data:
+                name = f"{STRATEGY_LABELS.get(strat, strat)}\n{mode_label}"
+                groups[name] = {
+                    "fmd": data[key],
+                    "color": STRATEGY_COLORS.get(strat, "#333"),
+                    "method": "DM",
+                }
+                group_order.append(name)
+
+        # Spacer between modes
+        if mode == "unconditioned":
+            group_order.append("")
+            groups[""] = {"fmd": 0, "color": "white", "method": "spacer"}
+
+    fig, ax = plt.subplots(figsize=(max(12, len(group_order) * 1.1), 6))
+
+    x = np.arange(len(group_order))
+    bar_colors = [groups[g]["color"] for g in group_order]
+    bar_fmds = [groups[g]["fmd"] for g in group_order]
+    bars = ax.bar(
+        x, bar_fmds, color=bar_colors, edgecolor=bar_colors, linewidth=1.2, width=0.7
+    )
+
+    # Value labels + % improvement
+    for i, (name, fmd_val) in enumerate(zip(group_order, bar_fmds)):
+        if fmd_val == 0 or name == "":
+            continue
+        ax.text(
+            bars[i].get_x() + bars[i].get_width() / 2,
+            fmd_val + 5,
+            f"{fmd_val:.0f}",
+            ha="center",
+            va="bottom",
+            fontsize=8,
+            fontweight="bold",
+        )
+        method = groups[name]["method"]
+        if method in ("SAS", "DM"):
+            mode = "uncond" if "Uncond" in name else "cond"
+            bl = baseline_fmd.get(mode)
+            if bl and bl > 0:
+                pct = (fmd_val - bl) / bl * 100
+                ax.annotate(
+                    f"{pct:+.1f}%",
+                    xy=(i, fmd_val),
+                    xytext=(0, -14),
+                    textcoords="offset points",
+                    ha="center",
+                    fontsize=7,
+                    color="white",
+                    fontweight="bold",
+                )
+
+    ax.set_xticks(x)
+    ax.set_xticklabels(group_order, fontsize=8)
+    ax.set_ylabel("FMD ↓")
+    ax.set_title(
+        "SAS (Sparse) vs DiffMean (Dense) Steering — Aggregate FMD Comparison\n"
+        "Lower = closer to SOD distribution",
+        fontsize=13,
+        fontweight="bold",
+    )
+    ax.grid(axis="y", alpha=0.3)
+    ax.set_ylim(0, max(bar_fmds) * 1.15)
+
+    fig.tight_layout()
+    path = output_dir / "fmd_sas_vs_dm_bars.pdf"
     fig.savefig(path)
     fig.savefig(path.with_suffix(".png"))
     print(f"Saved: {path}")
@@ -757,8 +988,9 @@ def main():
             f"{our_ratio:>10.3f} {'similar trend':>20}"
         )
 
-    # Best steered
+    # Best steered (either SAS or DiffMean)
     best_steered = {}
+    best_steered_label = {}
     for r in results:
         comp = r.get("comparison", "")
         fmd = r.get("fmd")
@@ -768,6 +1000,7 @@ def main():
             mode = "cond" if "conditioned" in comp else "uncond"
             if mode not in best_steered or fmd < best_steered[mode]:
                 best_steered[mode] = fmd
+                best_steered_label[mode] = comp
 
     print()
     print("  Steering improvements (ours):")
@@ -776,7 +1009,8 @@ def main():
         bs = best_steered.get(mode)
         if bl and bs:
             pct = (bs - bl) / bl * 100
-            print(f"    {label}: {bl:.1f} → {bs:.1f} ({pct:+.1f}%)")
+            src = best_steered_label.get(mode, "")
+            print(f"    {label}: {bl:.1f} → {bs:.1f} ({pct:+.1f}%)  [{src}]")
 
     print("=" * 70)
     print()
@@ -788,6 +1022,7 @@ def main():
     plot_heatmaps(csv_rows, results, args.output_dir)
     plot_aggregate_bars(results, args.output_dir)
     plot_marginal_compact(csv_rows, results, args.output_dir)
+    plot_sas_vs_dm_bars(results, args.output_dir)
 
     print(f"\nAll plots saved to: {args.output_dir}")
     print("Files:")

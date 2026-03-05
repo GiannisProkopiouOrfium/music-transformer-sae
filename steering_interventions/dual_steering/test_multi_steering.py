@@ -204,6 +204,7 @@ def generate_and_evaluate(
     device: torch.device,
     n_samples: int = 5,
     seq_len: int = 512,
+    output_dir: pathlib.Path = None,
 ) -> Dict:
     """Generate samples and evaluate for one configuration.
 
@@ -274,13 +275,28 @@ def generate_and_evaluate(
             # Combine start and generated
             full_seq = torch.cat((primer, output), 1).cpu().numpy()[0]
 
-            # Save npy file with the necessary data
-            save_dir = pathlib.Path(f"flamingo_exp/dual/unconditional/{scenario}")
-            save_dir.mkdir(parents=True, exist_ok=True)
+            # Save npy file — use output_dir/midi/{strategy}/ for FMD compatibility
+            midi_dir = (
+                output_dir / "midi" / strategy
+                if output_dir
+                else pathlib.Path(
+                    "steering_interventions/dual_steering/outputs/phase3_grid_search/midi"
+                )
+                / strategy
+            )
+            midi_dir.mkdir(parents=True, exist_ok=True)
             sample_filepath = (
-                save_dir / f"sample_alpha_p{alpha_pitch}_d{alpha_duration}_num_{i}.npy"
+                midi_dir / f"p{alpha_pitch:+.2f}_d{alpha_duration:+.2f}_s{i}.npy"
             )
             np.save(sample_filepath, full_seq)
+
+            # Also save to legacy flamingo_exp path for backward compat
+            save_dir = pathlib.Path(f"flamingo_exp/dual/unconditional/{scenario}")
+            save_dir.mkdir(parents=True, exist_ok=True)
+            legacy_filepath = (
+                save_dir / f"sample_alpha_p{alpha_pitch}_d{alpha_duration}_num_{i}.npy"
+            )
+            np.save(legacy_filepath, full_seq)
 
             # Convert to numpy
             tokens = output[0].cpu().numpy()
@@ -606,6 +622,7 @@ def main():
             device=device,
             n_samples=args.n_samples,
             seq_len=args.seq_len,
+            output_dir=args.output_dir,
         )
 
         results.append(result)

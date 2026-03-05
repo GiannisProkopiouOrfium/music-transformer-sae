@@ -167,7 +167,24 @@ def main():
         )
         ref_uncond = None
 
-    strategies = ["expanded_k_2x", "gram_schmidt_ek2"]
+    sas_strategies = ["expanded_k_2x", "gram_schmidt_ek2"]
+    diffmean_strategies = ["gram_schmidt_pitch", "gram_schmidt_duration", "direct"]
+
+    # DiffMean baselines (separate from SAS baselines — generated without SAE)
+    ref_dm_cond = manifest.get("diffmean_baseline_conditioned", {}).get("path")
+    ref_dm_uncond = manifest.get("diffmean_baseline_unconditioned", {}).get("path")
+    if (
+        ref_dm_cond
+        and manifest.get("diffmean_baseline_conditioned", {}).get("n_midis", 0)
+        < min_midis
+    ):
+        ref_dm_cond = None
+    if (
+        ref_dm_uncond
+        and manifest.get("diffmean_baseline_unconditioned", {}).get("n_midis", 0)
+        < min_midis
+    ):
+        ref_dm_uncond = None
 
     # 1. Baseline quality: FMD(SOD, baselines)
     if ref_sod and ref_cond:
@@ -175,27 +192,44 @@ def main():
     if ref_sod and ref_uncond:
         comparisons.append(("SOD vs Baseline (unconditioned)", ref_sod, ref_uncond))
 
-    # 2. Steered absolute quality: FMD(SOD, steered)
-    for strat in strategies:
+    # 2. SAS steered absolute quality: FMD(SOD, steered)
+    for strat in sas_strategies:
         key_c = f"conditioned/{strat}"
         key_u = f"unconditioned/{strat}"
         if ref_sod and key_c in manifest:
             comparisons.append(
-                (f"SOD vs {strat} (conditioned)", ref_sod, manifest[key_c]["path"])
+                (f"SOD vs SAS_{strat} (conditioned)", ref_sod, manifest[key_c]["path"])
             )
         if ref_sod and key_u in manifest:
             comparisons.append(
-                (f"SOD vs {strat} (unconditioned)", ref_sod, manifest[key_u]["path"])
+                (
+                    f"SOD vs SAS_{strat} (unconditioned)",
+                    ref_sod,
+                    manifest[key_u]["path"],
+                )
             )
 
-    # 3. Steering perturbation cost: FMD(baseline, steered)
-    for strat in strategies:
+    # 2b. DiffMean steered absolute quality
+    for strat in diffmean_strategies:
+        key_c = f"diffmean_conditioned/{strat}"
+        key_u = f"diffmean_unconditioned/{strat}"
+        if ref_sod and key_c in manifest:
+            comparisons.append(
+                (f"SOD vs DM_{strat} (conditioned)", ref_sod, manifest[key_c]["path"])
+            )
+        if ref_sod and key_u in manifest:
+            comparisons.append(
+                (f"SOD vs DM_{strat} (unconditioned)", ref_sod, manifest[key_u]["path"])
+            )
+
+    # 3. SAS steering perturbation cost: FMD(baseline, steered)
+    for strat in sas_strategies:
         key_c = f"conditioned/{strat}"
         key_u = f"unconditioned/{strat}"
         if ref_cond and key_c in manifest:
             comparisons.append(
                 (
-                    f"Baseline vs {strat} (conditioned)",
+                    f"Baseline vs SAS_{strat} (conditioned)",
                     ref_cond,
                     manifest[key_c]["path"],
                 )
@@ -203,7 +237,28 @@ def main():
         if ref_uncond and key_u in manifest:
             comparisons.append(
                 (
-                    f"Baseline vs {strat} (unconditioned)",
+                    f"Baseline vs SAS_{strat} (unconditioned)",
+                    ref_uncond,
+                    manifest[key_u]["path"],
+                )
+            )
+
+    # 3b. DiffMean steering perturbation cost
+    for strat in diffmean_strategies:
+        key_c = f"diffmean_conditioned/{strat}"
+        key_u = f"diffmean_unconditioned/{strat}"
+        if ref_cond and key_c in manifest:
+            comparisons.append(
+                (
+                    f"Baseline vs DM_{strat} (conditioned)",
+                    ref_cond,
+                    manifest[key_c]["path"],
+                )
+            )
+        if ref_uncond and key_u in manifest:
+            comparisons.append(
+                (
+                    f"Baseline vs DM_{strat} (unconditioned)",
                     ref_uncond,
                     manifest[key_u]["path"],
                 )
@@ -229,7 +284,17 @@ def main():
             if n < 2:
                 continue
             short = key.split("/per_lambda/")[1]
-            mode = "cond" if key.startswith("conditioned") else "uncond"
+            # Determine mode and method prefix
+            if key.startswith("diffmean_conditioned"):
+                mode = "cond"
+                short = f"DM_{short}"
+            elif key.startswith("diffmean_unconditioned"):
+                mode = "uncond"
+                short = f"DM_{short}"
+            elif key.startswith("conditioned"):
+                mode = "cond"
+            else:
+                mode = "uncond"
             label = f"[{mode}] {short}"
             if label in seen_per_lambda:
                 continue
@@ -245,7 +310,16 @@ def main():
             if n < 2:
                 continue
             short = key.split("/per_lambda_pitch/")[1]
-            mode = "cond" if key.startswith("conditioned") else "uncond"
+            if key.startswith("diffmean_conditioned"):
+                mode = "cond"
+                short = f"DM_{short}"
+            elif key.startswith("diffmean_unconditioned"):
+                mode = "uncond"
+                short = f"DM_{short}"
+            elif key.startswith("conditioned"):
+                mode = "cond"
+            else:
+                mode = "uncond"
             label = f"[{mode}][pitch] {short}"
             if ref_sod:
                 marginal_pitch_comparisons.append((label, ref_sod, info["path"]))
@@ -258,7 +332,16 @@ def main():
             if n < 2:
                 continue
             short = key.split("/per_lambda_duration/")[1]
-            mode = "cond" if key.startswith("conditioned") else "uncond"
+            if key.startswith("diffmean_conditioned"):
+                mode = "cond"
+                short = f"DM_{short}"
+            elif key.startswith("diffmean_unconditioned"):
+                mode = "uncond"
+                short = f"DM_{short}"
+            elif key.startswith("conditioned"):
+                mode = "cond"
+            else:
+                mode = "uncond"
             label = f"[{mode}][duration] {short}"
             if ref_sod:
                 marginal_duration_comparisons.append((label, ref_sod, info["path"]))
