@@ -492,7 +492,8 @@ def print_summary(all_results: list):
                 lp_vals = sorted(set(s["lambda_pitch"] for s in dual))
                 ld_vals = sorted(set(s["lambda_duration"] for s in dual))
 
-                header = f"    {'λ_p \\ λ_d':>10}"
+                col_label = "λ_p \\ λ_d"
+                header = f"    {col_label:>10}"
                 for ld in ld_vals:
                     header += f" {ld:>+7.2f}"
                 print(header)
