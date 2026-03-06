@@ -61,12 +61,68 @@ GROUND_TRUTH = {
 # ─────────────────────────────────────────────────────────────────────────────
 # Measurement helpers
 # ─────────────────────────────────────────────────────────────────────────────
-def measure_sample(tokens: np.ndarray, encoding: dict) -> dict:
-    """Extract pitch and duration statistics from a token array.
+NAN_QUALITY = {
+    "pitch_class_entropy": np.nan,
+    "scale_consistency": np.nan,
+    "groove_consistency": np.nan,
+}
 
-    Returns:
-        {"mean_pitch": float|None, "mean_duration": float|None, "n_notes": int}
+
+def evaluate_quality(music) -> dict:
+    """Compute muspy quality metrics on a decoded Music object."""
+    try:
+        import muspy
+
+        music.trim(music.resolution * 64)
+        if not music.tracks or not music.tracks[0].notes:
+            return dict(NAN_QUALITY)
+
+        return {
+            "pitch_class_entropy": float(muspy.pitch_class_entropy(music)),
+            "scale_consistency": float(muspy.scale_consistency(music)) * 100.0,
+            "groove_consistency": float(
+                muspy.groove_consistency(music, 4 * music.resolution)
+            )
+            * 100.0,
+        }
+    except Exception as e:
+        logger.debug(f"evaluate_quality failed: {e}")
+        return dict(NAN_QUALITY)
+
+
+def calculate_degradation(metrics: dict) -> dict:
+    """Quality degradation vs ground truth (lower = better)."""
+    gt = GROUND_TRUTH
+    ed = abs(metrics["pitch_class_entropy"] - gt["pitch_class_entropy"])
+    sd = max(0.0, gt["scale_consistency"] - metrics["scale_consistency"])
+    gd = max(0.0, gt["groove_consistency"] - metrics["groove_consistency"])
+    total = ed + sd + gd
+    return {
+        "entropy_diff": float(ed),
+        "scale_diff": float(sd),
+        "groove_diff": float(gd),
+        "total_degradation": float(total),
+    }
+
+
+def measure_sample(tokens: np.ndarray, encoding: dict) -> dict:
+    """Extract pitch, duration, quality metrics, and degradation from tokens.
+
+    Returns dict with:
+        mean_pitch, mean_duration, n_notes,
+        pitch_class_entropy, scale_consistency, groove_consistency,
+        entropy_diff, scale_diff, groove_diff, total_degradation
     """
+    base = {
+        "mean_pitch": None,
+        "mean_duration": None,
+        "n_notes": 0,
+        **NAN_QUALITY,
+        "entropy_diff": np.nan,
+        "scale_diff": np.nan,
+        "groove_diff": np.nan,
+        "total_degradation": np.nan,
+    }
     try:
         music = representation.decode(tokens, encoding)
         pitches = []
@@ -77,16 +133,24 @@ def measure_sample(tokens: np.ndarray, encoding: dict) -> dict:
                 durations.append(note.duration)
 
         if len(pitches) < 5:
-            return {"mean_pitch": None, "mean_duration": None, "n_notes": len(pitches)}
+            base["n_notes"] = len(pitches)
+            return base
 
-        return {
-            "mean_pitch": float(np.mean(pitches)),
-            "mean_duration": float(np.mean(durations)),
-            "n_notes": len(pitches),
-        }
+        base["mean_pitch"] = float(np.mean(pitches))
+        base["mean_duration"] = float(np.mean(durations))
+        base["n_notes"] = len(pitches)
+
+        qm = evaluate_quality(music)
+        base.update(qm)
+
+        if not np.isnan(qm["pitch_class_entropy"]):
+            deg = calculate_degradation(qm)
+            base.update(deg)
+
+        return base
     except Exception as e:
         logger.debug(f"measure_sample failed: {e}")
-        return {"mean_pitch": None, "mean_duration": None, "n_notes": 0}
+        return base
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -589,7 +653,146 @@ def print_summary(all_results: list):
                 f"(N={len(valid)})"
             )
 
+    # ── Quality degradation ──
+    print("\n" + "=" * 100)
+    print(" QUALITY DEGRADATION (vs ground truth)")
     print("=" * 100)
+    print(
+        f"  Ground truth: PCE={GROUND_TRUTH['pitch_class_entropy']:.3f}  "
+        f"SC={GROUND_TRUTH['scale_consistency']:.2f}%  "
+        f"GC={GROUND_TRUTH['groove_consistency']:.2f}%"
+    )
+
+    print(
+        f"\n  {'Method':<10} {'Mode':<7} {'Strategy':<28}  "
+        f"{'PCE':>6} {'SC%':>7} {'GC%':>7}  "
+        f"{'ΔE':>5} {'ΔS':>5} {'ΔG':>5} {'TotDeg':>7}  {'N':>5}"
+    )
+    print("  " + "-" * 105)
+
+    for (method, mode, strategy), samples in sorted(groups.items()):
+        valid_q = [
+            s for s in samples if not np.isnan(s.get("total_degradation", np.nan))
+        ]
+        if not valid_q:
+            continue
+
+        pce_m = np.mean([s["pitch_class_entropy"] for s in valid_q])
+        sc_m = np.mean([s["scale_consistency"] for s in valid_q])
+        gc_m = np.mean([s["groove_consistency"] for s in valid_q])
+        ed_m = np.mean([s["entropy_diff"] for s in valid_q])
+        sd_m = np.mean([s["scale_diff"] for s in valid_q])
+        gd_m = np.mean([s["groove_diff"] for s in valid_q])
+        td_m = np.mean([s["total_degradation"] for s in valid_q])
+
+        print(
+            f"  {method:<10} {mode:<7} {strategy:<28}  "
+            f"{pce_m:>6.3f} {sc_m:>6.1f}% {gc_m:>6.1f}%  "
+            f"{ed_m:>5.2f} {sd_m:>5.1f} {gd_m:>5.1f} {td_m:>7.2f}  "
+            f"{len(valid_q):>5}"
+        )
+
+    # ── Optimal configs (unconditioned) ──
+    _print_optimal_configs(all_results)
+
+    print("=" * 100)
+
+
+def _print_optimal_configs(all_results: list):
+    """Find and print optimal λ for each method/strategy (unconditioned).
+
+    Optimal = highest both_success among configs with total_degradation
+    below the median degradation, breaking ties by lowest degradation.
+    """
+    uncond = [
+        r
+        for r in all_results
+        if r["mode"] == "uncond" and r.get("both_success") is not None
+    ]
+    if not uncond:
+        return
+
+    print("\n" + "=" * 100)
+    print(" OPTIMAL λ CONFIGURATIONS (unconditioned)")
+    print("  Criterion: max both_success%, then min total_degradation")
+    print("=" * 100)
+
+    # Group by (method, strategy)
+    ms_groups = defaultdict(list)
+    for r in uncond:
+        ms_groups[(r["method"], r["strategy"])].append(r)
+
+    for (method, strategy), samples in sorted(ms_groups.items()):
+        # Aggregate by (λ_p, λ_d)
+        lambda_agg = defaultdict(
+            lambda: {
+                "pitch_ok": 0,
+                "dur_ok": 0,
+                "both_ok": 0,
+                "n": 0,
+                "degs": [],
+                "pce": [],
+                "sc": [],
+                "gc": [],
+            }
+        )
+        for s in samples:
+            key = (s["lambda_pitch"], s["lambda_duration"])
+            a = lambda_agg[key]
+            a["n"] += 1
+            if s.get("pitch_success"):
+                a["pitch_ok"] += 1
+            if s.get("duration_success"):
+                a["dur_ok"] += 1
+            if s.get("both_success"):
+                a["both_ok"] += 1
+            td = s.get("total_degradation", np.nan)
+            if not np.isnan(td):
+                a["degs"].append(td)
+                a["pce"].append(s["pitch_class_entropy"])
+                a["sc"].append(s["scale_consistency"])
+                a["gc"].append(s["groove_consistency"])
+
+        # Build sortable list
+        configs = []
+        for (lp, ld), a in lambda_agg.items():
+            if a["n"] == 0:
+                continue
+            both_rate = a["both_ok"] / a["n"]
+            avg_deg = np.mean(a["degs"]) if a["degs"] else 999.0
+            configs.append(
+                {
+                    "lp": lp,
+                    "ld": ld,
+                    "both_rate": both_rate,
+                    "pitch_rate": a["pitch_ok"] / a["n"],
+                    "dur_rate": a["dur_ok"] / a["n"],
+                    "avg_deg": avg_deg,
+                    "avg_pce": np.mean(a["pce"]) if a["pce"] else np.nan,
+                    "avg_sc": np.mean(a["sc"]) if a["sc"] else np.nan,
+                    "avg_gc": np.mean(a["gc"]) if a["gc"] else np.nan,
+                    "n": a["n"],
+                }
+            )
+
+        # Sort: highest both_rate first, then lowest degradation
+        configs.sort(key=lambda c: (-c["both_rate"], c["avg_deg"]))
+
+        print(f"\n  {method} / {strategy} — Top 10 configs:")
+        print(
+            f"    {'λ_p':>6} {'λ_d':>6}  "
+            f"{'Both%':>6} {'Pitch%':>7} {'Dur%':>6}  "
+            f"{'PCE':>6} {'SC%':>6} {'GC%':>6}  {'Degrad':>7}  {'N':>4}"
+        )
+        print("    " + "-" * 80)
+        for c in configs[:10]:
+            print(
+                f"    {c['lp']:>+6.2f} {c['ld']:>+6.2f}  "
+                f"{c['both_rate']*100:>5.0f}% {c['pitch_rate']*100:>6.0f}% "
+                f"{c['dur_rate']*100:>5.0f}%  "
+                f"{c['avg_pce']:>6.3f} {c['avg_sc']:>5.1f}% {c['avg_gc']:>5.1f}%  "
+                f"{c['avg_deg']:>7.2f}  {c['n']:>4}"
+            )
 
 
 def save_csv(all_results: list, output_path: pathlib.Path):
@@ -608,6 +811,13 @@ def save_csv(all_results: list, output_path: pathlib.Path):
         "mean_pitch",
         "mean_duration",
         "n_notes",
+        "pitch_class_entropy",
+        "scale_consistency",
+        "groove_consistency",
+        "entropy_diff",
+        "scale_diff",
+        "groove_diff",
+        "total_degradation",
         "pitch_success",
         "duration_success",
         "both_success",
