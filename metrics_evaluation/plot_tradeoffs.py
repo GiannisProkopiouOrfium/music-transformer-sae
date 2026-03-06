@@ -161,10 +161,10 @@ def aggregate_success_by_lambda(success_rows: list, mode: str) -> dict:
             "pitch_rate": a["pitch_ok"] / n_eval if n_eval else None,
             "dur_rate": a["dur_ok"] / n_eval if n_eval else None,
             "n_samples": a["n"],
-            "avg_degradation": float(np.mean(a["degs"])) if a["degs"] else None,
-            "avg_pce": float(np.mean(a["pce"])) if a["pce"] else None,
-            "avg_sc": float(np.mean(a["sc"])) if a["sc"] else None,
-            "avg_gc": float(np.mean(a["gc"])) if a["gc"] else None,
+            "avg_degradation": float(np.nanmean(a["degs"])) if a["degs"] else None,
+            "avg_pce": float(np.nanmean(a["pce"])) if a["pce"] else None,
+            "avg_sc": float(np.nanmean(a["sc"])) if a["sc"] else None,
+            "avg_gc": float(np.nanmean(a["gc"])) if a["gc"] else None,
         }
     return result
 

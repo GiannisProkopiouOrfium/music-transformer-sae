@@ -91,12 +91,22 @@ def evaluate_quality(music) -> dict:
 
 
 def calculate_degradation(metrics: dict) -> dict:
-    """Quality degradation vs ground truth (lower = better)."""
+    """Quality degradation vs ground truth (lower = better).
+
+    NOTE: Python's max(0.0, NaN) silently returns 0.0 (not NaN),
+    so we must guard each metric individually.
+    """
     gt = GROUND_TRUTH
-    ed = abs(metrics["pitch_class_entropy"] - gt["pitch_class_entropy"])
-    sd = max(0.0, gt["scale_consistency"] - metrics["scale_consistency"])
-    gd = max(0.0, gt["groove_consistency"] - metrics["groove_consistency"])
-    total = ed + sd + gd
+    pce = metrics["pitch_class_entropy"]
+    sc = metrics["scale_consistency"]
+    gc = metrics["groove_consistency"]
+
+    ed = abs(pce - gt["pitch_class_entropy"]) if not np.isnan(pce) else np.nan
+    sd = max(0.0, gt["scale_consistency"] - sc) if not np.isnan(sc) else np.nan
+    gd = max(0.0, gt["groove_consistency"] - gc) if not np.isnan(gc) else np.nan
+
+    # total is NaN if any component is NaN
+    total = ed + sd + gd  # NaN propagates naturally via addition
     return {
         "entropy_diff": float(ed),
         "scale_diff": float(sd),
@@ -143,7 +153,12 @@ def measure_sample(tokens: np.ndarray, encoding: dict) -> dict:
         qm = evaluate_quality(music)
         base.update(qm)
 
-        if not np.isnan(qm["pitch_class_entropy"]):
+        # Only compute degradation if all three quality metrics are valid
+        if (
+            not np.isnan(qm["pitch_class_entropy"])
+            and not np.isnan(qm["scale_consistency"])
+            and not np.isnan(qm["groove_consistency"])
+        ):
             deg = calculate_degradation(qm)
             base.update(deg)
 
@@ -419,6 +434,18 @@ def analyze_conditioned(
                             "mean_pitch": mp,
                             "mean_duration": md,
                             "n_notes": meas["n_notes"],
+                            # Quality metrics from measure_sample
+                            "pitch_class_entropy": meas.get(
+                                "pitch_class_entropy", np.nan
+                            ),
+                            "scale_consistency": meas.get("scale_consistency", np.nan),
+                            "groove_consistency": meas.get(
+                                "groove_consistency", np.nan
+                            ),
+                            "entropy_diff": meas.get("entropy_diff", np.nan),
+                            "scale_diff": meas.get("scale_diff", np.nan),
+                            "groove_diff": meas.get("groove_diff", np.nan),
+                            "total_degradation": meas.get("total_degradation", np.nan),
                             "pitch_success": pitch_ok,
                             "duration_success": dur_ok,
                             "both_success": both_ok,
@@ -677,13 +704,13 @@ def print_summary(all_results: list):
         if not valid_q:
             continue
 
-        pce_m = np.mean([s["pitch_class_entropy"] for s in valid_q])
-        sc_m = np.mean([s["scale_consistency"] for s in valid_q])
-        gc_m = np.mean([s["groove_consistency"] for s in valid_q])
-        ed_m = np.mean([s["entropy_diff"] for s in valid_q])
-        sd_m = np.mean([s["scale_diff"] for s in valid_q])
-        gd_m = np.mean([s["groove_diff"] for s in valid_q])
-        td_m = np.mean([s["total_degradation"] for s in valid_q])
+        pce_m = np.nanmean([s["pitch_class_entropy"] for s in valid_q])
+        sc_m = np.nanmean([s["scale_consistency"] for s in valid_q])
+        gc_m = np.nanmean([s["groove_consistency"] for s in valid_q])
+        ed_m = np.nanmean([s["entropy_diff"] for s in valid_q])
+        sd_m = np.nanmean([s["scale_diff"] for s in valid_q])
+        gd_m = np.nanmean([s["groove_diff"] for s in valid_q])
+        td_m = np.nanmean([s["total_degradation"] for s in valid_q])
 
         print(
             f"  {method:<10} {mode:<7} {strategy:<28}  "
