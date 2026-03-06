@@ -174,8 +174,10 @@ def analyze_unconditioned(
             baseline_pitch = None
             baseline_dur = None
         else:
-            baseline_pitch = np.mean([s["mean_pitch"] for s in baseline_samples])
-            baseline_dur = np.mean([s["mean_duration"] for s in baseline_samples])
+            baseline_pitch = float(np.mean([s["mean_pitch"] for s in baseline_samples]))
+            baseline_dur = float(
+                np.mean([s["mean_duration"] for s in baseline_samples])
+            )
             logger.info(
                 f"  Baseline ({len(baseline_samples)} samples): "
                 f"pitch={baseline_pitch:.1f}, duration={baseline_dur:.1f}"
@@ -199,18 +201,18 @@ def analyze_unconditioned(
             # Pitch success
             if mp is not None and baseline_pitch is not None and abs(lp) > 1e-6:
                 if lp > 0:
-                    s["pitch_success"] = mp > baseline_pitch
+                    s["pitch_success"] = bool(mp > baseline_pitch)
                 else:
-                    s["pitch_success"] = mp < baseline_pitch
+                    s["pitch_success"] = bool(mp < baseline_pitch)
             else:
                 s["pitch_success"] = None
 
             # Duration success
             if md is not None and baseline_dur is not None and abs(ld) > 1e-6:
                 if ld > 0:
-                    s["duration_success"] = md > baseline_dur
+                    s["duration_success"] = bool(md > baseline_dur)
                 else:
-                    s["duration_success"] = md < baseline_dur
+                    s["duration_success"] = bool(md < baseline_dur)
             else:
                 s["duration_success"] = None
 
@@ -321,7 +323,7 @@ def analyze_conditioned(
 
                     # Pitch success (use scenario direction)
                     if mp is not None and bl_pitch is not None and pitch_sign != 0:
-                        pitch_ok = (
+                        pitch_ok = bool(
                             (mp > bl_pitch) if pitch_sign > 0 else (mp < bl_pitch)
                         )
                     else:
@@ -329,7 +331,7 @@ def analyze_conditioned(
 
                     # Duration success
                     if md is not None and bl_dur is not None and dur_sign != 0:
-                        dur_ok = (md > bl_dur) if dur_sign > 0 else (md < bl_dur)
+                        dur_ok = bool((md > bl_dur) if dur_sign > 0 else (md < bl_dur))
                     else:
                         dur_ok = None
 
