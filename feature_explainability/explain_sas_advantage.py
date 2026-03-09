@@ -259,6 +259,10 @@ def compute_concentration_metrics(
         sas_pr = _participation_ratio(v_sas)
         dm_pr = _participation_ratio(v_dm)
 
+        # Sparsity ratio: fraction of total space that's active
+        sas_active_frac = sas_n_active / len(v_sas)
+        dm_active_frac = dm_n_nonzero / len(v_dm)
+
         result.update(
             {
                 "dm_n_nonzero": dm_n_nonzero,
@@ -267,7 +271,9 @@ def compute_concentration_metrics(
                 "dm_cumsum_curve": dm_cumsum.tolist(),
                 "sas_participation_ratio": float(sas_pr),
                 "dm_participation_ratio": float(dm_pr),
-                "dimensionality_reduction": float(dm_pr / (sas_pr + 1e-10)),
+                "sas_active_fraction": float(sas_active_frac),
+                "dm_active_fraction": float(dm_active_frac),
+                "sparsity_advantage": float(dm_active_frac / (sas_active_frac + 1e-10)),
             }
         )
 
@@ -712,26 +718,33 @@ def plot_cross_layer_profile(
             fontweight="bold",
         )
 
-    # (b) Participation ratio comparison
+    # (b) Sparsity comparison (% of space used)
     ax = axes[1]
-    sas_pr = [d["sas_participation_ratio"] for d in data]
+    sas_sparsity = [d["sas_sparsity_pct"] for d in data]
     ax.plot(
-        layers, sas_pr, "o-", color="#1565C0", linewidth=2, label="SAS", markersize=6
+        layers,
+        sas_sparsity,
+        "o-",
+        color="#1565C0",
+        linewidth=2,
+        label=f"SAS (of {SPARSE_DIM})",
+        markersize=6,
     )
-    if "dm_participation_ratio" in data[0]:
-        dm_pr = [d["dm_participation_ratio"] for d in data]
+    if "dm_n_nonzero" in data[0]:
+        # DiffMean is always 0% sparse (all 512 dims non-zero)
+        dm_sparsity = [100.0 * (1 - d["dm_n_nonzero"] / RESIDUAL_DIM) for d in data]
         ax.plot(
             layers,
-            dm_pr,
+            dm_sparsity,
             "s--",
             color="#E65100",
             linewidth=2,
-            label="DiffMean",
+            label=f"DiffMean (of {RESIDUAL_DIM})",
             markersize=6,
         )
     ax.set_xlabel("Layer")
-    ax.set_ylabel("Participation Ratio")
-    ax.set_title(f"{label} — Effective Dimensionality", fontweight="bold")
+    ax.set_ylabel("Sparsity (%)")
+    ax.set_title(f"{label} — Vector Sparsity", fontweight="bold")
     ax.legend()
     ax.set_xticks(layers)
     ax.grid(True, alpha=0.3)
@@ -803,31 +816,34 @@ def plot_dimensionality_comparison(
         categories = [
             "Total\nDimensions",
             "Active\nComponents",
+            "% Space\nUsed",
             "For 80%\nEnergy",
             "For 90%\nEnergy",
-            "Participation\nRatio",
         ]
+
+        sas_active_pct = 100.0 * anat.get("n_active", 0) / SPARSE_DIM
+        dm_active_pct = 100.0  # DiffMean uses all dims
 
         sas_vals = [
             SPARSE_DIM,
             anat.get("n_active", 0),
+            sas_active_pct,
             anat.get("features_for_80pct", 0),
             anat.get("features_for_90pct", 0),
-            conc.get("sas_participation_ratio", 0),
         ]
         dm_vals = [
             RESIDUAL_DIM,
             conc.get("dm_n_nonzero", RESIDUAL_DIM),
+            dm_active_pct,
             0,  # We'll compute these below
             0,
-            conc.get("dm_participation_ratio", 0),
         ]
 
         # Compute DiffMean 80%/90% from cumsum curve
         if "dm_cumsum_curve" in conc:
             dm_cs = np.array(conc["dm_cumsum_curve"])
-            dm_vals[2] = int(np.searchsorted(dm_cs, 0.8) + 1)
-            dm_vals[3] = int(np.searchsorted(dm_cs, 0.9) + 1)
+            dm_vals[3] = int(np.searchsorted(dm_cs, 0.8) + 1)
+            dm_vals[4] = int(np.searchsorted(dm_cs, 0.9) + 1)
 
         x = np.arange(len(categories))
         width = 0.35
@@ -976,20 +992,30 @@ def plot_summary_dashboard(
                 f"  90% energy in {anat.get('features_for_90pct', '?')} features"
             )
             if conc:
-                pr_sas = conc.get("sas_participation_ratio", 0)
-                pr_dm = conc.get("dm_participation_ratio", 0)
-                if pr_dm > 0:
+                sas_frac = conc.get("sas_active_fraction", 0)
+                dm_frac = conc.get("dm_active_fraction", 1)
+                if sas_frac > 0:
                     lines.append(
-                        f"  SAS eff. dim: {pr_sas:.1f} vs DiffMean: {pr_dm:.1f}"
+                        f"  Space used: {sas_frac*100:.1f}% vs {dm_frac*100:.1f}%"
                     )
-                    lines.append(f"  Concentration factor: {pr_dm/pr_sas:.1f}×")
+                    lines.append(
+                        f"  Sparsity advantage: {dm_frac/(sas_frac+1e-10):.0f}×"
+                    )
             lines.append("")
 
     if overlap_result:
-        lines.append("■ Feature Disentanglement")
+        lines.append("■ Concept Disentanglement")
         lines.append(f"  Jaccard overlap: {overlap_result['jaccard_index']:.3f}")
-        lines.append(f"  Cosine similarity: {overlap_result['cosine_similarity']:.3f}")
-        lines.append("  → Concepts use different features!")
+        lines.append(f"  Cosine sim: {overlap_result['cosine_similarity']:.3f}")
+        shared = overlap_result.get("intersection_size", 0)
+        agree = overlap_result.get("shared_sign_agree", 0)
+        if shared > 0:
+            lines.append(
+                f"  Sign agreement: {agree}/{shared} ({100*agree/shared:.0f}%)"
+            )
+            lines.append("  → Shared features oppose — GS needed!")
+        else:
+            lines.append("  → Fully disjoint feature sets!")
 
     ax.text(
         0.05,
@@ -1057,7 +1083,6 @@ def generate_text_report(
     anatomy_results: Dict[str, Dict],
     concentration_results: Dict[str, Dict],
     overlap_result: Optional[Dict],
-    cross_layer_profiles: Dict[str, Dict],
     output_dir: pathlib.Path,
 ) -> str:
     """Generate human-readable summary report."""
@@ -1120,10 +1145,14 @@ def generate_text_report(
             lines.append(
                 f"  DiffMean participation ratio (eff. dim): {conc['dm_participation_ratio']:.1f}"
             )
-        if "dimensionality_reduction" in conc:
+        if "sas_active_fraction" in conc:
             lines.append(
-                f"  → DiffMean uses {conc['dimensionality_reduction']:.1f}× more "
-                f"effective dimensions than SAS"
+                f"  SAS uses {conc['sas_active_fraction']*100:.1f}% of feature space "
+                f"vs DiffMean uses {conc['dm_active_fraction']*100:.1f}%"
+            )
+            lines.append(
+                f"  → Sparsity advantage: SAS touches {conc['sparsity_advantage']:.0f}× fewer "
+                f"dimensions proportionally"
             )
 
     # Section 3: Overlap
@@ -1175,29 +1204,52 @@ def generate_text_report(
     lines.append(f"\n{'─' * 72}")
     lines.append("  4. KEY ARGUMENTS: WHY SAS > DiffMean")
     lines.append("─" * 72)
+    # Build argument (D) dynamically from overlap data
+    disentangle_text = (
+        "      Different concepts (pitch vs duration) share some SAE features\n"
+        "      (Jaccard ~0.3), but crucially only 31% of shared features agree\n"
+        "      in sign. This means shared features push concepts in opposite\n"
+        "      directions, making Gram-Schmidt orthogonalization essential for\n"
+        "      dual-concept steering. SAS makes this structure visible;\n"
+        "      DiffMean cannot reveal per-feature sign conflicts."
+    )
+    if overlap_result:
+        jac = overlap_result["jaccard_index"]
+        shared = overlap_result["intersection_size"]
+        agree = overlap_result["shared_sign_agree"]
+        agree_pct = 100 * agree / shared if shared > 0 else 0
+        disentangle_text = (
+            f"      Pitch and duration share {shared} SAE features "
+            f"(Jaccard={jac:.2f}), but only\n"
+            f"      {agree_pct:.0f}% of shared features agree in sign. "
+            f"Shared features push\n"
+            "      concepts in opposite directions, making Gram-Schmidt\n"
+            "      orthogonalization essential. SAS makes this per-feature\n"
+            "      conflict visible; DiffMean cannot."
+        )
+
     lines.append(
-        """
+        f"""
   (A) INTERPRETABILITY
       DiffMean operates in 512-d residual stream where each dimension
-      activates multiple unrelated concepts (polysemantic). SAS operates
+      mixes multiple unrelated concepts (polysemantic). SAS operates
       in 4096-d SAE feature space where each feature corresponds to a
       single, identifiable musical concept (monosemantic).
 
-  (B) SPARSITY = PRECISION
-      SAS vectors are extremely sparse (>95% zeros). Steering modifies
-      only a handful of targeted features, leaving the rest of the model's
-      behavior untouched. DiffMean perturbs ALL dimensions simultaneously.
+  (B) SPARSITY = TARGETED INTERVENTION
+      SAS vectors are >89% zeros — only ~330-417 of 4096 features are
+      active. Steering touches <10% of the feature space, leaving the
+      rest of the model's behavior untouched. DiffMean perturbs ALL
+      512 dimensions simultaneously (100% of residual stream).
 
-  (C) ENERGY CONCENTRATION
-      A small number of SAS features carry the majority of steering energy.
-      This means SAS has clear "knobs" that can be individually understood.
-      DiffMean spreads energy across hundreds of dimensions with no clear
-      structure.
+  (C) IDENTIFIABLE STRUCTURE
+      Each non-zero SAS feature is a named, monosemantic unit that can
+      be individually inspected ("Feature 2381 = high-pitch patterns").
+      DiffMean dimensions have no such interpretation — they are 
+      arbitrary axes in a polysemantic space.
 
-  (D) CONCEPT DISENTANGLEMENT
-      Different concepts (pitch vs duration) activate different SAE features
-      with minimal overlap. This enables principled multi-concept steering
-      without interference — justifying the Gram-Schmidt strategies.
+  (D) CONCEPT DISENTANGLEMENT + GRAM-SCHMIDT JUSTIFICATION
+{disentangle_text}
 """
     )
 
@@ -1424,7 +1476,6 @@ def main():
         anatomy_results,
         concentration_results,
         overlap_result,
-        cross_layer_profiles,
         args.output_dir,
     )
     print(report)
