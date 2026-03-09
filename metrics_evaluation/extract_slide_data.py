@@ -74,10 +74,23 @@ def load_success_csv(path):
 
 
 def main():
+    default_ws = pathlib.Path("exp/sod/sparse_steering/fmd_workspace")
     parser = argparse.ArgumentParser()
-    parser.add_argument("--fmd_csv", type=pathlib.Path, required=True)
-    parser.add_argument("--fmd_json", type=pathlib.Path, required=True)
-    parser.add_argument("--success_csv", type=pathlib.Path, required=True)
+    parser.add_argument(
+        "--fmd_csv",
+        type=pathlib.Path,
+        default=default_ws / "fmd_per_lambda.csv",
+    )
+    parser.add_argument(
+        "--fmd_json",
+        type=pathlib.Path,
+        default=default_ws / "fmd_results.json",
+    )
+    parser.add_argument(
+        "--success_csv",
+        type=pathlib.Path,
+        default=default_ws / "steering_success.csv",
+    )
     args = parser.parse_args()
 
     fmd_rows = load_fmd_csv(args.fmd_csv)
