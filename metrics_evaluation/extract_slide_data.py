@@ -27,6 +27,10 @@ STRAT_LABEL = {
     "DM_gram_schmidt_pitch": "DiffMean",
     "gram_schmidt_pitch": "DiffMean",
     "gram_schmidt_duration": "SAS gs-dur",
+    # JSON comparison strings use SAS_ prefix
+    "SAS_gram_schmidt_ek2": "SAS gs-ek2",
+    "SAS_expanded_k_2x": "SAS ek2x",
+    "SAS_gram_schmidt_duration": "SAS gs-dur",
 }
 
 # Map success-CSV strategy names -> FMD-CSV strategy names
