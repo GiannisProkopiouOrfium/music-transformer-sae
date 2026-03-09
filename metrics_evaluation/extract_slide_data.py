@@ -40,6 +40,7 @@ def fmd_strat(success_strat: str) -> str:
     """Convert success-CSV strategy name to FMD-CSV strategy name."""
     return SUCCESS_TO_FMD_STRAT.get(success_strat, success_strat)
 
+
 SCENARIO_SHORT = {
     "low_pitch_short_duration_to_high_long": "↑P ↑D",
     "low_pitch_long_duration_to_high_short": "↑P ↓D",
@@ -323,7 +324,7 @@ def main():
     print("  " + "-" * 75)
     for c in configs[:15]:
         fmd_s = f"{c['fmd']:.1f}" if c["fmd"] else "N/A"
-        sl = STRAT_LABEL.get(c['strat'], c['strat'])
+        sl = STRAT_LABEL.get(c["strat"], c["strat"])
         print(
             f"  {sl:<28} {c['lp']:>+6.2f} {c['ld']:>+6.2f} "
             f"{c['rate']*100:>6.0f}% {c['deg']:>8.2f} {fmd_s:>8} {c['n']:>4}"
@@ -382,7 +383,7 @@ def main():
     print("  " + "-" * 75)
     for c in configs_c[:15]:
         fmd_s = f"{c['fmd']:.1f}" if c["fmd"] else "N/A"
-        sl = STRAT_LABEL.get(c['strat'], c['strat'])
+        sl = STRAT_LABEL.get(c["strat"], c["strat"])
         print(
             f"  {sl:<28} {c['lp']:>+6.2f} {c['ld']:>+6.2f} "
             f"{c['rate']*100:>6.0f}% {c['deg']:>8.2f} {fmd_s:>8} {c['n']:>4}"
@@ -529,7 +530,7 @@ def main():
         print("  " + "-" * 65)
         for c in sc_configs[:12]:
             fmd_s = f"{c['fmd']:.1f}" if c["fmd"] else "N/A"
-            sl = STRAT_LABEL.get(c['strat'], c['strat'])
+            sl = STRAT_LABEL.get(c["strat"], c["strat"])
             print(
                 f"  {sl:<28} {c['lam']:>+6.2f} "
                 f"{c['rate']*100:>6.0f}% {c['deg']:>8.2f} {fmd_s:>8} {c['n']:>4}"
@@ -595,7 +596,7 @@ def main():
         print("  " + "-" * 65)
         for c in sc_configs[:12]:
             fmd_s = f"{c['fmd']:.1f}" if c["fmd"] else "N/A"
-            sl = STRAT_LABEL.get(c['strat'], c['strat'])
+            sl = STRAT_LABEL.get(c["strat"], c["strat"])
             print(
                 f"  {sl:<28} {c['lam']:>+6.2f} "
                 f"{c['rate']*100:>6.0f}% {c['deg']:>8.2f} {fmd_s:>8} {c['n']:>4}"
@@ -616,7 +617,7 @@ def main():
                 break
             fmd_s = f"{c['fmd']:.1f}" if c["fmd"] else "N/A"
             g = gap(c["fmd"], mode_label) if c["fmd"] else float("nan")
-            sl = STRAT_LABEL.get(c['strat'], c['strat'])
+            sl = STRAT_LABEL.get(c["strat"], c["strat"])
             print(
                 f"  {sl:<28} lp={c['lp']:+.2f} ld={c['ld']:+.2f}  "
                 f"success=100%  deg={c['deg']:.2f}  FMD={fmd_s}  gap={g:+.1f}%"
