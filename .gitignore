@@ -159,6 +159,7 @@ Gemfile.lock
 *.md
 !docs/**/*.md
 feature_*
+!feature_explainability/
 *.wav
 !docs/**/*.mp3
 *.png
