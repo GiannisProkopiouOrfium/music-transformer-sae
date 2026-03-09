@@ -35,10 +35,17 @@ SUCCESS_TO_FMD_STRAT = {
     "gram_schmidt_pitch": "DM_gram_schmidt_pitch",
 }
 
+FMD_TO_SUCCESS_STRAT = {v: k for k, v in SUCCESS_TO_FMD_STRAT.items()}
+
 
 def fmd_strat(success_strat: str) -> str:
     """Convert success-CSV strategy name to FMD-CSV strategy name."""
     return SUCCESS_TO_FMD_STRAT.get(success_strat, success_strat)
+
+
+def success_strat(fmd_strat_name: str) -> str:
+    """Convert FMD-CSV strategy name to success-CSV strategy name."""
+    return FMD_TO_SUCCESS_STRAT.get(fmd_strat_name, fmd_strat_name)
 
 
 SCENARIO_SHORT = {
@@ -161,10 +168,12 @@ def main():
         m = re.match(r"SOD vs (.+?) \((conditioned|unconditioned)\)$", comp)
         if m and "__" not in comp:
             label = m.group(1)
+            label_nice = STRAT_LABEL.get(label, label)
             mode = "cond" if m.group(2) == "conditioned" else "uncond"
             g = gap(fmd_val, mode)
             print(
-                f"  {mode:<7} {label:<35} FMD={fmd_val:.1f}  " f"gap={g:+.1f}% vs paper"
+                f"  {mode:<7} {label_nice:<28} FMD={fmd_val:.1f}  "
+                f"gap={g:+.1f}% vs paper"
             )
 
     # ================================================================
@@ -192,9 +201,10 @@ def main():
             best_dual[key] = r
 
     for (mode, strat), r in sorted(best_dual.items()):
+        sl = STRAT_LABEL.get(strat, strat)
         g = gap(r["fmd"], mode)
         print(
-            f"  {mode:<7} {strat:<35} FMD={r['fmd']:.1f} "
+            f"  {mode:<7} {sl:<28} FMD={r['fmd']:.1f} "
             f"lp={r['lambda_pitch']:+.2f} ld={r['lambda_duration']:+.2f}  "
             f"gap={g:+.1f}%"
         )
@@ -209,13 +219,14 @@ def main():
     for (mode, strat), fmd_row in sorted(best_dual.items()):
         lp = fmd_row["lambda_pitch"]
         ld = fmd_row["lambda_duration"]
+        ss_strat = success_strat(strat)  # map FMD name -> success name
 
         # Match success rows at this config
         matching = [
             s
             for s in success_rows
             if s["mode"] == ("uncond" if mode == "uncond" else "cond")
-            and s["strategy"] == strat
+            and s["strategy"] == ss_strat
             and s["lambda_pitch"] is not None
             and s["lambda_duration"] is not None
             and abs(s["lambda_pitch"] - lp) < 1e-3
@@ -233,8 +244,9 @@ def main():
         ]
         avg_deg = np.nanmean(degs) if degs else float("nan")
 
+        sl = STRAT_LABEL.get(strat, strat)
         print(
-            f"  {mode:<7} {strat:<35} "
+            f"  {mode:<7} {sl:<28} "
             f"lp={lp:+.2f} ld={ld:+.2f}  "
             f"success={rate:.0f}% ({n_ok}/{n_total})  "
             f"degradation={avg_deg:.2f}"
@@ -259,6 +271,7 @@ def main():
 
         c_label = "pitch" if "pitch" in concept else "duration"
         for (mode, strat), r in sorted(best_m.items()):
+            sl = STRAT_LABEL.get(strat, strat)
             lam = (
                 r["lambda_pitch"]
                 if r["lambda_pitch"] is not None
@@ -266,7 +279,7 @@ def main():
             )
             g = gap(r["fmd"], mode)
             print(
-                f"  {mode:<7} {strat:<35} {c_label:<9} "
+                f"  {mode:<7} {sl:<28} {c_label:<9} "
                 f"FMD={r['fmd']:.1f}  λ={lam:+.2f}  gap={g:+.1f}%"
             )
 
@@ -413,7 +426,7 @@ def main():
             strat_short = STRAT_LABEL.get(strat, strat)
             g = gap(r["fmd"], "cond")
             print(
-                f"  {strat_short:<18} {sc_short:<10} "
+                f"  {strat_short:<20} {sc_short:<10} "
                 f"FMD={r['fmd']:.1f}  gap={g:+.1f}%  "
                 f"(n_test={r.get('n_test', '?')})"
             )
@@ -459,7 +472,7 @@ def main():
         ss = scenario_success[(strat, scenario)]
         rate = ss["ok"] / ss["total"] * 100 if ss["total"] else 0
         avg_deg = np.nanmean(ss["degs"]) if ss["degs"] else float("nan")
-        fmd_val = scenario_fmd.get((strat, scenario))
+        fmd_val = scenario_fmd.get((fmd_strat(strat), scenario))
         sc_short = SCENARIO_SHORT.get(scenario, scenario[:30])
         strat_short = STRAT_LABEL.get(strat, strat)
 
