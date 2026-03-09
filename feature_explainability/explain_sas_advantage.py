@@ -1384,7 +1384,7 @@ def main():
                 logger.info(
                     f"    DiffMean Gini={conc['dm_gini']:.3f}, "
                     f"DM PR={conc['dm_participation_ratio']:.1f}, "
-                    f"Dim reduction={conc['dimensionality_reduction']:.1f}×"
+                    f"Sparsity advantage={conc.get('sparsity_advantage', 0):.1f}×"
                 )
 
     # ══════════════════════════════════════════════════════════════════════
