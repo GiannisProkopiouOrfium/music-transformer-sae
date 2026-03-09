@@ -25,8 +25,20 @@ STRAT_LABEL = {
     "gram_schmidt_ek2": "SAS gs-ek2",
     "expanded_k_2x": "SAS ek2x",
     "DM_gram_schmidt_pitch": "DiffMean",
+    "gram_schmidt_pitch": "DiffMean",
     "gram_schmidt_duration": "SAS gs-dur",
 }
+
+# Map success-CSV strategy names -> FMD-CSV strategy names
+# (DiffMean uses 'gram_schmidt_pitch' in success CSV but 'DM_gram_schmidt_pitch' in FMD CSV)
+SUCCESS_TO_FMD_STRAT = {
+    "gram_schmidt_pitch": "DM_gram_schmidt_pitch",
+}
+
+
+def fmd_strat(success_strat: str) -> str:
+    """Convert success-CSV strategy name to FMD-CSV strategy name."""
+    return SUCCESS_TO_FMD_STRAT.get(success_strat, success_strat)
 
 SCENARIO_SHORT = {
     "low_pitch_short_duration_to_high_long": "↑P ↑D",
@@ -98,6 +110,38 @@ def main():
 
     with open(args.fmd_json) as f:
         fmd_json = json.load(f)
+
+    # Helper: look up FMD for a (mode, strategy_from_success, lp, ld) config
+    def lookup_fmd(mode, strat, lp, ld, concept="dual"):
+        fs = fmd_strat(strat)
+        for r in fmd_rows:
+            if (
+                r["concept"] == concept
+                and r["strategy"] == fs
+                and r["mode"] == mode
+                and r["lambda_pitch"] is not None
+                and r["lambda_duration"] is not None
+                and abs(r["lambda_pitch"] - lp) < 1e-3
+                and abs(r["lambda_duration"] - ld) < 1e-3
+                and r["fmd"] is not None
+            ):
+                return r["fmd"]
+        return None
+
+    def lookup_marginal_fmd(mode, strat, concept, lam_val):
+        fs = fmd_strat(strat)
+        fmd_key = "lambda_pitch" if "pitch" in concept else "lambda_duration"
+        for r in fmd_rows:
+            if (
+                r["concept"] == concept
+                and r["strategy"] == fs
+                and r["mode"] == mode
+                and r.get(fmd_key) is not None
+                and abs(r[fmd_key] - lam_val) < 1e-3
+                and r["fmd"] is not None
+            ):
+                return r["fmd"]
+        return None
 
     # ================================================================
     # 1. AGGREGATE FMD PER MODE (for slides 4/5: unconditioned-specific)
@@ -258,20 +302,7 @@ def main():
     for (strat, lp, ld), a in agg.items():
         rate = a["ok"] / a["total"] if a["total"] else 0
         avg_deg = np.nanmean(a["degs"]) if a["degs"] else float("nan")
-        # Look up FMD
-        fmd_match = [
-            r
-            for r in fmd_rows
-            if r["concept"] == "dual"
-            and r["strategy"] == strat
-            and r["mode"] == "uncond"
-            and r["lambda_pitch"] is not None
-            and r["lambda_duration"] is not None
-            and abs(r["lambda_pitch"] - lp) < 1e-3
-            and abs(r["lambda_duration"] - ld) < 1e-3
-            and r["fmd"] is not None
-        ]
-        fmd_val = fmd_match[0]["fmd"] if fmd_match else None
+        fmd_val = lookup_fmd("uncond", strat, lp, ld)
         configs.append(
             {
                 "strat": strat,
@@ -292,8 +323,9 @@ def main():
     print("  " + "-" * 75)
     for c in configs[:15]:
         fmd_s = f"{c['fmd']:.1f}" if c["fmd"] else "N/A"
+        sl = STRAT_LABEL.get(c['strat'], c['strat'])
         print(
-            f"  {c['strat']:<28} {c['lp']:>+6.2f} {c['ld']:>+6.2f} "
+            f"  {sl:<28} {c['lp']:>+6.2f} {c['ld']:>+6.2f} "
             f"{c['rate']*100:>6.0f}% {c['deg']:>8.2f} {fmd_s:>8} {c['n']:>4}"
         )
 
@@ -329,19 +361,7 @@ def main():
     for (strat, lp, ld), a in agg_c.items():
         rate = a["ok"] / a["total"] if a["total"] else 0
         avg_deg = np.nanmean(a["degs"]) if a["degs"] else float("nan")
-        fmd_match = [
-            r
-            for r in fmd_rows
-            if r["concept"] == "dual"
-            and r["strategy"] == strat
-            and r["mode"] == "cond"
-            and r["lambda_pitch"] is not None
-            and r["lambda_duration"] is not None
-            and abs(r["lambda_pitch"] - lp) < 1e-3
-            and abs(r["lambda_duration"] - ld) < 1e-3
-            and r["fmd"] is not None
-        ]
-        fmd_val = fmd_match[0]["fmd"] if fmd_match else None
+        fmd_val = lookup_fmd("cond", strat, lp, ld)
         configs_c.append(
             {
                 "strat": strat,
@@ -362,8 +382,9 @@ def main():
     print("  " + "-" * 75)
     for c in configs_c[:15]:
         fmd_s = f"{c['fmd']:.1f}" if c["fmd"] else "N/A"
+        sl = STRAT_LABEL.get(c['strat'], c['strat'])
         print(
-            f"  {c['strat']:<28} {c['lp']:>+6.2f} {c['ld']:>+6.2f} "
+            f"  {sl:<28} {c['lp']:>+6.2f} {c['ld']:>+6.2f} "
             f"{c['rate']*100:>6.0f}% {c['deg']:>8.2f} {fmd_s:>8} {c['n']:>4}"
         )
 
@@ -377,7 +398,9 @@ def main():
     per_scenario = [
         r
         for r in fmd_json
-        if "__" in r.get("comparison", "") and r.get("fmd") is not None
+        if r.get("comparison", "").startswith("SOD vs ")
+        and "__" in r.get("comparison", "")
+        and r.get("fmd") is not None
     ]
     for r in sorted(per_scenario, key=lambda x: x["comparison"]):
         comp = r["comparison"].replace("SOD vs ", "")
@@ -482,22 +505,10 @@ def main():
             rate = a["ok"] / a["total"] if a["total"] else 0
             avg_deg = np.nanmean(a["degs"]) if a["degs"] else float("nan")
 
-            # Look up marginal FMD
             fmd_concept = (
                 "marginal_pitch" if "pitch" in concept_name else "marginal_duration"
             )
-            fmd_key = "lambda_pitch" if "pitch" in concept_name else "lambda_duration"
-            fmd_match = [
-                r
-                for r in fmd_rows
-                if r["concept"] == fmd_concept
-                and r["strategy"] == strat
-                and r["mode"] == "uncond"
-                and r.get(fmd_key) is not None
-                and abs(r[fmd_key] - lam_val) < 1e-3
-                and r["fmd"] is not None
-            ]
-            fmd_val = fmd_match[0]["fmd"] if fmd_match else None
+            fmd_val = lookup_marginal_fmd("uncond", strat, fmd_concept, lam_val)
 
             sc_configs.append(
                 {
@@ -518,8 +529,9 @@ def main():
         print("  " + "-" * 65)
         for c in sc_configs[:12]:
             fmd_s = f"{c['fmd']:.1f}" if c["fmd"] else "N/A"
+            sl = STRAT_LABEL.get(c['strat'], c['strat'])
             print(
-                f"  {c['strat']:<28} {c['lam']:>+6.2f} "
+                f"  {sl:<28} {c['lam']:>+6.2f} "
                 f"{c['rate']*100:>6.0f}% {c['deg']:>8.2f} {fmd_s:>8} {c['n']:>4}"
             )
 
@@ -562,18 +574,7 @@ def main():
             fmd_concept = (
                 "marginal_pitch" if "pitch" in concept_name else "marginal_duration"
             )
-            fmd_key = "lambda_pitch" if "pitch" in concept_name else "lambda_duration"
-            fmd_match = [
-                r
-                for r in fmd_rows
-                if r["concept"] == fmd_concept
-                and r["strategy"] == strat
-                and r["mode"] == "cond"
-                and r.get(fmd_key) is not None
-                and abs(r[fmd_key] - lam_val) < 1e-3
-                and r["fmd"] is not None
-            ]
-            fmd_val = fmd_match[0]["fmd"] if fmd_match else None
+            fmd_val = lookup_marginal_fmd("cond", strat, fmd_concept, lam_val)
 
             sc_configs.append(
                 {
@@ -594,8 +595,9 @@ def main():
         print("  " + "-" * 65)
         for c in sc_configs[:12]:
             fmd_s = f"{c['fmd']:.1f}" if c["fmd"] else "N/A"
+            sl = STRAT_LABEL.get(c['strat'], c['strat'])
             print(
-                f"  {c['strat']:<28} {c['lam']:>+6.2f} "
+                f"  {sl:<28} {c['lam']:>+6.2f} "
                 f"{c['rate']*100:>6.0f}% {c['deg']:>8.2f} {fmd_s:>8} {c['n']:>4}"
             )
 
@@ -614,8 +616,9 @@ def main():
                 break
             fmd_s = f"{c['fmd']:.1f}" if c["fmd"] else "N/A"
             g = gap(c["fmd"], mode_label) if c["fmd"] else float("nan")
+            sl = STRAT_LABEL.get(c['strat'], c['strat'])
             print(
-                f"  {c['strat']:<28} lp={c['lp']:+.2f} ld={c['ld']:+.2f}  "
+                f"  {sl:<28} lp={c['lp']:+.2f} ld={c['ld']:+.2f}  "
                 f"success=100%  deg={c['deg']:.2f}  FMD={fmd_s}  gap={g:+.1f}%"
             )
 
