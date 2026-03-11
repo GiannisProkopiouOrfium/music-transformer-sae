@@ -597,7 +597,8 @@ def generate_comparison_plots(
         ax.set_xlabel("n_ramp (steps)")
         ax.set_ylabel("Steering Success Rate (%)")
         ax.set_title(f"{concept_label}: Success vs Ramp Length")
-        ax.legend()
+        if ax.get_legend_handles_labels()[1]:
+            ax.legend()
         ax.grid(True, alpha=0.3)
 
         # Magnitude
@@ -616,7 +617,8 @@ def generate_comparison_plots(
         ax.set_xlabel("n_ramp (steps)")
         ax.set_ylabel(metric_label)
         ax.set_title(f"{concept_label}: Magnitude vs Ramp Length")
-        ax.legend()
+        if ax.get_legend_handles_labels()[1]:
+            ax.legend()
         ax.grid(True, alpha=0.3)
 
         # Degradation
@@ -632,7 +634,8 @@ def generate_comparison_plots(
         ax.set_xlabel("n_ramp (steps)")
         ax.set_ylabel("Mean Quality Degradation")
         ax.set_title(f"{concept_label}: Degradation vs Ramp Length")
-        ax.legend()
+        if ax.get_legend_handles_labels()[1]:
+            ax.legend()
         ax.grid(True, alpha=0.3)
 
     plt.suptitle(
@@ -685,7 +688,8 @@ def generate_comparison_plots(
             ax.set_xlabel("n_ramp (steps)")
             ax.set_ylabel(title)
             ax.set_title(f"{concept_label}: {title}")
-            ax.legend()
+            if ax.get_legend_handles_labels()[1]:
+                ax.legend()
             ax.grid(True, alpha=0.3)
 
     plt.suptitle(
@@ -733,7 +737,8 @@ def generate_comparison_plots(
                 ax.set_xlabel("Lambda / Alpha")
                 ax.set_ylabel("Steering Success Rate (%)")
                 ax.set_title(f"{concept_label} — {method}: Success per Lambda/Alpha")
-                ax.legend(fontsize=8)
+                if ax.get_legend_handles_labels()[1]:
+                    ax.legend(fontsize=8)
                 ax.grid(True, alpha=0.3)
                 ax.axvline(0, color="grey", linestyle=":", alpha=0.3)
 
@@ -793,7 +798,8 @@ def generate_comparison_plots(
             ax.set_xlabel("n_ramp (steps)")
             ax.set_ylabel("FMD (lower = better)")
             ax.set_title("FMD vs Ramp Length")
-            ax.legend()
+            if ax.get_legend_handles_labels()[1]:
+                ax.legend()
             ax.grid(True, alpha=0.3)
             plt.tight_layout()
             plt.savefig(

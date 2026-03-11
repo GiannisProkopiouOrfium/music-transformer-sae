@@ -15,6 +15,7 @@ import sys
 from typing import Dict, List, Optional, Tuple
 import numpy as np
 import torch
+import torch.nn as nn
 import scipy.stats as scipy_stats
 
 # Add parent directory to path
