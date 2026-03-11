@@ -784,15 +784,20 @@ def calculate_statistical_analysis(results: List[Dict], concept: str) -> Dict:
         values = values[sort_idx]
 
         # Pearson correlation
-        pearson_r, pearson_p = scipy_stats.pearsonr(alphas, values)
+        if len(set(alphas)) < 2:
+            pearson_r, pearson_p = float("nan"), float("nan")
+            spearman_r, spearman_p = float("nan"), float("nan")
+            slope, intercept, r_value, p_value, std_err = 0.0, 0.0, 0.0, 1.0, 0.0
+        else:
+            pearson_r, pearson_p = scipy_stats.pearsonr(alphas, values)
 
-        # Spearman correlation
-        spearman_r, spearman_p = scipy_stats.spearmanr(alphas, values)
+            # Spearman correlation
+            spearman_r, spearman_p = scipy_stats.spearmanr(alphas, values)
 
-        # Linear regression
-        slope, intercept, r_value, p_value, std_err = scipy_stats.linregress(
-            alphas, values
-        )
+            # Linear regression
+            slope, intercept, r_value, p_value, std_err = scipy_stats.linregress(
+                alphas, values
+            )
 
         # Check monotonicity
         monotonic = all(values[i] <= values[i + 1] for i in range(len(values) - 1))
@@ -855,13 +860,18 @@ def calculate_statistical_analysis(results: List[Dict], concept: str) -> Dict:
         values_all = np.array(values_all)
 
         # Overall correlation
-        pearson_r, pearson_p = scipy_stats.pearsonr(alphas_all, values_all)
-        spearman_r, spearman_p = scipy_stats.spearmanr(alphas_all, values_all)
+        if len(set(alphas_all)) < 2:
+            pearson_r, pearson_p = float("nan"), float("nan")
+            spearman_r, spearman_p = float("nan"), float("nan")
+            slope, intercept, r_value, p_value, std_err = 0.0, 0.0, 0.0, 1.0, 0.0
+        else:
+            pearson_r, pearson_p = scipy_stats.pearsonr(alphas_all, values_all)
+            spearman_r, spearman_p = scipy_stats.spearmanr(alphas_all, values_all)
 
-        # Linear regression
-        slope, intercept, r_value, p_value, std_err = scipy_stats.linregress(
-            alphas_all, values_all
-        )
+            # Linear regression
+            slope, intercept, r_value, p_value, std_err = scipy_stats.linregress(
+                alphas_all, values_all
+            )
 
         # Group by alpha for effect size calculation
         alpha_groups = {}

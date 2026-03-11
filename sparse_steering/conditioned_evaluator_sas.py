@@ -680,9 +680,14 @@ def calculate_statistical_analysis(results: List[dict], concept: str) -> dict:
         idx = np.argsort(lams)
         lams, vals = lams[idx], vals[idx]
 
-        pearson_r, pearson_p = scipy_stats.pearsonr(lams, vals)
-        spearman_r, spearman_p = scipy_stats.spearmanr(lams, vals)
-        slope, intercept, r_val, p_val, std_err = scipy_stats.linregress(lams, vals)
+        if len(set(lams)) < 2:
+            pearson_r, pearson_p = float("nan"), float("nan")
+            spearman_r, spearman_p = float("nan"), float("nan")
+            slope, intercept, r_val, p_val, std_err = 0.0, 0.0, 0.0, 1.0, 0.0
+        else:
+            pearson_r, pearson_p = scipy_stats.pearsonr(lams, vals)
+            spearman_r, spearman_p = scipy_stats.spearmanr(lams, vals)
+            slope, intercept, r_val, p_val, std_err = scipy_stats.linregress(lams, vals)
         monotonic = all(vals[i] <= vals[i + 1] for i in range(len(vals) - 1))
 
         bl_idx = np.where(lams == 0.0)[0]
@@ -731,11 +736,17 @@ def calculate_statistical_analysis(results: List[dict], concept: str) -> dict:
             ]
         )
 
-        pearson_r, pearson_p = scipy_stats.pearsonr(lams_all, vals_all)
-        spearman_r, spearman_p = scipy_stats.spearmanr(lams_all, vals_all)
-        slope, intercept, r_val, p_val, std_err = scipy_stats.linregress(
-            lams_all, vals_all
-        )
+        # Guard against constant arrays (e.g. single unique lambda)
+        if len(set(lams_all)) < 2:
+            pearson_r, pearson_p = float("nan"), float("nan")
+            spearman_r, spearman_p = float("nan"), float("nan")
+            slope, intercept, r_val, p_val, std_err = 0.0, 0.0, 0.0, 1.0, 0.0
+        else:
+            pearson_r, pearson_p = scipy_stats.pearsonr(lams_all, vals_all)
+            spearman_r, spearman_p = scipy_stats.spearmanr(lams_all, vals_all)
+            slope, intercept, r_val, p_val, std_err = scipy_stats.linregress(
+                lams_all, vals_all
+            )
 
         # Effect sizes (Cohen's d vs baseline)
         lam_groups: Dict[float, list] = {}

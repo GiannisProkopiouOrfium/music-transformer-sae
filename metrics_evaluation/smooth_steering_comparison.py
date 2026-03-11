@@ -922,13 +922,13 @@ def main():
     parser.add_argument(
         "--lambdas",
         type=str,
-        default="0.0,0.5,1.0,1.5,2.0",
+        default="0.0,0.5,1.0,1.5,2.0,-0.5,-1.0,-1.5,-2.0",
         help="Comma-separated lambda values for SAS",
     )
     parser.add_argument(
         "--alphas",
         type=str,
-        default="0.0,0.5,1.0,1.5,2.0",
+        default="0.0,0.5,1.0,1.5,2.0,-0.5,-1.0,-1.5,-2.0",
         help="Comma-separated alpha values for DiffMean",
     )
     parser.add_argument(
