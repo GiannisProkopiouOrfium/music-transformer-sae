@@ -38,6 +38,7 @@ import torch.nn as nn
 
 # ─── Schedule functions ──────────────────────────────────────────────────────
 
+
 def _linear_schedule(progress: float) -> float:
     """Linear ramp: progress ∈ [0, 1] → [0, 1]."""
     return min(1.0, max(0.0, progress))
@@ -67,6 +68,7 @@ SCHEDULE_FNS = {
 
 
 # ─── Smooth Steering Hook ───────────────────────────────────────────────────
+
 
 class SmoothSteeringHook:
     """Drop-in replacement for ``SteeringHook`` with a time-varying envelope.

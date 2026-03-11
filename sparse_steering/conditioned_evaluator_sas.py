@@ -1082,24 +1082,33 @@ def main():
 
     # Smooth steering options
     parser.add_argument(
-        "--smooth", action="store_true",
+        "--smooth",
+        action="store_true",
         help="Enable smooth steering with gradual lambda ramp-up",
     )
     parser.add_argument(
-        "--schedule", type=str, default="cosine",
+        "--schedule",
+        type=str,
+        default="cosine",
         choices=["linear", "cosine", "sigmoid"],
         help="Ramp-up schedule function (default: cosine)",
     )
     parser.add_argument(
-        "--n_ramp", type=int, default=64,
+        "--n_ramp",
+        type=int,
+        default=64,
         help="Number of generation steps for ramp-up (default: 64)",
     )
     parser.add_argument(
-        "--n_decay", type=int, default=0,
+        "--n_decay",
+        type=int,
+        default=0,
         help="Number of steps for decay phase (0 = no decay)",
     )
     parser.add_argument(
-        "--lambda_maintain", type=float, default=1.0,
+        "--lambda_maintain",
+        type=float,
+        default=1.0,
         help="Fraction of lambda to maintain after decay (0-1, default: 1.0)",
     )
 

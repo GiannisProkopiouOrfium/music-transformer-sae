@@ -84,24 +84,36 @@ def run_sas_experiment(
     cmd = [
         sys.executable,
         str(REPO_ROOT / "sparse_steering" / "conditioned_evaluator_sas.py"),
-        "--concept", concept,
-        "--n_songs", str(n_songs),
-        "--lambdas", lambdas,
-        "--layers", layers,
-        "--conditioning_beats", str(conditioning_beats),
-        "--continuation_len", str(continuation_len),
-        "--output_dir", str(output_dir),
-        "--experiment_name", experiment_name,
+        "--concept",
+        concept,
+        "--n_songs",
+        str(n_songs),
+        "--lambdas",
+        lambdas,
+        "--layers",
+        layers,
+        "--conditioning_beats",
+        str(conditioning_beats),
+        "--continuation_len",
+        str(continuation_len),
+        "--output_dir",
+        str(output_dir),
+        "--experiment_name",
+        experiment_name,
     ]
     if gpu is not None:
         cmd += ["--gpu", str(gpu)]
     if smooth:
         cmd += [
             "--smooth",
-            "--schedule", schedule,
-            "--n_ramp", str(n_ramp),
-            "--n_decay", str(n_decay),
-            "--lambda_maintain", str(lambda_maintain),
+            "--schedule",
+            schedule,
+            "--n_ramp",
+            str(n_ramp),
+            "--n_decay",
+            str(n_decay),
+            "--lambda_maintain",
+            str(lambda_maintain),
         ]
 
     logger.info(f"Running SAS experiment: {experiment_name}")
@@ -135,23 +147,34 @@ def run_dm_experiment(
     cmd = [
         sys.executable,
         str(REPO_ROOT / "steering_interventions" / "conditioned_evaluator.py"),
-        "--concept", concept,
-        "--n_songs", str(n_songs),
-        "--alphas", alphas,
-        "--conditioning_beats", str(conditioning_beats),
-        "--continuation_len", str(continuation_len),
-        "--output_dir", str(output_dir),
-        "--experiment_name", experiment_name,
+        "--concept",
+        concept,
+        "--n_songs",
+        str(n_songs),
+        "--alphas",
+        alphas,
+        "--conditioning_beats",
+        str(conditioning_beats),
+        "--continuation_len",
+        str(continuation_len),
+        "--output_dir",
+        str(output_dir),
+        "--experiment_name",
+        experiment_name,
     ]
     if gpu is not None:
         cmd += ["--gpu", str(gpu)]
     if smooth:
         cmd += [
             "--smooth",
-            "--schedule", schedule,
-            "--n_ramp", str(n_ramp),
-            "--n_decay", str(n_decay),
-            "--lambda_maintain", str(lambda_maintain),
+            "--schedule",
+            schedule,
+            "--n_ramp",
+            str(n_ramp),
+            "--n_decay",
+            str(n_decay),
+            "--lambda_maintain",
+            str(lambda_maintain),
         ]
 
     logger.info(f"Running DM experiment: {experiment_name}")
@@ -248,20 +271,26 @@ def extract_per_lambda_summary(
             and not np.isnan(r["quality_metrics"].get("groove_consistency", np.nan))
         ]
 
-        rows.append({
-            "method": method,
-            "concept": concept,
-            "n_ramp": n_ramp,
-            "smooth": n_ramp > 0,
-            "strength": strength,
-            "n_samples": n,
-            "steering_success_rate": success_rate,
-            "mean_absolute_change": mean_abs_change,
-            "mean_degradation": mean_degradation,
-            "mean_pitch_class_entropy": float(np.mean(entropies)) if entropies else np.nan,
-            "mean_scale_consistency": float(np.mean(scales)) if scales else np.nan,
-            "mean_groove_consistency": float(np.mean(grooves)) if grooves else np.nan,
-        })
+        rows.append(
+            {
+                "method": method,
+                "concept": concept,
+                "n_ramp": n_ramp,
+                "smooth": n_ramp > 0,
+                "strength": strength,
+                "n_samples": n,
+                "steering_success_rate": success_rate,
+                "mean_absolute_change": mean_abs_change,
+                "mean_degradation": mean_degradation,
+                "mean_pitch_class_entropy": (
+                    float(np.mean(entropies)) if entropies else np.nan
+                ),
+                "mean_scale_consistency": float(np.mean(scales)) if scales else np.nan,
+                "mean_groove_consistency": (
+                    float(np.mean(grooves)) if grooves else np.nan
+                ),
+            }
+        )
 
     return rows
 
@@ -274,7 +303,9 @@ def extract_aggregate_summary(per_lambda_rows: List[dict]) -> dict:
             "method": per_lambda_rows[0]["method"] if per_lambda_rows else "",
             "concept": per_lambda_rows[0]["concept"] if per_lambda_rows else "",
             "n_ramp": per_lambda_rows[0]["n_ramp"] if per_lambda_rows else 0,
-            "smooth": per_lambda_rows[0].get("smooth", False) if per_lambda_rows else False,
+            "smooth": (
+                per_lambda_rows[0].get("smooth", False) if per_lambda_rows else False
+            ),
             "n_samples": 0,
         }
 
@@ -284,12 +315,22 @@ def extract_aggregate_summary(per_lambda_rows: List[dict]) -> dict:
         "n_ramp": steered[0]["n_ramp"],
         "smooth": steered[0]["smooth"],
         "n_samples": sum(r["n_samples"] for r in steered),
-        "steering_success_rate": float(np.mean([r["steering_success_rate"] for r in steered])),
-        "mean_absolute_change": float(np.mean([r["mean_absolute_change"] for r in steered])),
+        "steering_success_rate": float(
+            np.mean([r["steering_success_rate"] for r in steered])
+        ),
+        "mean_absolute_change": float(
+            np.mean([r["mean_absolute_change"] for r in steered])
+        ),
         "mean_degradation": float(np.nanmean([r["mean_degradation"] for r in steered])),
-        "mean_pitch_class_entropy": float(np.nanmean([r["mean_pitch_class_entropy"] for r in steered])),
-        "mean_scale_consistency": float(np.nanmean([r["mean_scale_consistency"] for r in steered])),
-        "mean_groove_consistency": float(np.nanmean([r["mean_groove_consistency"] for r in steered])),
+        "mean_pitch_class_entropy": float(
+            np.nanmean([r["mean_pitch_class_entropy"] for r in steered])
+        ),
+        "mean_scale_consistency": float(
+            np.nanmean([r["mean_scale_consistency"] for r in steered])
+        ),
+        "mean_groove_consistency": float(
+            np.nanmean([r["mean_groove_consistency"] for r in steered])
+        ),
     }
 
 
@@ -307,11 +348,15 @@ def find_best_lambdas(all_per_lambda: List[dict]) -> List[dict]:
 
     best = []
     for key, rows in sorted(grouped.items()):
-        winner = max(rows, key=lambda r: (r["steering_success_rate"], r["mean_absolute_change"]))
-        best.append({
-            **winner,
-            "best_for": f"{key[0]}_{key[1]}_nramp{key[2]}",
-        })
+        winner = max(
+            rows, key=lambda r: (r["steering_success_rate"], r["mean_absolute_change"])
+        )
+        best.append(
+            {
+                **winner,
+                "best_for": f"{key[0]}_{key[1]}_nramp{key[2]}",
+            }
+        )
     return best
 
 
@@ -336,7 +381,9 @@ def compute_fmd_for_experiment(
     # Collect all .mid files in experiment dir
     mid_files = list(experiment_dir.rglob("*.mid"))
     if len(mid_files) < 2:
-        logger.warning(f"Only {len(mid_files)} MIDIs in {experiment_dir} — need ≥2 for FMD")
+        logger.warning(
+            f"Only {len(mid_files)} MIDIs in {experiment_dir} — need ≥2 for FMD"
+        )
         return None
 
     # Count reference MIDIs
@@ -346,6 +393,7 @@ def compute_fmd_for_experiment(
         return None
 
     import os
+
     os.environ["CUDA_VISIBLE_DEVICES"] = str(gpu)
 
     metric = FrechetMusicDistance(
@@ -385,11 +433,13 @@ def collect_wav_ranking(
         experiment_name = parts[0] if parts else ""
 
         # Extract metadata from path structure
-        wavs.append({
-            "path": str(rel),
-            "experiment": experiment_name,
-            "filename": wav_path.name,
-        })
+        wavs.append(
+            {
+                "path": str(rel),
+                "experiment": experiment_name,
+                "filename": wav_path.name,
+            }
+        )
 
     # Sort by experiment name for grouping
     wavs.sort(key=lambda x: x["path"])
@@ -432,19 +482,27 @@ def build_listening_priority(
             priority = (norm_steer * 0.6 + norm_qual * 0.4) * 100
 
             # Build WAV path from experiment structure
-            scored.append({
-                "priority": priority,
-                "experiment": exp_name,
-                "song": r.get("song_name", "unknown"),
-                "category": r.get("category", ""),
-                "strength": strength,
-                "change": change,
-                "degradation": deg,
-                "n_notes": r.get("generated_n_notes", 0),
-                "entropy": r.get("quality_metrics", {}).get("pitch_class_entropy", np.nan),
-                "scale": r.get("quality_metrics", {}).get("scale_consistency", np.nan),
-                "groove": r.get("quality_metrics", {}).get("groove_consistency", np.nan),
-            })
+            scored.append(
+                {
+                    "priority": priority,
+                    "experiment": exp_name,
+                    "song": r.get("song_name", "unknown"),
+                    "category": r.get("category", ""),
+                    "strength": strength,
+                    "change": change,
+                    "degradation": deg,
+                    "n_notes": r.get("generated_n_notes", 0),
+                    "entropy": r.get("quality_metrics", {}).get(
+                        "pitch_class_entropy", np.nan
+                    ),
+                    "scale": r.get("quality_metrics", {}).get(
+                        "scale_consistency", np.nan
+                    ),
+                    "groove": r.get("quality_metrics", {}).get(
+                        "groove_consistency", np.nan
+                    ),
+                }
+            )
 
     scored.sort(key=lambda x: x["priority"], reverse=True)
 
@@ -487,6 +545,7 @@ def generate_comparison_plots(
     """Generate comparison plots across concepts, methods, and ramp values."""
     try:
         import matplotlib
+
         matplotlib.use("Agg")
         import matplotlib.pyplot as plt
     except ImportError:
@@ -502,14 +561,27 @@ def generate_comparison_plots(
     for row, concept in enumerate(concepts):
         concept_label = concept.replace("average_", "").title()
 
-        sas = [s for s in aggregate_summaries
-               if s["method"] == "SAS" and s["concept"] == concept and s.get("n_samples", 0) > 0]
-        dm = [s for s in aggregate_summaries
-              if s["method"] == "DiffMean" and s["concept"] == concept and s.get("n_samples", 0) > 0]
+        sas = [
+            s
+            for s in aggregate_summaries
+            if s["method"] == "SAS"
+            and s["concept"] == concept
+            and s.get("n_samples", 0) > 0
+        ]
+        dm = [
+            s
+            for s in aggregate_summaries
+            if s["method"] == "DiffMean"
+            and s["concept"] == concept
+            and s.get("n_samples", 0) > 0
+        ]
 
         # Success rate
         ax = axes[row][0]
-        for data, label, color in [(sas, "SAS", "#2196F3"), (dm, "DiffMean", "#FF9800")]:
+        for data, label, color in [
+            (sas, "SAS", "#2196F3"),
+            (dm, "DiffMean", "#FF9800"),
+        ]:
             if data:
                 x = [s["n_ramp"] for s in data]
                 y = [s["steering_success_rate"] * 100 for s in data]
@@ -522,8 +594,13 @@ def generate_comparison_plots(
 
         # Magnitude
         ax = axes[row][1]
-        metric_label = "|Duration Change|" if "duration" in concept else "|Pitch Change|"
-        for data, label, color in [(sas, "SAS", "#2196F3"), (dm, "DiffMean", "#FF9800")]:
+        metric_label = (
+            "|Duration Change|" if "duration" in concept else "|Pitch Change|"
+        )
+        for data, label, color in [
+            (sas, "SAS", "#2196F3"),
+            (dm, "DiffMean", "#FF9800"),
+        ]:
             if data:
                 x = [s["n_ramp"] for s in data]
                 y = [s["mean_absolute_change"] for s in data]
@@ -536,7 +613,10 @@ def generate_comparison_plots(
 
         # Degradation
         ax = axes[row][2]
-        for data, label, color in [(sas, "SAS", "#2196F3"), (dm, "DiffMean", "#FF9800")]:
+        for data, label, color in [
+            (sas, "SAS", "#2196F3"),
+            (dm, "DiffMean", "#FF9800"),
+        ]:
             if data:
                 x = [s["n_ramp"] for s in data]
                 y = [s["mean_degradation"] for s in data]
@@ -547,7 +627,12 @@ def generate_comparison_plots(
         ax.legend()
         ax.grid(True, alpha=0.3)
 
-    plt.suptitle("Smooth Steering: Effectiveness vs Ramp Length", fontsize=14, fontweight="bold", y=1.02)
+    plt.suptitle(
+        "Smooth Steering: Effectiveness vs Ramp Length",
+        fontsize=14,
+        fontweight="bold",
+        y=1.02,
+    )
     plt.tight_layout()
     plt.savefig(output_dir / "smooth_comparison_plot.png", dpi=150, bbox_inches="tight")
     plt.close()
@@ -564,14 +649,27 @@ def generate_comparison_plots(
 
     for row, concept in enumerate(concepts):
         concept_label = concept.replace("average_", "").title()
-        sas = [s for s in aggregate_summaries
-               if s["method"] == "SAS" and s["concept"] == concept and s.get("n_samples", 0) > 0]
-        dm = [s for s in aggregate_summaries
-              if s["method"] == "DiffMean" and s["concept"] == concept and s.get("n_samples", 0) > 0]
+        sas = [
+            s
+            for s in aggregate_summaries
+            if s["method"] == "SAS"
+            and s["concept"] == concept
+            and s.get("n_samples", 0) > 0
+        ]
+        dm = [
+            s
+            for s in aggregate_summaries
+            if s["method"] == "DiffMean"
+            and s["concept"] == concept
+            and s.get("n_samples", 0) > 0
+        ]
 
         for col, (metric, title) in enumerate(quality_metrics):
             ax = axes[row][col]
-            for data, label, color in [(sas, "SAS", "#2196F3"), (dm, "DiffMean", "#FF9800")]:
+            for data, label, color in [
+                (sas, "SAS", "#2196F3"),
+                (dm, "DiffMean", "#FF9800"),
+            ]:
                 if data:
                     x = [s["n_ramp"] for s in data]
                     y = [s.get(metric, np.nan) for s in data]
@@ -582,24 +680,36 @@ def generate_comparison_plots(
             ax.legend()
             ax.grid(True, alpha=0.3)
 
-    plt.suptitle("Smooth Steering: Quality Metrics vs Ramp Length", fontsize=14, fontweight="bold", y=1.02)
+    plt.suptitle(
+        "Smooth Steering: Quality Metrics vs Ramp Length",
+        fontsize=14,
+        fontweight="bold",
+        y=1.02,
+    )
     plt.tight_layout()
-    plt.savefig(output_dir / "smooth_comparison_quality.png", dpi=150, bbox_inches="tight")
+    plt.savefig(
+        output_dir / "smooth_comparison_quality.png", dpi=150, bbox_inches="tight"
+    )
     plt.close()
     logger.info("Saved smooth_comparison_quality.png")
 
     # ── Figure 3: Per-lambda effectiveness (best lambda search) ──────────
     steered_rows = [r for r in per_lambda_rows if r["strength"] != 0.0]
     if steered_rows:
-        fig, axes = plt.subplots(n_concepts, 2, figsize=(14, 5 * n_concepts), squeeze=False)
+        fig, axes = plt.subplots(
+            n_concepts, 2, figsize=(14, 5 * n_concepts), squeeze=False
+        )
 
         for row, concept in enumerate(concepts):
             concept_label = concept.replace("average_", "").title()
 
             for col, method in enumerate(["SAS", "DiffMean"]):
                 ax = axes[row][col]
-                method_rows = [r for r in steered_rows
-                               if r["method"] == method and r["concept"] == concept]
+                method_rows = [
+                    r
+                    for r in steered_rows
+                    if r["method"] == method and r["concept"] == concept
+                ]
 
                 # Group by n_ramp
                 by_ramp = defaultdict(list)
@@ -619,20 +729,37 @@ def generate_comparison_plots(
                 ax.grid(True, alpha=0.3)
                 ax.axvline(0, color="grey", linestyle=":", alpha=0.3)
 
-        plt.suptitle("Per-Lambda Steering Success", fontsize=14, fontweight="bold", y=1.02)
+        plt.suptitle(
+            "Per-Lambda Steering Success", fontsize=14, fontweight="bold", y=1.02
+        )
         plt.tight_layout()
-        plt.savefig(output_dir / "smooth_comparison_per_lambda.png", dpi=150, bbox_inches="tight")
+        plt.savefig(
+            output_dir / "smooth_comparison_per_lambda.png",
+            dpi=150,
+            bbox_inches="tight",
+        )
         plt.close()
         logger.info("Saved smooth_comparison_per_lambda.png")
 
     # ── Figure 4: FMD comparison (if available) ──────────────────────────
     if fmd_results:
         fig, ax = plt.subplots(figsize=(10, 6))
-        sas_fmd = {k: v for k, v in fmd_results.items() if k.startswith("sas_") and v is not None}
-        dm_fmd = {k: v for k, v in fmd_results.items() if k.startswith("dm_") and v is not None}
+        sas_fmd = {
+            k: v
+            for k, v in fmd_results.items()
+            if k.startswith("sas_") and v is not None
+        }
+        dm_fmd = {
+            k: v
+            for k, v in fmd_results.items()
+            if k.startswith("dm_") and v is not None
+        }
 
         if sas_fmd or dm_fmd:
-            for fmd_data, label, color in [(sas_fmd, "SAS", "#2196F3"), (dm_fmd, "DiffMean", "#FF9800")]:
+            for fmd_data, label, color in [
+                (sas_fmd, "SAS", "#2196F3"),
+                (dm_fmd, "DiffMean", "#FF9800"),
+            ]:
                 if fmd_data:
                     # Parse n_ramp from key pattern "method_concept_nramp_N"
                     points = []
@@ -646,8 +773,14 @@ def generate_comparison_plots(
                                 pass
                     if points:
                         points.sort()
-                        ax.plot([p[0] for p in points], [p[1] for p in points],
-                                "o-", label=label, color=color, linewidth=2)
+                        ax.plot(
+                            [p[0] for p in points],
+                            [p[1] for p in points],
+                            "o-",
+                            label=label,
+                            color=color,
+                            linewidth=2,
+                        )
 
             ax.set_xlabel("n_ramp (steps)")
             ax.set_ylabel("FMD (lower = better)")
@@ -655,7 +788,9 @@ def generate_comparison_plots(
             ax.legend()
             ax.grid(True, alpha=0.3)
             plt.tight_layout()
-            plt.savefig(output_dir / "smooth_comparison_fmd.png", dpi=150, bbox_inches="tight")
+            plt.savefig(
+                output_dir / "smooth_comparison_fmd.png", dpi=150, bbox_inches="tight"
+            )
             plt.close()
             logger.info("Saved smooth_comparison_fmd.png")
 
@@ -675,7 +810,9 @@ def print_comparison_table(aggregate_summaries: List[dict]):
     )
     print("-" * 110)
 
-    for s in sorted(aggregate_summaries, key=lambda x: (x["concept"], x["method"], x["n_ramp"])):
+    for s in sorted(
+        aggregate_summaries, key=lambda x: (x["concept"], x["method"], x["n_ramp"])
+    ):
         if s.get("n_samples", 0) == 0:
             print(f"{s['method']:<10} {s['concept']:<18} {s['n_ramp']:>6}   (no data)")
             continue
@@ -758,60 +895,88 @@ def main():
         formatter_class=argparse.RawDescriptionHelpFormatter,
     )
     parser.add_argument(
-        "--concepts", type=str, default="average_pitch,average_duration",
+        "--concepts",
+        type=str,
+        default="average_pitch,average_duration",
         help="Comma-separated concepts to evaluate (default: both pitch and duration)",
     )
     parser.add_argument(
-        "--n_songs", type=int, default=5,
+        "--n_songs",
+        type=int,
+        default=5,
         help="Songs per category",
     )
     parser.add_argument(
-        "--n_ramps", type=str, default="0,32,64,128",
+        "--n_ramps",
+        type=str,
+        default="0,32,64,128",
         help="Comma-separated n_ramp values to test",
     )
     parser.add_argument(
-        "--schedule", type=str, default="cosine",
+        "--schedule",
+        type=str,
+        default="cosine",
         choices=["linear", "cosine", "sigmoid"],
         help="Schedule function for smooth steering",
     )
     parser.add_argument(
-        "--lambdas", type=str, default="0.0,0.25,0.5,0.75,1.0,-0.25,-0.5,-0.75,-1.0",
+        "--lambdas",
+        type=str,
+        default="0.0,0.25,0.5,0.75,1.0,-0.25,-0.5,-0.75,-1.0",
         help="Comma-separated lambda values for SAS",
     )
     parser.add_argument(
-        "--alphas", type=str, default="0.0,0.25,0.5,0.75,1.0,-0.25,-0.5,-0.75,-1.0",
+        "--alphas",
+        type=str,
+        default="0.0,0.25,0.5,0.75,1.0,-0.25,-0.5,-0.75,-1.0",
         help="Comma-separated alpha values for DiffMean",
     )
     parser.add_argument(
-        "--layers", type=str, default="10",
+        "--layers",
+        type=str,
+        default="10",
         help="Layers to steer (SAS)",
     )
     parser.add_argument(
-        "--conditioning_beats", type=int, default=16,
+        "--conditioning_beats",
+        type=int,
+        default=16,
     )
     parser.add_argument(
-        "--continuation_len", type=int, default=256,
+        "--continuation_len",
+        type=int,
+        default=256,
     )
     parser.add_argument("--gpu", type=int, default=None)
     parser.add_argument(
-        "--output_dir", type=pathlib.Path,
+        "--output_dir",
+        type=pathlib.Path,
         default=REPO_ROOT / "exp" / "sod" / "smooth_steering_comparison",
     )
     parser.add_argument(
-        "--skip_sas", action="store_true",
+        "--skip_sas",
+        action="store_true",
         help="Skip SAS experiments (run DiffMean only)",
     )
     parser.add_argument(
-        "--skip_dm", action="store_true",
+        "--skip_dm",
+        action="store_true",
         help="Skip DiffMean experiments (run SAS only)",
     )
     parser.add_argument(
-        "--compute_fmd", action="store_true",
+        "--compute_fmd",
+        action="store_true",
         help="Compute FMD against SOD reference (requires frechet_music_distance)",
     )
     parser.add_argument(
-        "--sod_reference_dir", type=pathlib.Path,
-        default=REPO_ROOT / "exp" / "sod" / "sparse_steering" / "fmd_workspace" / "reference_sod",
+        "--sod_reference_dir",
+        type=pathlib.Path,
+        default=REPO_ROOT
+        / "exp"
+        / "sod"
+        / "sparse_steering"
+        / "fmd_workspace"
+        / "reference_sod",
         help="SOD reference MIDI directory for FMD computation",
     )
 
@@ -862,7 +1027,9 @@ def main():
 
                 if args.compute_fmd:
                     exp_dir = args.output_dir / exp_name
-                    fmd_val = compute_fmd_for_experiment(exp_dir, args.sod_reference_dir, args.gpu or 0)
+                    fmd_val = compute_fmd_for_experiment(
+                        exp_dir, args.sod_reference_dir, args.gpu or 0
+                    )
                     fmd_results[f"sas_{concept}_nramp_{n_ramp}"] = fmd_val
 
             # DiffMean
@@ -884,13 +1051,17 @@ def main():
                 results = load_results(results_file)
                 all_results_by_exp[exp_name] = results
 
-                per_lam = extract_per_lambda_summary(results, "DiffMean", concept, n_ramp)
+                per_lam = extract_per_lambda_summary(
+                    results, "DiffMean", concept, n_ramp
+                )
                 all_per_lambda.extend(per_lam)
                 all_aggregate.append(extract_aggregate_summary(per_lam))
 
                 if args.compute_fmd:
                     exp_dir = args.output_dir / exp_name
-                    fmd_val = compute_fmd_for_experiment(exp_dir, args.sod_reference_dir, args.gpu or 0)
+                    fmd_val = compute_fmd_for_experiment(
+                        exp_dir, args.sod_reference_dir, args.gpu or 0
+                    )
                     fmd_results[f"dm_{concept}_nramp_{n_ramp}"] = fmd_val
 
     # ── Find best lambdas ────────────────────────────────────────────────
@@ -899,11 +1070,15 @@ def main():
     # ── Save results ─────────────────────────────────────────────────────
     summary_file = args.output_dir / "smooth_comparison_summary.json"
     with open(summary_file, "w") as f:
-        json.dump({
-            "aggregate": all_aggregate,
-            "per_lambda": all_per_lambda,
-            "best_lambdas": best_lambdas,
-        }, f, indent=2)
+        json.dump(
+            {
+                "aggregate": all_aggregate,
+                "per_lambda": all_per_lambda,
+                "best_lambdas": best_lambdas,
+            },
+            f,
+            indent=2,
+        )
     logger.info(f"Saved summary: {summary_file}")
 
     best_file = args.output_dir / "smooth_comparison_best_lambdas.json"
@@ -944,7 +1119,9 @@ def main():
 
     # ── Plots ────────────────────────────────────────────────────────────
     generate_comparison_plots(
-        all_aggregate, all_per_lambda, args.output_dir,
+        all_aggregate,
+        all_per_lambda,
+        args.output_dir,
         fmd_results if fmd_results else None,
     )
 
