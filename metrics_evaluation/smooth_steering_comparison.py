@@ -118,9 +118,9 @@ def run_sas_experiment(
 
     logger.info(f"Running SAS experiment: {experiment_name}")
     logger.info(f"  cmd: {' '.join(cmd)}")
-    result = subprocess.run(cmd, capture_output=True, text=True)
+    result = subprocess.run(cmd)
     if result.returncode != 0:
-        logger.error(f"SAS experiment failed:\n{result.stderr[-2000:]}")
+        logger.error(f"SAS experiment failed (exit code {result.returncode})")
     else:
         logger.info(f"SAS experiment completed: {experiment_name}")
 
@@ -179,9 +179,9 @@ def run_dm_experiment(
 
     logger.info(f"Running DM experiment: {experiment_name}")
     logger.info(f"  cmd: {' '.join(cmd)}")
-    result = subprocess.run(cmd, capture_output=True, text=True)
+    result = subprocess.run(cmd)
     if result.returncode != 0:
-        logger.error(f"DM experiment failed:\n{result.stderr[-2000:]}")
+        logger.error(f"DM experiment failed (exit code {result.returncode})")
     else:
         logger.info(f"DM experiment completed: {experiment_name}")
 
@@ -922,13 +922,13 @@ def main():
     parser.add_argument(
         "--lambdas",
         type=str,
-        default="0.0,0.25,0.5,0.75,1.0,-0.25,-0.5,-0.75,-1.0",
+        default="0.0,0.5,1.0,1.5,2.0",
         help="Comma-separated lambda values for SAS",
     )
     parser.add_argument(
         "--alphas",
         type=str,
-        default="0.0,0.25,0.5,0.75,1.0,-0.25,-0.5,-0.75,-1.0",
+        default="0.0,0.5,1.0,1.5,2.0",
         help="Comma-separated alpha values for DiffMean",
     )
     parser.add_argument(
