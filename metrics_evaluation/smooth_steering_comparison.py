@@ -116,6 +116,11 @@ def run_sas_experiment(
             str(lambda_maintain),
         ]
 
+    results_file = output_dir / experiment_name / f"conditioned_results_{concept}.json"
+    if results_file.exists():
+        logger.info(f"Skipping SAS experiment (results exist): {results_file}")
+        return results_file
+
     logger.info(f"Running SAS experiment: {experiment_name}")
     logger.info(f"  cmd: {' '.join(cmd)}")
     result = subprocess.run(cmd)
@@ -124,7 +129,6 @@ def run_sas_experiment(
     else:
         logger.info(f"SAS experiment completed: {experiment_name}")
 
-    results_file = output_dir / experiment_name / f"conditioned_results_{concept}.json"
     return results_file
 
 
@@ -177,6 +181,11 @@ def run_dm_experiment(
             str(lambda_maintain),
         ]
 
+    results_file = output_dir / experiment_name / "conditioned_results.json"
+    if results_file.exists():
+        logger.info(f"Skipping DM experiment (results exist): {results_file}")
+        return results_file
+
     logger.info(f"Running DM experiment: {experiment_name}")
     logger.info(f"  cmd: {' '.join(cmd)}")
     result = subprocess.run(cmd)
@@ -185,7 +194,6 @@ def run_dm_experiment(
     else:
         logger.info(f"DM experiment completed: {experiment_name}")
 
-    results_file = output_dir / experiment_name / "conditioned_results.json"
     return results_file
 
 
