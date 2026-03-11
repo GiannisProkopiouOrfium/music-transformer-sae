@@ -1,31 +1,41 @@
 """
-Smooth Steering for DiffMean: gradual lambda ramp-up / decay.
+Smooth Steering for DiffMean: time-varying lambda envelopes.
 
-Wraps the existing SteeringHook with a schedule so that lambda transitions
-smoothly from 0 → lambda_target over ``n_ramp`` generation steps, optionally
-decays to ``lambda_maintain`` over ``n_decay`` steps, avoiding the audible
-discontinuity that occurs with an abrupt, constant-lambda intervention.
+Wraps the existing SteeringHook with a schedule so that lambda follows a
+chosen envelope, avoiding the audible discontinuity that occurs with an
+abrupt, constant-lambda intervention.
 
-Schedule options
-----------------
-- **linear**: ``min(1, t / n_ramp)``
-- **cosine**: ``0.5 * (1 - cos(pi * min(1, t / n_ramp)))``
-- **sigmoid**: ``sigmoid(k * (t / n_ramp - 0.5))`` (normalised to [0, 1])
+Modes
+-----
+- **ramp_up**: gradual 0 → λ over ``n_ramp`` steps (original smooth steering)
+- **delayed_onset**: 0 for ``n_delay`` steps, then instant full λ
+- **pulse**: full λ for ``n_pulse`` steps, then 0 (fire-and-forget)
+- **ramp_down**: full λ immediately, decays to ``lambda_maintain × λ`` over
+  ``n_decay`` steps
+
+Schedule options (for ramp_up / ramp_down curves)
+--------------------------------------------------
+- **linear**: ``min(1, t / n)``
+- **cosine**: ``0.5 * (1 - cos(π · min(1, t / n)))``
+- **sigmoid**: ``σ(k · (t/n − 0.5))``  (normalised to [0, 1])
 
 Usage
 -----
-Drop-in replacement for ``SteeringHook`` — same ``register`` / ``remove`` API.
-
     from smooth_steering_dm import SmoothSteeringHook
 
-    hook = SmoothSteeringHook(
-        steering_vector=vec,
-        alpha=2.0,
-        schedule="cosine",
-        n_ramp=64,
-        n_decay=32,
-        lambda_maintain=0.3,           # maintenance fraction of alpha
-    )
+    # Ramp-up (original)
+    hook = SmoothSteeringHook(vec, alpha=2.0, mode="ramp_up", n_ramp=64)
+
+    # Delayed onset — 16 natural tokens then full steering
+    hook = SmoothSteeringHook(vec, alpha=2.0, mode="delayed_onset", n_delay=16)
+
+    # Pulse — steer for 64 tokens then stop
+    hook = SmoothSteeringHook(vec, alpha=2.0, mode="pulse", n_pulse=64)
+
+    # Ramp-down — full strength then decay
+    hook = SmoothSteeringHook(vec, alpha=2.0, mode="ramp_down",
+                               n_decay=32, lambda_maintain=0.3)
+
     hook.register(target_module)
 """
 
@@ -66,6 +76,8 @@ SCHEDULE_FNS = {
     "sigmoid": _sigmoid_schedule,
 }
 
+VALID_MODES = {"ramp_up", "delayed_onset", "pulse", "ramp_down"}
+
 
 # ─── Smooth Steering Hook ───────────────────────────────────────────────────
 
@@ -73,30 +85,27 @@ SCHEDULE_FNS = {
 class SmoothSteeringHook:
     """Drop-in replacement for ``SteeringHook`` with a time-varying envelope.
 
-    Envelope phases
-    ~~~~~~~~~~~~~~~
-    1. **Ramp-up** (steps 0 … n_ramp−1):
-       ``effective_alpha = alpha * schedule(t / n_ramp)``
-    2. **Hold** (steps n_ramp … until decay starts):
-       ``effective_alpha = alpha``
-    3. **Decay** (n_decay steps, optional):
-       ``effective_alpha = alpha → alpha * lambda_maintain``
-       where ``lambda_maintain`` is a fraction (default 1.0 = no decay).
-
     Parameters
     ----------
     steering_vector : torch.Tensor
         Steering direction (shape ``(dim,)``).
     alpha : float
         Target (peak) scaling factor.
+    mode : str
+        ``"ramp_up"`` | ``"delayed_onset"`` | ``"pulse"`` | ``"ramp_down"``.
     schedule : str
-        One of ``"linear"``, ``"cosine"``, ``"sigmoid"``.
+        One of ``"linear"``, ``"cosine"``, ``"sigmoid"``
+        (used by ramp_up and ramp_down modes).
     n_ramp : int
-        Number of generation steps for the ramp-up phase.
+        Steps for ramp-up phase (mode=ramp_up).
+    n_delay : int
+        Steps of silence before full onset (mode=delayed_onset).
+    n_pulse : int
+        Steps of full steering before stopping (mode=pulse).
     n_decay : int
-        Number of steps for the decay phase (0 = no decay).
+        Steps for decay phase (mode=ramp_up with decay, or mode=ramp_down).
     lambda_maintain : float
-        Fraction of ``alpha`` to maintain after decay (0–1).
+        Fraction of alpha to maintain after decay (0–1).
     intervention_position : str
         ``"last"`` (default, only last token) or ``"all"``.
     """
@@ -105,21 +114,29 @@ class SmoothSteeringHook:
         self,
         steering_vector: torch.Tensor,
         alpha: float,
+        mode: str = "ramp_up",
         schedule: str = "cosine",
         n_ramp: int = 64,
+        n_delay: int = 16,
+        n_pulse: int = 64,
         n_decay: int = 0,
         lambda_maintain: float = 1.0,
         intervention_position: str = "last",
     ):
+        if mode not in VALID_MODES:
+            raise ValueError(f"Unknown mode '{mode}'. Choose from {VALID_MODES}")
         if schedule not in SCHEDULE_FNS:
             raise ValueError(
                 f"Unknown schedule '{schedule}'. Choose from {list(SCHEDULE_FNS)}"
             )
         self.steering_vector = steering_vector
         self.alpha = alpha
+        self.mode = mode
         self.schedule_name = schedule
         self.schedule_fn = SCHEDULE_FNS[schedule]
         self.n_ramp = max(1, n_ramp)
+        self.n_delay = max(0, n_delay)
+        self.n_pulse = max(1, n_pulse)
         self.n_decay = max(0, n_decay)
         self.lambda_maintain = min(1.0, max(0.0, lambda_maintain))
         self.intervention_position = intervention_position
@@ -137,24 +154,51 @@ class SmoothSteeringHook:
         """Compute the current effective alpha given the step counter."""
         t = self._step
 
-        # Phase 1: ramp-up
+        if self.mode == "ramp_up":
+            return self._ramp_up_alpha(t)
+        elif self.mode == "delayed_onset":
+            return self._delayed_onset_alpha(t)
+        elif self.mode == "pulse":
+            return self._pulse_alpha(t)
+        elif self.mode == "ramp_down":
+            return self._ramp_down_alpha(t)
+        return self.alpha
+
+    def _ramp_up_alpha(self, t: int) -> float:
+        """0 → α over n_ramp, then hold, optionally decay."""
         if t < self.n_ramp:
             return self.alpha * self.schedule_fn(t / self.n_ramp)
-
-        # Phase 2: hold (if no decay, stays here forever)
-        hold_end = self.n_ramp + self.n_decay
-        if self.n_decay == 0 or t < self.n_ramp:
+        if self.n_decay == 0:
             return self.alpha
-
-        # Phase 3: decay
+        hold_end = self.n_ramp + self.n_decay
         if t < hold_end:
             decay_progress = (t - self.n_ramp) / self.n_decay
-            # Interpolate from 1.0 → lambda_maintain using same schedule
             return self.alpha * (
                 1.0 - (1.0 - self.lambda_maintain) * self.schedule_fn(decay_progress)
             )
+        return self.alpha * self.lambda_maintain
 
-        # Phase 4: maintenance
+    def _delayed_onset_alpha(self, t: int) -> float:
+        """0 for n_delay steps, then full α."""
+        if t < self.n_delay:
+            return 0.0
+        return self.alpha
+
+    def _pulse_alpha(self, t: int) -> float:
+        """Full α for n_pulse steps, then 0."""
+        if t < self.n_pulse:
+            return self.alpha
+        return 0.0
+
+    def _ramp_down_alpha(self, t: int) -> float:
+        """Full α immediately, then decay to λ_maintain × α over n_decay."""
+        if self.n_decay == 0:
+            return self.alpha
+        if t < self.n_decay:
+            decay_progress = t / self.n_decay
+            return self.alpha * (
+                1.0 - (1.0 - self.lambda_maintain) * self.schedule_fn(decay_progress)
+            )
         return self.alpha * self.lambda_maintain
 
     def make_hook_fn(self):
@@ -172,7 +216,7 @@ class SmoothSteeringHook:
             self._step += 1
 
             if eff == 0.0:
-                return output  # no-op before first real step
+                return output  # no-op
 
             sv = self.steering_vector.to(actual_output.device)
 

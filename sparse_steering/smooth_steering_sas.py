@@ -1,29 +1,39 @@
 """
-Smooth Steering for SAS: gradual lambda ramp-up / decay.
+Smooth Steering for SAS: time-varying lambda envelopes.
 
-Wraps ``SASSteeringHook`` with a time-varying envelope so that the
-steering strength transitions smoothly from 0 → λ_target over
-``n_ramp`` generation steps, then optionally decays to
-``λ_target * lambda_maintain``.
+Wraps ``SASSteeringHook`` with a time-varying envelope operating in the
+sparse SAE feature space (Algorithm 2).
 
-This mirrors ``smooth_steering_dm.py``'s schedule logic but operates in
-the sparse SAE feature space (Algorithm 2).
+Modes
+-----
+- **ramp_up**: gradual 0 → λ over ``n_ramp`` steps (original smooth steering)
+- **delayed_onset**: 0 for ``n_delay`` steps, then instant full λ
+- **pulse**: full λ for ``n_pulse`` steps, then 0 (fire-and-forget)
+- **ramp_down**: full λ immediately, decays to ``lambda_maintain × λ``
 
 Usage
 -----
-Drop-in replacement for ``register_steering_hooks``:
-
     from smooth_steering_sas import register_smooth_steering_hooks
 
+    # Ramp-up (original)
     handles = register_smooth_steering_hooks(
         model, sae_models, sas_vectors,
-        concept="average_pitch",
-        steering_strength=1.0,
-        layers_to_steer=[10],
-        schedule="cosine",
-        n_ramp=64,
-        n_decay=0,
-        lambda_maintain=1.0,
+        concept="average_pitch", steering_strength=1.0,
+        layers_to_steer=[10], mode="ramp_up", n_ramp=64,
+    )
+
+    # Delayed onset
+    handles = register_smooth_steering_hooks(
+        model, sae_models, sas_vectors,
+        concept="average_pitch", steering_strength=1.0,
+        layers_to_steer=[10], mode="delayed_onset", n_delay=16,
+    )
+
+    # Pulse
+    handles = register_smooth_steering_hooks(
+        model, sae_models, sas_vectors,
+        concept="average_pitch", steering_strength=1.0,
+        layers_to_steer=[10], mode="pulse", n_pulse=64,
     )
 """
 
@@ -62,15 +72,14 @@ SCHEDULE_FNS = {
     "sigmoid": _sigmoid_schedule,
 }
 
+VALID_MODES = {"ramp_up", "delayed_onset", "pulse", "ramp_down"}
+
 
 # ─── Smooth SAS Steering Hook ───────────────────────────────────────────────
 
 
 class SmoothSASSteeringHook:
     """SAS steering hook with a time-varying lambda envelope.
-
-    The envelope follows the same 4-phase pattern as the DiffMean variant:
-    ramp-up → hold → decay → maintenance.
 
     Parameters
     ----------
@@ -84,12 +93,19 @@ class SmoothSASSteeringHook:
         Target (peak) λ.
     layers_to_steer : list[int] or None
         Layers to apply steering.  ``None`` = all available.
+    mode : str
+        ``"ramp_up"`` | ``"delayed_onset"`` | ``"pulse"`` | ``"ramp_down"``.
     schedule : str
-        ``"linear"`` | ``"cosine"`` | ``"sigmoid"``.
+        ``"linear"`` | ``"cosine"`` | ``"sigmoid"``
+        (curve shape for ramp_up / ramp_down modes).
     n_ramp : int
-        Steps for the ramp-up phase.
+        Steps for the ramp-up phase (mode=ramp_up).
+    n_delay : int
+        Steps of silence before full onset (mode=delayed_onset).
+    n_pulse : int
+        Steps of full steering before stopping (mode=pulse).
     n_decay : int
-        Steps for the decay phase (0 = no decay).
+        Steps for the decay phase.
     lambda_maintain : float
         Fraction of ``steering_strength`` to maintain after decay.
     """
@@ -101,11 +117,16 @@ class SmoothSASSteeringHook:
         concept: str,
         steering_strength: float,
         layers_to_steer: Optional[List[int]] = None,
+        mode: str = "ramp_up",
         schedule: str = "cosine",
         n_ramp: int = 64,
+        n_delay: int = 16,
+        n_pulse: int = 64,
         n_decay: int = 0,
         lambda_maintain: float = 1.0,
     ):
+        if mode not in VALID_MODES:
+            raise ValueError(f"Unknown mode '{mode}'. Choose from {VALID_MODES}")
         if schedule not in SCHEDULE_FNS:
             raise ValueError(
                 f"Unknown schedule '{schedule}'. Choose from {list(SCHEDULE_FNS)}"
@@ -116,8 +137,11 @@ class SmoothSASSteeringHook:
         self.concept = concept
         self.steering_strength = steering_strength
         self.layers_to_steer = layers_to_steer
+        self.mode = mode
         self.schedule_fn = SCHEDULE_FNS[schedule]
         self.n_ramp = max(1, n_ramp)
+        self.n_delay = max(0, n_delay)
+        self.n_pulse = max(1, n_pulse)
         self.n_decay = max(0, n_decay)
         self.lambda_maintain = min(1.0, max(0.0, lambda_maintain))
 
@@ -150,23 +174,47 @@ class SmoothSASSteeringHook:
         t = self._step
         lam = self.steering_strength
 
-        # Phase 1: ramp-up
+        if self.mode == "ramp_up":
+            return self._ramp_up(t, lam)
+        elif self.mode == "delayed_onset":
+            return self._delayed_onset(t, lam)
+        elif self.mode == "pulse":
+            return self._pulse(t, lam)
+        elif self.mode == "ramp_down":
+            return self._ramp_down(t, lam)
+        return lam
+
+    def _ramp_up(self, t: int, lam: float) -> float:
         if t < self.n_ramp:
             return lam * self.schedule_fn(t / self.n_ramp)
-
-        # Phase 2: hold (if no decay)
         if self.n_decay == 0:
             return lam
-
-        # Phase 3: decay
         hold_end = self.n_ramp + self.n_decay
         if t < hold_end:
             decay_progress = (t - self.n_ramp) / self.n_decay
             return lam * (
                 1.0 - (1.0 - self.lambda_maintain) * self.schedule_fn(decay_progress)
             )
+        return lam * self.lambda_maintain
 
-        # Phase 4: maintenance
+    def _delayed_onset(self, t: int, lam: float) -> float:
+        if t < self.n_delay:
+            return 0.0
+        return lam
+
+    def _pulse(self, t: int, lam: float) -> float:
+        if t < self.n_pulse:
+            return lam
+        return 0.0
+
+    def _ramp_down(self, t: int, lam: float) -> float:
+        if self.n_decay == 0:
+            return lam
+        if t < self.n_decay:
+            decay_progress = t / self.n_decay
+            return lam * (
+                1.0 - (1.0 - self.lambda_maintain) * self.schedule_fn(decay_progress)
+            )
         return lam * self.lambda_maintain
 
     def __call__(self, module, input, output, layer_idx: int):
@@ -231,8 +279,11 @@ def register_smooth_steering_hooks(
     concept: str,
     steering_strength: float,
     layers_to_steer: Optional[List[int]] = None,
+    mode: str = "ramp_up",
     schedule: str = "cosine",
     n_ramp: int = 64,
+    n_delay: int = 16,
+    n_pulse: int = 64,
     n_decay: int = 0,
     lambda_maintain: float = 1.0,
 ) -> List:
@@ -250,8 +301,11 @@ def register_smooth_steering_hooks(
         concept=concept,
         steering_strength=steering_strength,
         layers_to_steer=layers_to_steer,
+        mode=mode,
         schedule=schedule,
         n_ramp=n_ramp,
+        n_delay=n_delay,
+        n_pulse=n_pulse,
         n_decay=n_decay,
         lambda_maintain=lambda_maintain,
     )

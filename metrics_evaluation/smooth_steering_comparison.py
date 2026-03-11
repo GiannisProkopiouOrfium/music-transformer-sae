@@ -75,8 +75,11 @@ def run_sas_experiment(
     experiment_name: str,
     gpu: int = None,
     smooth: bool = False,
+    mode: str = "ramp_up",
     schedule: str = "cosine",
     n_ramp: int = 64,
+    n_delay: int = 16,
+    n_pulse: int = 64,
     n_decay: int = 0,
     lambda_maintain: float = 1.0,
 ) -> pathlib.Path:
@@ -106,10 +109,16 @@ def run_sas_experiment(
     if smooth:
         cmd += [
             "--smooth",
+            "--mode",
+            mode,
             "--schedule",
             schedule,
             "--n_ramp",
             str(n_ramp),
+            "--n_delay",
+            str(n_delay),
+            "--n_pulse",
+            str(n_pulse),
             "--n_decay",
             str(n_decay),
             "--lambda_maintain",
@@ -142,8 +151,11 @@ def run_dm_experiment(
     experiment_name: str,
     gpu: int = None,
     smooth: bool = False,
+    mode: str = "ramp_up",
     schedule: str = "cosine",
     n_ramp: int = 64,
+    n_delay: int = 16,
+    n_pulse: int = 64,
     n_decay: int = 0,
     lambda_maintain: float = 1.0,
 ) -> pathlib.Path:
@@ -171,10 +183,16 @@ def run_dm_experiment(
     if smooth:
         cmd += [
             "--smooth",
+            "--mode",
+            mode,
             "--schedule",
             schedule,
             "--n_ramp",
             str(n_ramp),
+            "--n_delay",
+            str(n_delay),
+            "--n_pulse",
+            str(n_pulse),
             "--n_decay",
             str(n_decay),
             "--lambda_maintain",
@@ -213,7 +231,7 @@ def extract_per_lambda_summary(
     results: dict,
     method: str,
     concept: str,
-    n_ramp: int,
+    mode_label: str,
 ) -> List[dict]:
     """Extract per-lambda rows from a conditioned evaluation result.
 
@@ -283,8 +301,9 @@ def extract_per_lambda_summary(
             {
                 "method": method,
                 "concept": concept,
-                "n_ramp": n_ramp,
-                "smooth": n_ramp > 0,
+                "mode_label": mode_label,
+                "n_ramp": mode_label,  # backward compat key
+                "smooth": mode_label != "abrupt",
                 "strength": strength,
                 "n_samples": n,
                 "steering_success_rate": success_rate,
@@ -310,7 +329,7 @@ def extract_aggregate_summary(per_lambda_rows: List[dict]) -> dict:
         return {
             "method": per_lambda_rows[0]["method"] if per_lambda_rows else "",
             "concept": per_lambda_rows[0]["concept"] if per_lambda_rows else "",
-            "n_ramp": per_lambda_rows[0]["n_ramp"] if per_lambda_rows else 0,
+            "n_ramp": per_lambda_rows[0]["n_ramp"] if per_lambda_rows else "abrupt",
             "smooth": (
                 per_lambda_rows[0].get("smooth", False) if per_lambda_rows else False
             ),
@@ -362,7 +381,7 @@ def find_best_lambdas(all_per_lambda: List[dict]) -> List[dict]:
         best.append(
             {
                 **winner,
-                "best_for": f"{key[0]}_{key[1]}_nramp{key[2]}",
+                "best_for": f"{key[0]}_{key[1]}_{key[2]}",
             }
         )
     return best
@@ -591,12 +610,15 @@ def generate_comparison_plots(
             (dm, "DiffMean", "#FF9800"),
         ]:
             if data:
-                x = [s["n_ramp"] for s in data]
+                labels = [s["n_ramp"] for s in data]
+                x = list(range(len(labels)))
                 y = [s["steering_success_rate"] * 100 for s in data]
                 ax.plot(x, y, "o-", label=label, color=color, linewidth=2)
-        ax.set_xlabel("n_ramp (steps)")
+                ax.set_xticks(x)
+                ax.set_xticklabels(labels, rotation=30, ha="right", fontsize=8)
+        ax.set_xlabel("Mode")
         ax.set_ylabel("Steering Success Rate (%)")
-        ax.set_title(f"{concept_label}: Success vs Ramp Length")
+        ax.set_title(f"{concept_label}: Success vs Mode")
         if ax.get_legend_handles_labels()[1]:
             ax.legend()
         ax.grid(True, alpha=0.3)
@@ -611,12 +633,15 @@ def generate_comparison_plots(
             (dm, "DiffMean", "#FF9800"),
         ]:
             if data:
-                x = [s["n_ramp"] for s in data]
+                labels = [s["n_ramp"] for s in data]
+                x = list(range(len(labels)))
                 y = [s["mean_absolute_change"] for s in data]
                 ax.plot(x, y, "o-", label=label, color=color, linewidth=2)
-        ax.set_xlabel("n_ramp (steps)")
+                ax.set_xticks(x)
+                ax.set_xticklabels(labels, rotation=30, ha="right", fontsize=8)
+        ax.set_xlabel("Mode")
         ax.set_ylabel(metric_label)
-        ax.set_title(f"{concept_label}: Magnitude vs Ramp Length")
+        ax.set_title(f"{concept_label}: Magnitude vs Mode")
         if ax.get_legend_handles_labels()[1]:
             ax.legend()
         ax.grid(True, alpha=0.3)
@@ -628,18 +653,21 @@ def generate_comparison_plots(
             (dm, "DiffMean", "#FF9800"),
         ]:
             if data:
-                x = [s["n_ramp"] for s in data]
+                labels = [s["n_ramp"] for s in data]
+                x = list(range(len(labels)))
                 y = [s["mean_degradation"] for s in data]
                 ax.plot(x, y, "o-", label=label, color=color, linewidth=2)
-        ax.set_xlabel("n_ramp (steps)")
+                ax.set_xticks(x)
+                ax.set_xticklabels(labels, rotation=30, ha="right", fontsize=8)
+        ax.set_xlabel("Mode")
         ax.set_ylabel("Mean Quality Degradation")
-        ax.set_title(f"{concept_label}: Degradation vs Ramp Length")
+        ax.set_title(f"{concept_label}: Degradation vs Mode")
         if ax.get_legend_handles_labels()[1]:
             ax.legend()
         ax.grid(True, alpha=0.3)
 
     plt.suptitle(
-        "Smooth Steering: Effectiveness vs Ramp Length",
+        "Steering Mode Comparison",
         fontsize=14,
         fontweight="bold",
         y=1.02,
@@ -682,10 +710,13 @@ def generate_comparison_plots(
                 (dm, "DiffMean", "#FF9800"),
             ]:
                 if data:
-                    x = [s["n_ramp"] for s in data]
+                    xlabels = [s["n_ramp"] for s in data]
+                    x = list(range(len(xlabels)))
                     y = [s.get(metric, np.nan) for s in data]
                     ax.plot(x, y, "o-", label=label, color=color, linewidth=2)
-            ax.set_xlabel("n_ramp (steps)")
+                    ax.set_xticks(x)
+                    ax.set_xticklabels(xlabels, rotation=30, ha="right", fontsize=8)
+            ax.set_xlabel("Mode")
             ax.set_ylabel(title)
             ax.set_title(f"{concept_label}: {title}")
             if ax.get_legend_handles_labels()[1]:
@@ -693,7 +724,7 @@ def generate_comparison_plots(
             ax.grid(True, alpha=0.3)
 
     plt.suptitle(
-        "Smooth Steering: Quality Metrics vs Ramp Length",
+        "Steering Mode Comparison: Quality Metrics",
         fontsize=14,
         fontweight="bold",
         y=1.02,
@@ -723,16 +754,15 @@ def generate_comparison_plots(
                     if r["method"] == method and r["concept"] == concept
                 ]
 
-                # Group by n_ramp
-                by_ramp = defaultdict(list)
+                # Group by mode_label
+                by_mode = defaultdict(list)
                 for r in method_rows:
-                    by_ramp[r["n_ramp"]].append(r)
+                    by_mode[r["n_ramp"]].append(r)
 
-                for n_ramp, ramp_rows in sorted(by_ramp.items()):
+                for mode_lbl, ramp_rows in sorted(by_mode.items(), key=lambda x: x[0]):
                     strengths = [r["strength"] for r in ramp_rows]
                     successes = [r["steering_success_rate"] * 100 for r in ramp_rows]
-                    label = f"n_ramp={n_ramp}" if n_ramp > 0 else "abrupt"
-                    ax.plot(strengths, successes, "o-", label=label, linewidth=1.5)
+                    ax.plot(strengths, successes, "o-", label=mode_lbl, linewidth=1.5)
 
                 ax.set_xlabel("Lambda / Alpha")
                 ax.set_ylabel("Steering Success Rate (%)")
@@ -814,24 +844,24 @@ def generate_comparison_plots(
 
 def print_comparison_table(aggregate_summaries: List[dict]):
     """Print aggregate summary table to stdout."""
-    print("\n" + "=" * 110)
-    print("SMOOTH STEERING COMPARISON — AGGREGATE SUMMARY")
-    print("=" * 110)
+    print("\n" + "=" * 120)
+    print("STEERING MODE COMPARISON — AGGREGATE SUMMARY")
+    print("=" * 120)
     print(
-        f"{'Method':<10} {'Concept':<18} {'n_ramp':>6} {'Smooth':>6} {'Samples':>8} "
+        f"{'Method':<10} {'Concept':<18} {'Mode':<20} {'Smooth':>6} {'Samples':>8} "
         f"{'Success%':>9} {'|Change|':>9} {'Degrad':>8} "
         f"{'Entropy':>8} {'Scale%':>7} {'Groove%':>8}"
     )
-    print("-" * 110)
+    print("-" * 120)
 
     for s in sorted(
-        aggregate_summaries, key=lambda x: (x["concept"], x["method"], x["n_ramp"])
+        aggregate_summaries, key=lambda x: (x["concept"], x["method"], str(x["n_ramp"]))
     ):
         if s.get("n_samples", 0) == 0:
-            print(f"{s['method']:<10} {s['concept']:<18} {s['n_ramp']:>6}   (no data)")
+            print(f"{s['method']:<10} {s['concept']:<18} {s['n_ramp']:<20}   (no data)")
             continue
         print(
-            f"{s['method']:<10} {s['concept']:<18} {s['n_ramp']:>6} "
+            f"{s['method']:<10} {s['concept']:<18} {str(s['n_ramp']):<20} "
             f"{'yes' if s['smooth'] else 'no':>6} "
             f"{s['n_samples']:>8} "
             f"{s['steering_success_rate']*100:>8.1f}% "
@@ -841,29 +871,29 @@ def print_comparison_table(aggregate_summaries: List[dict]):
             f"{s.get('mean_scale_consistency', float('nan')):>6.1f}% "
             f"{s.get('mean_groove_consistency', float('nan')):>7.1f}%"
         )
-    print("=" * 110)
+    print("=" * 120)
 
 
 def print_best_lambdas(best: List[dict]):
     """Print best lambda per configuration."""
-    print("\n" + "=" * 100)
+    print("\n" + "=" * 110)
     print("BEST LAMBDA / ALPHA PER CONFIGURATION")
-    print("=" * 100)
+    print("=" * 110)
     print(
-        f"{'Method':<10} {'Concept':<18} {'n_ramp':>6} "
+        f"{'Method':<10} {'Concept':<18} {'Mode':<20} "
         f"{'Best λ/α':>9} {'Success%':>9} {'|Change|':>9} {'Degrad':>8}"
     )
-    print("-" * 100)
+    print("-" * 110)
 
-    for b in sorted(best, key=lambda x: (x["concept"], x["method"], x["n_ramp"])):
+    for b in sorted(best, key=lambda x: (x["concept"], x["method"], str(x["n_ramp"]))):
         print(
-            f"{b['method']:<10} {b['concept']:<18} {b['n_ramp']:>6} "
+            f"{b['method']:<10} {b['concept']:<18} {str(b['n_ramp']):<20} "
             f"{b['strength']:>+9.2f} "
             f"{b['steering_success_rate']*100:>8.1f}% "
             f"{b['mean_absolute_change']:>9.2f} "
             f"{b['mean_degradation']:>8.2f}"
         )
-    print("=" * 100)
+    print("=" * 110)
 
 
 def print_per_lambda_table(per_lambda_rows: List[dict]):
@@ -878,9 +908,8 @@ def print_per_lambda_table(per_lambda_rows: List[dict]):
         grouped[(r["concept"], r["method"], r["n_ramp"])].append(r)
 
     for key, rows in sorted(grouped.items()):
-        concept, method, n_ramp = key
-        smooth_label = f"smooth n_ramp={n_ramp}" if n_ramp > 0 else "abrupt"
-        print(f"\n  {method} — {concept} — {smooth_label}:")
+        concept, method, mode_lbl = key
+        print(f"\n  {method} — {concept} — {mode_lbl}:")
         print(
             f"  {'Lambda':>8} {'N':>5} {'Success%':>9} {'|Change|':>9} "
             f"{'Degrad':>8} {'Entropy':>8} {'Scale%':>7} {'Groove%':>8}"
@@ -931,7 +960,25 @@ def main():
         type=str,
         default="cosine",
         choices=["linear", "cosine", "sigmoid"],
-        help="Schedule function for smooth steering",
+        help="Schedule curve for ramp_up/ramp_down modes",
+    )
+    parser.add_argument(
+        "--modes",
+        type=str,
+        default="abrupt,ramp_up",
+        help="Comma-separated steering modes: abrupt,ramp_up,delayed_onset,pulse,ramp_down",
+    )
+    parser.add_argument(
+        "--n_delays",
+        type=str,
+        default="16,32",
+        help="Comma-separated n_delay values for delayed_onset mode",
+    )
+    parser.add_argument(
+        "--n_pulses",
+        type=str,
+        default="32,64,128",
+        help="Comma-separated n_pulse values for pulse mode",
     )
     parser.add_argument(
         "--lambdas",
@@ -999,9 +1046,52 @@ def main():
 
     concepts = [c.strip() for c in args.concepts.split(",")]
     n_ramps = [int(x.strip()) for x in args.n_ramps.split(",")]
+    modes = [m.strip() for m in args.modes.split(",")]
+    n_delays = [int(x.strip()) for x in args.n_delays.split(",")]
+    n_pulses = [int(x.strip()) for x in args.n_pulses.split(",")]
+
+    # Build experiment configurations: list of (mode_label, smooth, kwargs)
+    experiment_configs = []
+    for m in modes:
+        if m == "abrupt":
+            experiment_configs.append(("abrupt", False, {}))
+        elif m == "ramp_up":
+            for nr in n_ramps:
+                if nr == 0:
+                    experiment_configs.append(("abrupt", False, {}))
+                else:
+                    experiment_configs.append(
+                        (f"ramp_up_{nr}", True, {"mode": "ramp_up", "n_ramp": nr})
+                    )
+        elif m == "delayed_onset":
+            for nd in n_delays:
+                experiment_configs.append(
+                    (f"delayed_onset_{nd}", True, {"mode": "delayed_onset", "n_delay": nd})
+                )
+        elif m == "pulse":
+            for np_ in n_pulses:
+                experiment_configs.append(
+                    (f"pulse_{np_}", True, {"mode": "pulse", "n_pulse": np_})
+                )
+        elif m == "ramp_down":
+            for nr in n_ramps:
+                if nr > 0:
+                    experiment_configs.append(
+                        (f"ramp_down_{nr}", True, {"mode": "ramp_down", "n_decay": nr})
+                    )
+
+    # Deduplicate (e.g. abrupt appearing from both --modes and n_ramp=0)
+    seen = set()
+    unique_configs = []
+    for cfg in experiment_configs:
+        if cfg[0] not in seen:
+            seen.add(cfg[0])
+            unique_configs.append(cfg)
+    experiment_configs = unique_configs
 
     logger.info(f"Concepts: {concepts}")
-    logger.info(f"n_ramp values: {n_ramps}")
+    logger.info(f"Modes: {modes}")
+    logger.info(f"Experiment configs: {[c[0] for c in experiment_configs]}")
     logger.info(f"Schedule: {args.schedule}")
     logger.info(f"Output: {args.output_dir}")
 
@@ -1012,12 +1102,11 @@ def main():
 
     # ── Run experiments ──────────────────────────────────────────────────
     for concept in concepts:
-        for n_ramp in n_ramps:
-            smooth = n_ramp > 0
+        for mode_label, smooth, mode_kwargs in experiment_configs:
 
             # SAS
             if not args.skip_sas:
-                exp_name = f"sas_{concept}_nramp_{n_ramp}"
+                exp_name = f"sas_{concept}_{mode_label}"
                 results_file = run_sas_experiment(
                     concept=concept,
                     n_songs=args.n_songs,
@@ -1030,12 +1119,14 @@ def main():
                     gpu=args.gpu,
                     smooth=smooth,
                     schedule=args.schedule,
-                    n_ramp=n_ramp,
+                    **mode_kwargs,
                 )
                 results = load_results(results_file)
                 all_results_by_exp[exp_name] = results
 
-                per_lam = extract_per_lambda_summary(results, "SAS", concept, n_ramp)
+                per_lam = extract_per_lambda_summary(
+                    results, "SAS", concept, mode_label
+                )
                 all_per_lambda.extend(per_lam)
                 all_aggregate.append(extract_aggregate_summary(per_lam))
 
@@ -1044,11 +1135,11 @@ def main():
                     fmd_val = compute_fmd_for_experiment(
                         exp_dir, args.sod_reference_dir, args.gpu or 0
                     )
-                    fmd_results[f"sas_{concept}_nramp_{n_ramp}"] = fmd_val
+                    fmd_results[exp_name] = fmd_val
 
             # DiffMean
             if not args.skip_dm:
-                exp_name = f"dm_{concept}_nramp_{n_ramp}"
+                exp_name = f"dm_{concept}_{mode_label}"
                 results_file = run_dm_experiment(
                     concept=concept,
                     n_songs=args.n_songs,
@@ -1060,13 +1151,13 @@ def main():
                     gpu=args.gpu,
                     smooth=smooth,
                     schedule=args.schedule,
-                    n_ramp=n_ramp,
+                    **mode_kwargs,
                 )
                 results = load_results(results_file)
                 all_results_by_exp[exp_name] = results
 
                 per_lam = extract_per_lambda_summary(
-                    results, "DiffMean", concept, n_ramp
+                    results, "DiffMean", concept, mode_label
                 )
                 all_per_lambda.extend(per_lam)
                 all_aggregate.append(extract_aggregate_summary(per_lam))
@@ -1076,7 +1167,7 @@ def main():
                     fmd_val = compute_fmd_for_experiment(
                         exp_dir, args.sod_reference_dir, args.gpu or 0
                     )
-                    fmd_results[f"dm_{concept}_nramp_{n_ramp}"] = fmd_val
+                    fmd_results[exp_name] = fmd_val
 
     # ── Find best lambdas ────────────────────────────────────────────────
     best_lambdas = find_best_lambdas(all_per_lambda)

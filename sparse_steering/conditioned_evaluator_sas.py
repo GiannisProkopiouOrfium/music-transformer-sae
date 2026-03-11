@@ -339,8 +339,11 @@ def conditioned_generate_and_evaluate(
     register_steering_hooks_fn,
     remove_hooks_fn,
     smooth: bool = False,
+    mode: str = "ramp_up",
     schedule: str = "cosine",
     n_ramp: int = 64,
+    n_delay: int = 16,
+    n_pulse: int = 64,
     n_decay: int = 0,
     lambda_maintain: float = 1.0,
     register_smooth_hooks_fn=None,
@@ -402,8 +405,11 @@ def conditioned_generate_and_evaluate(
                 concept,
                 steering_strength=lam,
                 layers_to_steer=layers_to_steer,
+                mode=mode,
                 schedule=schedule,
                 n_ramp=n_ramp,
+                n_delay=n_delay,
+                n_pulse=n_pulse,
                 n_decay=n_decay,
                 lambda_maintain=lambda_maintain,
             )
@@ -1095,20 +1101,39 @@ def main():
     parser.add_argument(
         "--smooth",
         action="store_true",
-        help="Enable smooth steering with gradual lambda ramp-up",
+        help="Enable smooth steering with time-varying lambda envelope",
+    )
+    parser.add_argument(
+        "--mode",
+        type=str,
+        default="ramp_up",
+        choices=["ramp_up", "delayed_onset", "pulse", "ramp_down"],
+        help="Steering envelope mode (default: ramp_up)",
     )
     parser.add_argument(
         "--schedule",
         type=str,
         default="cosine",
         choices=["linear", "cosine", "sigmoid"],
-        help="Ramp-up schedule function (default: cosine)",
+        help="Ramp curve shape for ramp_up/ramp_down modes (default: cosine)",
     )
     parser.add_argument(
         "--n_ramp",
         type=int,
         default=64,
         help="Number of generation steps for ramp-up (default: 64)",
+    )
+    parser.add_argument(
+        "--n_delay",
+        type=int,
+        default=16,
+        help="Steps of silence before full onset (mode=delayed_onset, default: 16)",
+    )
+    parser.add_argument(
+        "--n_pulse",
+        type=int,
+        default=64,
+        help="Steps of full steering before stopping (mode=pulse, default: 64)",
     )
     parser.add_argument(
         "--n_decay",
@@ -1214,8 +1239,11 @@ def main():
     # Smooth steering kwargs
     smooth_kwargs = dict(
         smooth=args.smooth,
+        mode=args.mode,
         schedule=args.schedule,
         n_ramp=args.n_ramp,
+        n_delay=args.n_delay,
+        n_pulse=args.n_pulse,
         n_decay=args.n_decay,
         lambda_maintain=args.lambda_maintain,
         register_smooth_hooks_fn=register_smooth_steering_hooks_fn,
