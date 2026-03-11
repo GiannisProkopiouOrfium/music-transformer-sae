@@ -82,6 +82,7 @@ def _import_sas_modules():
         register_steering_hooks,
         remove_hooks,
     )
+    from smooth_steering_sas import register_smooth_steering_hooks
 
     return (
         load_model,
@@ -89,6 +90,7 @@ def _import_sas_modules():
         load_sas_vectors,
         register_steering_hooks,
         remove_hooks,
+        register_smooth_steering_hooks,
     )
 
 
@@ -336,6 +338,12 @@ def conditioned_generate_and_evaluate(
     output_dir: Optional[pathlib.Path],
     register_steering_hooks_fn,
     remove_hooks_fn,
+    smooth: bool = False,
+    schedule: str = "cosine",
+    n_ramp: int = 64,
+    n_decay: int = 0,
+    lambda_maintain: float = 1.0,
+    register_smooth_hooks_fn=None,
 ) -> List[dict]:
     """Generate conditioned continuations with SAS steering and evaluate.
 
@@ -386,14 +394,28 @@ def conditioned_generate_and_evaluate(
         )
 
         # ── Register SAS hooks ───────────────────────────────────────
-        handles = register_steering_hooks_fn(
-            model,
-            sae_models,
-            sas_vectors,
-            concept,
-            lam,
-            layers_to_steer,
-        )
+        if smooth and lam != 0.0 and register_smooth_hooks_fn is not None:
+            handles = register_smooth_hooks_fn(
+                model,
+                sae_models,
+                sas_vectors,
+                concept,
+                steering_strength=lam,
+                layers_to_steer=layers_to_steer,
+                schedule=schedule,
+                n_ramp=n_ramp,
+                n_decay=n_decay,
+                lambda_maintain=lambda_maintain,
+            )
+        else:
+            handles = register_steering_hooks_fn(
+                model,
+                sae_models,
+                sas_vectors,
+                concept,
+                lam,
+                layers_to_steer,
+            )
 
         try:
             with torch.no_grad():
@@ -1057,6 +1079,30 @@ def main():
         help="Comma-separated layer indices to steer (default: 10)",
     )
     parser.add_argument("--gpu", type=int, default=None, help="GPU number")
+
+    # Smooth steering options
+    parser.add_argument(
+        "--smooth", action="store_true",
+        help="Enable smooth steering with gradual lambda ramp-up",
+    )
+    parser.add_argument(
+        "--schedule", type=str, default="cosine",
+        choices=["linear", "cosine", "sigmoid"],
+        help="Ramp-up schedule function (default: cosine)",
+    )
+    parser.add_argument(
+        "--n_ramp", type=int, default=64,
+        help="Number of generation steps for ramp-up (default: 64)",
+    )
+    parser.add_argument(
+        "--n_decay", type=int, default=0,
+        help="Number of steps for decay phase (0 = no decay)",
+    )
+    parser.add_argument(
+        "--lambda_maintain", type=float, default=1.0,
+        help="Fraction of lambda to maintain after decay (0-1, default: 1.0)",
+    )
+
     parser.add_argument(
         "--output_dir",
         type=pathlib.Path,
@@ -1107,6 +1153,7 @@ def main():
         load_sas_vectors,
         register_steering_hooks,
         remove_hooks,
+        register_smooth_steering_hooks_fn,
     ) = _import_sas_modules()
 
     model, encoding, train_args = load_model(
@@ -1144,6 +1191,16 @@ def main():
     # ── Generate and evaluate ────────────────────────────────────────────
     all_results: List[dict] = []
 
+    # Smooth steering kwargs
+    smooth_kwargs = dict(
+        smooth=args.smooth,
+        schedule=args.schedule,
+        n_ramp=args.n_ramp,
+        n_decay=args.n_decay,
+        lambda_maintain=args.lambda_maintain,
+        register_smooth_hooks_fn=register_smooth_steering_hooks_fn,
+    )
+
     for lam in lambdas:
         logger.info(f"\n{'=' * 80}")
         logger.info(f"λ = {lam}")
@@ -1170,6 +1227,7 @@ def main():
                 args.output_dir,
                 register_steering_hooks,
                 remove_hooks,
+                **smooth_kwargs,
             )
             all_results.extend(low_results)
 
@@ -1193,6 +1251,7 @@ def main():
                 args.output_dir,
                 register_steering_hooks,
                 remove_hooks,
+                **smooth_kwargs,
             )
             all_results.extend(high_results)
 

@@ -24,7 +24,8 @@ import config
 import music_x_transformers
 import representation
 import utils
-from steered_generator import SteeredGenerator, load_steering_vectors
+from steered_generator import SteeredGenerator, SteeringHook, load_steering_vectors
+from smooth_steering_dm import SmoothSteeringHook
 
 
 # Ground truth metrics from paper
@@ -379,6 +380,11 @@ def conditioned_generate_and_evaluate(
     conditioning_beats: int,
     continuation_len: int,
     output_dir: pathlib.Path,
+    smooth: bool = False,
+    schedule: str = "cosine",
+    n_ramp: int = 64,
+    n_decay: int = 0,
+    lambda_maintain: float = 1.0,
 ) -> List[Dict]:
     """Generate conditioned continuations with and without steering.
 
@@ -424,17 +430,54 @@ def conditioned_generate_and_evaluate(
         )
 
         # Generate continuation
-        generated = generator.generate(
-            conditioning,
-            continuation_len,
-            alpha=alpha,
-            target_layers=None,
-            eos_token=eos,
-            temperature=config.GENERATION_TEMPERATURE,
-            filter_logits_fn=config.GENERATION_FILTER,
-            filter_thres=config.GENERATION_FILTER_THRESHOLD,
-            monotonicity_dim=("type", "beat"),
-        )
+        if smooth and alpha != 0.0:
+            # Use SmoothSteeringHook for gradual ramp-up
+            smooth_hooks = []
+            attn_layers = generator.attn_layers
+            for layer_idx in range(generator.num_layers):
+                if layer_idx not in steering_vectors:
+                    continue
+                hook = SmoothSteeringHook(
+                    steering_vector=steering_vectors[layer_idx],
+                    alpha=alpha,
+                    schedule=schedule,
+                    n_ramp=n_ramp,
+                    n_decay=n_decay,
+                    lambda_maintain=lambda_maintain,
+                )
+                layer_module_list = attn_layers.layers[layer_idx]
+                if isinstance(layer_module_list, nn.ModuleList) and len(layer_module_list) > 1:
+                    target_module = layer_module_list[1]
+                else:
+                    target_module = layer_module_list
+                hook.register(target_module)
+                smooth_hooks.append(hook)
+
+            try:
+                generated = generator.model.generate(
+                    conditioning,
+                    continuation_len,
+                    eos_token=eos,
+                    temperature=config.GENERATION_TEMPERATURE,
+                    filter_logits_fn=config.GENERATION_FILTER,
+                    filter_thres=config.GENERATION_FILTER_THRESHOLD,
+                    monotonicity_dim=("type", "beat"),
+                )
+            finally:
+                for h in smooth_hooks:
+                    h.remove()
+        else:
+            generated = generator.generate(
+                conditioning,
+                continuation_len,
+                alpha=alpha,
+                target_layers=None,
+                eos_token=eos,
+                temperature=config.GENERATION_TEMPERATURE,
+                filter_logits_fn=config.GENERATION_FILTER,
+                filter_thres=config.GENERATION_FILTER_THRESHOLD,
+                monotonicity_dim=("type", "beat"),
+            )
 
         # Combine conditioning + generated
         full_seq = torch.cat((conditioning, generated), 1).cpu().numpy()[0]
@@ -1195,6 +1238,30 @@ def main():
         "--alphas", type=str, default="0.0,0.5,-0.5", help="Alpha values to test"
     )
     parser.add_argument("--gpu", type=int, default=None, help="GPU number")
+
+    # Smooth steering options
+    parser.add_argument(
+        "--smooth", action="store_true",
+        help="Enable smooth steering with gradual lambda ramp-up",
+    )
+    parser.add_argument(
+        "--schedule", type=str, default="cosine",
+        choices=["linear", "cosine", "sigmoid"],
+        help="Ramp-up schedule function (default: cosine)",
+    )
+    parser.add_argument(
+        "--n_ramp", type=int, default=64,
+        help="Number of generation steps for ramp-up (default: 64)",
+    )
+    parser.add_argument(
+        "--n_decay", type=int, default=0,
+        help="Number of steps for decay phase (0 = no decay)",
+    )
+    parser.add_argument(
+        "--lambda_maintain", type=float, default=1.0,
+        help="Fraction of alpha to maintain after decay (0-1, default: 1.0)",
+    )
+
     parser.add_argument(
         "--output_dir",
         type=pathlib.Path,
@@ -1283,6 +1350,15 @@ def main():
         logging.info(f"ALPHA = {alpha}")
         logging.info(f"{'='*80}")
 
+        # Smooth steering kwargs
+        smooth_kwargs = dict(
+            smooth=args.smooth,
+            schedule=args.schedule,
+            n_ramp=args.n_ramp,
+            n_decay=args.n_decay,
+            lambda_maintain=args.lambda_maintain,
+        )
+
         # Low category songs
         logging.info(f"\nProcessing {low_category.upper().replace('_', ' ')} songs...")
         if alpha >= 0:
@@ -1300,6 +1376,7 @@ def main():
                 args.conditioning_beats,
                 args.continuation_len,
                 args.output_dir,
+                **smooth_kwargs,
             )
             all_results.extend(low_results)
 
@@ -1322,6 +1399,7 @@ def main():
                 args.conditioning_beats,
                 args.continuation_len,
                 args.output_dir,
+                **smooth_kwargs,
             )
             all_results.extend(high_results)
 
