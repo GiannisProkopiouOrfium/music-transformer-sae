@@ -82,6 +82,7 @@ def run_sas_experiment(
     n_pulse: int = 64,
     n_decay: int = 0,
     lambda_maintain: float = 1.0,
+    skip_wav: bool = False,
 ) -> pathlib.Path:
     """Run the SAS conditioned evaluator as a subprocess."""
     cmd = [
@@ -106,6 +107,8 @@ def run_sas_experiment(
     ]
     if gpu is not None:
         cmd += ["--gpu", str(gpu)]
+    if skip_wav:
+        cmd += ["--skip_wav"]
     if smooth:
         cmd += [
             "--smooth",
@@ -158,6 +161,7 @@ def run_dm_experiment(
     n_pulse: int = 64,
     n_decay: int = 0,
     lambda_maintain: float = 1.0,
+    skip_wav: bool = False,
 ) -> pathlib.Path:
     """Run the DiffMean conditioned evaluator as a subprocess."""
     cmd = [
@@ -180,6 +184,8 @@ def run_dm_experiment(
     ]
     if gpu is not None:
         cmd += ["--gpu", str(gpu)]
+    if skip_wav:
+        cmd += ["--skip_wav"]
     if smooth:
         cmd += [
             "--smooth",
@@ -1025,6 +1031,11 @@ def main():
         help="Skip DiffMean experiments (run SAS only)",
     )
     parser.add_argument(
+        "--skip_wav",
+        action="store_true",
+        help="Skip WAV generation to save disk space (MIDI + NPY still saved)",
+    )
+    parser.add_argument(
         "--compute_fmd",
         action="store_true",
         help="Compute FMD against SOD reference (requires frechet_music_distance)",
@@ -1066,7 +1077,11 @@ def main():
         elif m == "delayed_onset":
             for nd in n_delays:
                 experiment_configs.append(
-                    (f"delayed_onset_{nd}", True, {"mode": "delayed_onset", "n_delay": nd})
+                    (
+                        f"delayed_onset_{nd}",
+                        True,
+                        {"mode": "delayed_onset", "n_delay": nd},
+                    )
                 )
         elif m == "pulse":
             for np_ in n_pulses:
@@ -1119,6 +1134,7 @@ def main():
                     gpu=args.gpu,
                     smooth=smooth,
                     schedule=args.schedule,
+                    skip_wav=args.skip_wav,
                     **mode_kwargs,
                 )
                 results = load_results(results_file)
@@ -1151,6 +1167,7 @@ def main():
                     gpu=args.gpu,
                     smooth=smooth,
                     schedule=args.schedule,
+                    skip_wav=args.skip_wav,
                     **mode_kwargs,
                 )
                 results = load_results(results_file)

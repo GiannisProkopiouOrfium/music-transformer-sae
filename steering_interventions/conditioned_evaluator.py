@@ -389,6 +389,7 @@ def conditioned_generate_and_evaluate(
     n_pulse: int = 64,
     n_decay: int = 0,
     lambda_maintain: float = 1.0,
+    skip_wav: bool = False,
 ) -> List[Dict]:
     """Generate conditioned continuations with and without steering.
 
@@ -594,7 +595,8 @@ def conditioned_generate_and_evaluate(
             try:
                 music = representation.decode(full_seq, encoding)
                 music.write(str(save_dir / f"{filepath.stem}.mid"))
-                music.write_audio(str(save_dir / f"{filepath.stem}.wav"))
+                if not skip_wav:
+                    music.write_audio(str(save_dir / f"{filepath.stem}.wav"))
             except Exception as e:
                 logging.error(f"Error saving audio: {e}")
 
@@ -1323,6 +1325,11 @@ def main():
         default=None,
         help="Subfolder name for this experiment",
     )
+    parser.add_argument(
+        "--skip_wav",
+        action="store_true",
+        help="Skip WAV generation to save disk space (MIDI + NPY still saved)",
+    )
 
     args = parser.parse_args()
 
@@ -1408,6 +1415,7 @@ def main():
             n_pulse=args.n_pulse,
             n_decay=args.n_decay,
             lambda_maintain=args.lambda_maintain,
+            skip_wav=args.skip_wav,
         )
 
         # Low category songs

@@ -347,6 +347,7 @@ def conditioned_generate_and_evaluate(
     n_decay: int = 0,
     lambda_maintain: float = 1.0,
     register_smooth_hooks_fn=None,
+    skip_wav: bool = False,
 ) -> List[dict]:
     """Generate conditioned continuations with SAS steering and evaluate.
 
@@ -532,7 +533,8 @@ def conditioned_generate_and_evaluate(
             try:
                 music = representation.decode(full_seq, encoding)
                 music.write(str(save_dir / f"{filepath.stem}.mid"))
-                music.write_audio(str(save_dir / f"{filepath.stem}.wav"))
+                if not skip_wav:
+                    music.write_audio(str(save_dir / f"{filepath.stem}.wav"))
             except Exception as e:
                 logger.error(f"Error saving audio: {e}")
 
@@ -1169,6 +1171,11 @@ def main():
     parser.add_argument("--sae_dir", type=pathlib.Path, default=DEFAULT_SAE_DIR)
     parser.add_argument("--sas_dir", type=pathlib.Path, default=DEFAULT_SAS_DIR)
     parser.add_argument("--notes_dir", type=pathlib.Path, default=DEFAULT_NOTES_DIR)
+    parser.add_argument(
+        "--skip_wav",
+        action="store_true",
+        help="Skip WAV generation to save disk space (MIDI + NPY still saved)",
+    )
 
     args = parser.parse_args()
 
@@ -1247,6 +1254,7 @@ def main():
         n_decay=args.n_decay,
         lambda_maintain=args.lambda_maintain,
         register_smooth_hooks_fn=register_smooth_steering_hooks_fn,
+        skip_wav=args.skip_wav,
     )
 
     for lam in lambdas:
