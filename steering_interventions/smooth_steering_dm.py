@@ -12,6 +12,10 @@ Modes
 - **pulse**: full λ for ``n_pulse`` steps, then 0 (fire-and-forget)
 - **ramp_down**: full λ immediately, decays to ``lambda_maintain × λ`` over
   ``n_decay`` steps
+- **gradual**: linear ramp 0 → λ over ``n_ramp`` steps (ignores schedule).
+  Set ``n_ramp`` = ``continuation_len`` for a full-piece ramp.
+- **warmup_hold**: schedule-shaped ramp 0 → λ over ``n_ramp``, then hold.
+  Uses the configured schedule (cosine by default) for a smooth S-curve.
 
 Schedule options (for ramp_up / ramp_down curves)
 --------------------------------------------------
@@ -76,7 +80,14 @@ SCHEDULE_FNS = {
     "sigmoid": _sigmoid_schedule,
 }
 
-VALID_MODES = {"ramp_up", "delayed_onset", "pulse", "ramp_down"}
+VALID_MODES = {
+    "ramp_up",
+    "delayed_onset",
+    "pulse",
+    "ramp_down",
+    "gradual",
+    "warmup_hold",
+}
 
 
 # ─── Smooth Steering Hook ───────────────────────────────────────────────────
@@ -162,6 +173,10 @@ class SmoothSteeringHook:
             return self._pulse_alpha(t)
         elif self.mode == "ramp_down":
             return self._ramp_down_alpha(t)
+        elif self.mode == "gradual":
+            return self._gradual_alpha(t)
+        elif self.mode == "warmup_hold":
+            return self._warmup_hold_alpha(t)
         return self.alpha
 
     def _ramp_up_alpha(self, t: int) -> float:
@@ -200,6 +215,26 @@ class SmoothSteeringHook:
                 1.0 - (1.0 - self.lambda_maintain) * self.schedule_fn(decay_progress)
             )
         return self.alpha * self.lambda_maintain
+
+    def _gradual_alpha(self, t: int) -> float:
+        """Linear ramp 0 → α over n_ramp steps, then hold.
+
+        Always uses a linear curve regardless of schedule setting.
+        Designed for n_ramp = continuation_len (full-piece ramp).
+        """
+        if t < self.n_ramp:
+            return self.alpha * (t / self.n_ramp)
+        return self.alpha
+
+    def _warmup_hold_alpha(self, t: int) -> float:
+        """Schedule-shaped ramp 0 → α over n_ramp, then hold at α.
+
+        Uses the configured schedule (cosine by default) for an S-curve
+        ramp.  Designed for n_ramp ≈ 75% of continuation_len.
+        """
+        if t < self.n_ramp:
+            return self.alpha * self.schedule_fn(t / self.n_ramp)
+        return self.alpha
 
     def make_hook_fn(self):
         """Create the forward-hook function (same API as ``SteeringHook``)."""

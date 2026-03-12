@@ -10,6 +10,10 @@ Modes
 - **delayed_onset**: 0 for ``n_delay`` steps, then instant full λ
 - **pulse**: full λ for ``n_pulse`` steps, then 0 (fire-and-forget)
 - **ramp_down**: full λ immediately, decays to ``lambda_maintain × λ``
+- **gradual**: linear ramp 0 → λ over ``n_ramp`` steps (ignores schedule).
+  Set ``n_ramp`` = ``continuation_len`` for a full-piece ramp.
+- **warmup_hold**: schedule-shaped ramp 0 → λ over ``n_ramp``, then hold.
+  Uses the configured schedule (cosine by default) for a smooth S-curve.
 
 Usage
 -----
@@ -72,7 +76,14 @@ SCHEDULE_FNS = {
     "sigmoid": _sigmoid_schedule,
 }
 
-VALID_MODES = {"ramp_up", "delayed_onset", "pulse", "ramp_down"}
+VALID_MODES = {
+    "ramp_up",
+    "delayed_onset",
+    "pulse",
+    "ramp_down",
+    "gradual",
+    "warmup_hold",
+}
 
 
 # ─── Smooth SAS Steering Hook ───────────────────────────────────────────────
@@ -182,6 +193,10 @@ class SmoothSASSteeringHook:
             return self._pulse(t, lam)
         elif self.mode == "ramp_down":
             return self._ramp_down(t, lam)
+        elif self.mode == "gradual":
+            return self._gradual(t, lam)
+        elif self.mode == "warmup_hold":
+            return self._warmup_hold(t, lam)
         return lam
 
     def _ramp_up(self, t: int, lam: float) -> float:
@@ -216,6 +231,26 @@ class SmoothSASSteeringHook:
                 1.0 - (1.0 - self.lambda_maintain) * self.schedule_fn(decay_progress)
             )
         return lam * self.lambda_maintain
+
+    def _gradual(self, t: int, lam: float) -> float:
+        """Linear ramp 0 → λ over n_ramp steps, then hold.
+
+        Always uses a linear curve regardless of schedule setting.
+        Designed for n_ramp = continuation_len (full-piece ramp).
+        """
+        if t < self.n_ramp:
+            return lam * (t / self.n_ramp)
+        return lam
+
+    def _warmup_hold(self, t: int, lam: float) -> float:
+        """Schedule-shaped ramp 0 → λ over n_ramp, then hold at λ.
+
+        Uses the configured schedule (cosine by default) for an S-curve
+        ramp.  Designed for n_ramp ≈ 75% of continuation_len.
+        """
+        if t < self.n_ramp:
+            return lam * self.schedule_fn(t / self.n_ramp)
+        return lam
 
     def __call__(self, module, input, output, layer_idx: int):
         """Forward hook implementing Algorithm 2 with smooth lambda."""

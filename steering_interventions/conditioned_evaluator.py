@@ -1271,7 +1271,14 @@ def main():
         "--mode",
         type=str,
         default="ramp_up",
-        choices=["ramp_up", "delayed_onset", "pulse", "ramp_down"],
+        choices=[
+            "ramp_up",
+            "delayed_onset",
+            "pulse",
+            "ramp_down",
+            "gradual",
+            "warmup_hold",
+        ],
         help="Steering envelope mode (default: ramp_up)",
     )
     parser.add_argument(

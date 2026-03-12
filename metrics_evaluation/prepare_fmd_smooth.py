@@ -96,11 +96,14 @@ def collect_experiment_midis(
 
     Returns: {exp_name: flat_midi_dir_path}
     """
+    skip_dirs = {"fmd_workspace", "top_wavs", "reference_sod"}
     dirs = {}
     for exp_subdir in sorted(experiment_dir.iterdir()):
         if not exp_subdir.is_dir():
             continue
         exp_name = exp_subdir.name
+        if exp_name in skip_dirs:
+            continue
 
         # Collect all .mid files recursively
         mid_files = list(exp_subdir.rglob("*.mid"))
