@@ -1094,6 +1094,22 @@ def main():
                     experiment_configs.append(
                         (f"ramp_down_{nr}", True, {"mode": "ramp_down", "n_decay": nr})
                     )
+        elif m == "gradual":
+            for nr in n_ramps:
+                if nr > 0:
+                    experiment_configs.append(
+                        (f"gradual_{nr}", True, {"mode": "gradual", "n_ramp": nr})
+                    )
+        elif m == "warmup_hold":
+            for nr in n_ramps:
+                if nr > 0:
+                    experiment_configs.append(
+                        (
+                            f"warmup_hold_{nr}",
+                            True,
+                            {"mode": "warmup_hold", "n_ramp": nr},
+                        )
+                    )
 
     # Deduplicate (e.g. abrupt appearing from both --modes and n_ramp=0)
     seen = set()
