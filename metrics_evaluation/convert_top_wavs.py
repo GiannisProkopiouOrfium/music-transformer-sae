@@ -98,7 +98,7 @@ def collect_sample_metrics(exp_dir: pathlib.Path) -> list:
     return all_samples
 
 
-def rank_samples(samples: list, concept: str) -> list:
+def rank_samples(samples: list, concept: str, filter_lams: set = None) -> list:
     """Rank samples by effectiveness: |concept_change| / degradation.
 
     Higher = better (more steering effect per unit of quality loss).
@@ -109,6 +109,12 @@ def rank_samples(samples: list, concept: str) -> list:
         # Skip baseline
         lam = s.get("lambda", s.get("alpha", 0))
         if abs(lam) < 0.01:
+            continue
+
+        # Filter to specific lambdas if requested
+        if filter_lams is not None and not any(
+            abs(lam - fl) < 0.01 for fl in filter_lams
+        ):
             continue
 
         change_key = f"{concept}_change"
@@ -240,6 +246,10 @@ def run_paired(args, encoding):
                 lam = s.get("lambda", s.get("alpha", 0))
                 if abs(lam) < 0.01:
                     continue  # skip baseline
+                if args._filter_lams is not None and not any(
+                    abs(lam - fl) < 0.01 for fl in args._filter_lams
+                ):
+                    continue
                 k = (s["song_name"], round(lam, 2))
                 abrupt_index[k] = s
 
@@ -247,6 +257,10 @@ def run_paired(args, encoding):
             for s in smooth_samples:
                 lam = s.get("lambda", s.get("alpha", 0))
                 if abs(lam) < 0.01:
+                    continue
+                if args._filter_lams is not None and not any(
+                    abs(lam - fl) < 0.01 for fl in args._filter_lams
+                ):
                     continue
                 k = (s["song_name"], round(lam, 2))
                 smooth_index[k] = s
@@ -295,7 +309,10 @@ def run_paired(args, encoding):
                 a_wav = song_dir / "abrupt.wav"
 
                 success_a = False
-                if a_npy.exists():
+                if a_wav.exists():
+                    success_a = True
+                    logger.info(f"  Skipping (exists): {a_wav}")
+                elif a_npy.exists():
                     success_a = convert_to_wav(a_npy, a_wav, encoding)
                 elif a_mid.exists():
                     success_a = midi_to_wav(a_mid, a_wav)
@@ -306,7 +323,10 @@ def run_paired(args, encoding):
                 s_wav = song_dir / f"{smooth_mode}.wav"
 
                 success_s = False
-                if s_npy.exists():
+                if s_wav.exists():
+                    success_s = True
+                    logger.info(f"  Skipping (exists): {s_wav}")
+                elif s_npy.exists():
                     success_s = convert_to_wav(s_npy, s_wav, encoding)
                 elif s_mid.exists():
                     success_s = midi_to_wav(s_mid, s_wav)
@@ -330,19 +350,23 @@ def run_paired(args, encoding):
                 # Baseline for same song
                 if args.include_baseline:
                     baseline_wav = song_dir / "baseline.wav"
-                    # Find baseline (lambda=0 / alpha=0) for this song in abrupt exp
-                    for bs in abrupt_samples:
-                        bl = bs.get("lambda", bs.get("alpha", 0))
-                        if abs(bl) < 0.01 and bs["song_name"] == song:
-                            b_npy = pathlib.Path(bs["filepath"])
-                            b_mid = b_npy.with_suffix(".mid")
-                            if b_npy.exists():
-                                if convert_to_wav(b_npy, baseline_wav, encoding):
-                                    total_converted += 1
-                            elif b_mid.exists():
-                                if midi_to_wav(b_mid, baseline_wav):
-                                    total_converted += 1
-                            break
+                    if baseline_wav.exists():
+                        logger.info(f"  Skipping (exists): {baseline_wav}")
+                        total_converted += 1
+                    else:
+                        # Find baseline (lambda=0 / alpha=0) for this song in abrupt exp
+                        for bs in abrupt_samples:
+                            bl = bs.get("lambda", bs.get("alpha", 0))
+                            if abs(bl) < 0.01 and bs["song_name"] == song:
+                                b_npy = pathlib.Path(bs["filepath"])
+                                b_mid = b_npy.with_suffix(".mid")
+                                if b_npy.exists():
+                                    if convert_to_wav(b_npy, baseline_wav, encoding):
+                                        total_converted += 1
+                                elif b_mid.exists():
+                                    if midi_to_wav(b_mid, baseline_wav):
+                                        total_converted += 1
+                                break
 
                 # Save pair metadata
                 meta = {
@@ -398,7 +422,7 @@ def run_independent(args, encoding):
                     total_converted += 1
             continue
 
-        ranked = rank_samples(samples, concept)
+        ranked = rank_samples(samples, concept, filter_lams=args._filter_lams)
         logger.info(f"  {len(ranked)} steered samples, selecting top {args.top_n}")
 
         top = ranked[: args.top_n]
@@ -420,7 +444,10 @@ def run_independent(args, encoding):
             wav_path = exp_out / wav_name
 
             success = False
-            if npy_path.exists():
+            if wav_path.exists():
+                success = True
+                logger.info(f"  Skipping (exists): {wav_path}")
+            elif npy_path.exists():
                 success = convert_to_wav(npy_path, wav_path, encoding)
             elif mid_path.exists():
                 success = midi_to_wav(mid_path, wav_path)
@@ -490,11 +517,24 @@ def main():
         action="store_false",
         help="Independent mode: rank each experiment separately",
     )
+    parser.add_argument(
+        "--filter_lambdas",
+        type=str,
+        default=None,
+        help="Comma-separated lambda/alpha values to include (e.g. '1.0,-1.0,2.0'). Others are excluded.",
+    )
     args = parser.parse_args()
 
     if args.output_dir is None:
         args.output_dir = args.experiment_dir / "top_wavs"
     args.output_dir.mkdir(parents=True, exist_ok=True)
+
+    # Parse filter_lambdas into a set of floats
+    filter_lams = None
+    if args.filter_lambdas:
+        filter_lams = {float(x.strip()) for x in args.filter_lambdas.split(",")}
+        logger.info(f"Filtering to lambda/alpha values: {sorted(filter_lams)}")
+    args._filter_lams = filter_lams
 
     encoding = load_encoding()
 
