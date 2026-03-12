@@ -136,9 +136,11 @@ def collect_sample_metrics(exp_dir: pathlib.Path) -> list:
                 "alpha": alpha,
                 "pitch_change": r.get("pitch_change", 0),
                 "duration_change": r.get("duration_change", 0),
-                "total_degradation": deg.get("total_degradation", np.nan)
-                if isinstance(deg, dict)
-                else np.nan,
+                "total_degradation": (
+                    deg.get("total_degradation", np.nan)
+                    if isinstance(deg, dict)
+                    else np.nan
+                ),
                 "pitch_class_entropy": r.get("quality_metrics", {}).get(
                     "pitch_class_entropy", np.nan
                 ),
@@ -151,9 +153,7 @@ def collect_sample_metrics(exp_dir: pathlib.Path) -> list:
                 "_from_conditioned_results": True,
             }
             # DM .npy pattern: category/sample_category_{cat}_alpha_{alpha}_{idx}.npy
-            npy_path = (
-                exp_dir / cat / f"sample_category_{cat}_alpha_{alpha}_{idx}.npy"
-            )
+            npy_path = exp_dir / cat / f"sample_category_{cat}_alpha_{alpha}_{idx}.npy"
             if npy_path.exists():
                 entry["filepath"] = str(npy_path)
             else:
@@ -374,15 +374,15 @@ def run_paired(args, encoding):
 
                 # Abrupt WAV
                 a_wav = song_dir / "abrupt.wav"
+                a_npy = pathlib.Path(a_sample["filepath"]) if "filepath" in a_sample else None
 
                 success_a = False
-                if "filepath" not in a_sample:
+                if a_npy is None:
                     logger.warning(f"  No filepath for abrupt sample {song} α/λ={lam}")
                 elif a_wav.exists():
                     success_a = True
                     logger.info(f"  Skipping (exists): {a_wav}")
                 else:
-                    a_npy = pathlib.Path(a_sample["filepath"])
                     a_mid = a_npy.with_suffix(".mid")
                     if a_npy.exists():
                         success_a = convert_to_wav(a_npy, a_wav, encoding)
@@ -391,17 +391,15 @@ def run_paired(args, encoding):
 
                 # Smooth WAV
                 s_wav = song_dir / f"{smooth_mode}.wav"
+                s_npy = pathlib.Path(s_sample["filepath"]) if "filepath" in s_sample else None
 
                 success_s = False
-                if "filepath" not in s_sample:
-                    logger.warning(
-                        f"  No filepath for smooth sample {song} α/λ={lam}"
-                    )
+                if s_npy is None:
+                    logger.warning(f"  No filepath for smooth sample {song} α/λ={lam}")
                 elif s_wav.exists():
                     success_s = True
                     logger.info(f"  Skipping (exists): {s_wav}")
                 else:
-                    s_npy = pathlib.Path(s_sample["filepath"])
                     s_mid = s_npy.with_suffix(".mid")
                     if s_npy.exists():
                         success_s = convert_to_wav(s_npy, s_wav, encoding)
@@ -455,12 +453,12 @@ def run_paired(args, encoding):
                     "abrupt": {
                         "change": a_chg,
                         "degradation": a_deg,
-                        "source": str(a_npy),
+                        "source": str(a_npy) if a_npy else "",
                     },
                     smooth_mode: {
                         "change": s_chg,
                         "degradation": s_deg,
-                        "source": str(s_npy),
+                        "source": str(s_npy) if s_npy else "",
                     },
                 }
                 meta_path = song_dir / "pair_info.json"
