@@ -87,7 +87,11 @@ def detect_method(exp_name: str) -> str:
 
 
 def collect_sample_metrics(exp_dir: pathlib.Path) -> list:
-    """Collect all sample_metrics.json entries from an experiment dir."""
+    """Collect all sample_metrics.json entries from an experiment dir.
+
+    Falls back to conditioned_results.json for DM experiments where
+    sample_metrics.json was overwritten (only last alpha survives).
+    """
     all_samples = []
     for mf in sorted(exp_dir.rglob("sample_metrics.json")):
         with open(mf) as f:
@@ -95,6 +99,71 @@ def collect_sample_metrics(exp_dir: pathlib.Path) -> list:
         for entry in entries:
             entry["_metrics_file"] = str(mf)
         all_samples.extend(entries)
+
+    # Fallback: reconstruct from conditioned_results.json for DM experiments
+    # where sample_metrics.json only has the last alpha per category
+    cr_file = exp_dir / "conditioned_results.json"
+    if cr_file.exists():
+        with open(cr_file) as f:
+            cr = json.load(f)
+        results = cr.get("results", [])
+
+        # Check which (category, alpha) combos we already have
+        existing = set()
+        for s in all_samples:
+            lam = s.get("lambda", s.get("alpha", 0))
+            existing.add((s.get("category", ""), round(lam, 4)))
+
+        # Group results by (category, alpha) to track per-group index
+        from collections import defaultdict
+
+        group_counters = defaultdict(int)
+        for r in results:
+            alpha = r.get("alpha", r.get("lambda", 0))
+            cat = r.get("category", "")
+            group_key = (cat, round(alpha, 4))
+            idx = group_counters[group_key]
+            group_counters[group_key] += 1
+
+            if group_key in existing:
+                continue
+
+            # Reconstruct a sample-like entry from the results dict
+            deg = r.get("degradation", {})
+            entry = {
+                "song_name": r.get("song_name", ""),
+                "category": cat,
+                "alpha": alpha,
+                "pitch_change": r.get("pitch_change", 0),
+                "duration_change": r.get("duration_change", 0),
+                "total_degradation": deg.get("total_degradation", np.nan)
+                if isinstance(deg, dict)
+                else np.nan,
+                "pitch_class_entropy": r.get("quality_metrics", {}).get(
+                    "pitch_class_entropy", np.nan
+                ),
+                "scale_consistency": r.get("quality_metrics", {}).get(
+                    "scale_consistency", np.nan
+                ),
+                "groove_consistency": r.get("quality_metrics", {}).get(
+                    "groove_consistency", np.nan
+                ),
+                "_from_conditioned_results": True,
+            }
+            # DM .npy pattern: category/sample_category_{cat}_alpha_{alpha}_{idx}.npy
+            npy_path = (
+                exp_dir / cat / f"sample_category_{cat}_alpha_{alpha}_{idx}.npy"
+            )
+            if npy_path.exists():
+                entry["filepath"] = str(npy_path)
+            else:
+                # Try .mid fallback
+                mid_path = npy_path.with_suffix(".mid")
+                if mid_path.exists():
+                    entry["filepath"] = str(mid_path)
+
+            all_samples.append(entry)
+
     return all_samples
 
 
@@ -304,32 +373,40 @@ def run_paired(args, encoding):
                 song_dir = pair_dir / f"{i+1:02d}_{song}_l{lam_str}"
 
                 # Abrupt WAV
-                a_npy = pathlib.Path(a_sample["filepath"])
-                a_mid = a_npy.with_suffix(".mid")
                 a_wav = song_dir / "abrupt.wav"
 
                 success_a = False
-                if a_wav.exists():
+                if "filepath" not in a_sample:
+                    logger.warning(f"  No filepath for abrupt sample {song} α/λ={lam}")
+                elif a_wav.exists():
                     success_a = True
                     logger.info(f"  Skipping (exists): {a_wav}")
-                elif a_npy.exists():
-                    success_a = convert_to_wav(a_npy, a_wav, encoding)
-                elif a_mid.exists():
-                    success_a = midi_to_wav(a_mid, a_wav)
+                else:
+                    a_npy = pathlib.Path(a_sample["filepath"])
+                    a_mid = a_npy.with_suffix(".mid")
+                    if a_npy.exists():
+                        success_a = convert_to_wav(a_npy, a_wav, encoding)
+                    elif a_mid.exists():
+                        success_a = midi_to_wav(a_mid, a_wav)
 
                 # Smooth WAV
-                s_npy = pathlib.Path(s_sample["filepath"])
-                s_mid = s_npy.with_suffix(".mid")
                 s_wav = song_dir / f"{smooth_mode}.wav"
 
                 success_s = False
-                if s_wav.exists():
+                if "filepath" not in s_sample:
+                    logger.warning(
+                        f"  No filepath for smooth sample {song} α/λ={lam}"
+                    )
+                elif s_wav.exists():
                     success_s = True
                     logger.info(f"  Skipping (exists): {s_wav}")
-                elif s_npy.exists():
-                    success_s = convert_to_wav(s_npy, s_wav, encoding)
-                elif s_mid.exists():
-                    success_s = midi_to_wav(s_mid, s_wav)
+                else:
+                    s_npy = pathlib.Path(s_sample["filepath"])
+                    s_mid = s_npy.with_suffix(".mid")
+                    if s_npy.exists():
+                        success_s = convert_to_wav(s_npy, s_wav, encoding)
+                    elif s_mid.exists():
+                        success_s = midi_to_wav(s_mid, s_wav)
 
                 if success_a:
                     total_converted += 1

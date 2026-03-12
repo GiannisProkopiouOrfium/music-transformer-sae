@@ -602,7 +602,10 @@ def conditioned_generate_and_evaluate(
 
     # Save sample metrics to JSON file for this category and alpha
     if output_dir is not None and sample_metrics:
-        metrics_file = output_dir / category / "sample_metrics.json"
+        alpha_str = f"alpha_{'pos' if alpha >= 0 else 'neg'}{abs(alpha):.2f}"
+        metrics_dir = output_dir / category / alpha_str
+        metrics_dir.mkdir(parents=True, exist_ok=True)
+        metrics_file = metrics_dir / "sample_metrics.json"
         with open(metrics_file, "w") as f:
             json.dump(sample_metrics, f, indent=2)
         logging.info(f"Saved sample metrics to {metrics_file}")
