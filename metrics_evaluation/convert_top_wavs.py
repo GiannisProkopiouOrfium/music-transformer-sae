@@ -188,7 +188,8 @@ def run_paired(args, encoding):
     groups = {}  # (method, concept) -> {mode: (exp_dir, samples)}
     for exp_subdir in sorted(args.experiment_dir.iterdir()):
         if not exp_subdir.is_dir() or exp_subdir.name in (
-            "fmd_workspace", "top_wavs",
+            "fmd_workspace",
+            "top_wavs",
         ):
             continue
 
@@ -252,7 +253,9 @@ def run_paired(args, encoding):
 
             # Find common (song, lambda) pairs
             common_keys = set(abrupt_index.keys()) & set(smooth_index.keys())
-            logger.info(f"  Found {len(common_keys)} matching (song, {strength_key}) pairs")
+            logger.info(
+                f"  Found {len(common_keys)} matching (song, {strength_key}) pairs"
+            )
 
             if not common_keys:
                 logger.warning("  No matching pairs found!")
@@ -373,7 +376,8 @@ def run_independent(args, encoding):
 
     for exp_subdir in sorted(args.experiment_dir.iterdir()):
         if not exp_subdir.is_dir() or exp_subdir.name in (
-            "fmd_workspace", "top_wavs",
+            "fmd_workspace",
+            "top_wavs",
         ):
             continue
 

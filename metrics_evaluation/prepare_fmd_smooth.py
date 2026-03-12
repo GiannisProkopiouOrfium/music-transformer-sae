@@ -124,6 +124,7 @@ def collect_experiment_midis(
                 except OSError:
                     # Fallback: copy
                     import shutil
+
                     shutil.copy2(mid, target)
                     linked += 1
 
@@ -281,9 +282,7 @@ def main():
 
     # A. FMD(SOD, experiment) for each experiment
     for name, d in sorted(exp_dirs.items()):
-        comparisons.append(
-            (f"SOD vs {name}", str(ref_dir), str(d))
-        )
+        comparisons.append((f"SOD vs {name}", str(ref_dir), str(d)))
 
     # B. FMD(abrupt, smooth) for each (method, concept) pair
     for (method, concept), modes in sorted(exp_groups.items()):
