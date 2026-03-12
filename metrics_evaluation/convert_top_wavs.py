@@ -374,7 +374,11 @@ def run_paired(args, encoding):
 
                 # Abrupt WAV
                 a_wav = song_dir / "abrupt.wav"
-                a_npy = pathlib.Path(a_sample["filepath"]) if "filepath" in a_sample else None
+                a_npy = (
+                    pathlib.Path(a_sample["filepath"])
+                    if "filepath" in a_sample
+                    else None
+                )
 
                 success_a = False
                 if a_npy is None:
@@ -391,7 +395,11 @@ def run_paired(args, encoding):
 
                 # Smooth WAV
                 s_wav = song_dir / f"{smooth_mode}.wav"
-                s_npy = pathlib.Path(s_sample["filepath"]) if "filepath" in s_sample else None
+                s_npy = (
+                    pathlib.Path(s_sample["filepath"])
+                    if "filepath" in s_sample
+                    else None
+                )
 
                 success_s = False
                 if s_npy is None:
