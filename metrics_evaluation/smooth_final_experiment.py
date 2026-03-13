@@ -61,10 +61,20 @@ KNOWN_CONCEPTS = ["average_pitch", "average_duration"]
 # warmup_hold only (round 1: gradual ≈ warmup_hold), n_ramp=32 only.
 # Abrupt baselines already exist → only 4 new smooth evaluator runs.
 SMOOTH_CONFIGS = [
-    {"method": "dm",  "concept": "average_pitch",    "mode": "warmup_hold", "n_ramp": 32},
-    {"method": "dm",  "concept": "average_duration",  "mode": "warmup_hold", "n_ramp": 32},
-    {"method": "sas", "concept": "average_pitch",    "mode": "warmup_hold", "n_ramp": 32},
-    {"method": "sas", "concept": "average_duration",  "mode": "warmup_hold", "n_ramp": 32},
+    {"method": "dm", "concept": "average_pitch", "mode": "warmup_hold", "n_ramp": 32},
+    {
+        "method": "dm",
+        "concept": "average_duration",
+        "mode": "warmup_hold",
+        "n_ramp": 32,
+    },
+    {"method": "sas", "concept": "average_pitch", "mode": "warmup_hold", "n_ramp": 32},
+    {
+        "method": "sas",
+        "concept": "average_duration",
+        "mode": "warmup_hold",
+        "n_ramp": 32,
+    },
 ]
 
 DM_ALPHAS = "0.0,0.5,1.0,1.5,2.0,-0.5,-1.0,-1.5,-2.0"
