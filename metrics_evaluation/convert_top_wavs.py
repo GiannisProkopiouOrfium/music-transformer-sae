@@ -276,6 +276,10 @@ def run_paired(args, encoding):
             logger.warning(f"  No sample_metrics.json in {exp_name} — skipping")
             continue
 
+        # Filter by method if requested
+        if args._filter_methods and method not in args._filter_methods:
+            continue
+
         key = (method, concept)
         if key not in groups:
             groups[key] = {}
@@ -291,6 +295,12 @@ def run_paired(args, encoding):
             logger.warning(f"  No abrupt baseline for {group_label} — skipping pairing")
             continue
         smooth_modes = {m: v for m, v in modes.items() if m != "abrupt"}
+
+        # Filter smooth modes if requested
+        if args._filter_modes:
+            smooth_modes = {
+                m: v for m, v in smooth_modes.items() if m in args._filter_modes
+            }
         if not smooth_modes:
             logger.warning(f"  No smooth variant for {group_label} — skipping pairing")
             continue
@@ -606,6 +616,18 @@ def main():
         default=None,
         help="Comma-separated lambda/alpha values to include (e.g. '1.0,-1.0,2.0'). Others are excluded.",
     )
+    parser.add_argument(
+        "--filter_modes",
+        type=str,
+        default=None,
+        help="Comma-separated smooth modes to include (e.g. 'warmup_hold_32'). Others are excluded.",
+    )
+    parser.add_argument(
+        "--filter_methods",
+        type=str,
+        default=None,
+        help="Comma-separated methods to include (e.g. 'dm' or 'dm,sas'). Others are excluded.",
+    )
     args = parser.parse_args()
 
     if args.output_dir is None:
@@ -618,6 +640,18 @@ def main():
         filter_lams = {float(x.strip()) for x in args.filter_lambdas.split(",")}
         logger.info(f"Filtering to lambda/alpha values: {sorted(filter_lams)}")
     args._filter_lams = filter_lams
+
+    args._filter_modes = None
+    if args.filter_modes:
+        args._filter_modes = {m.strip() for m in args.filter_modes.split(",")}
+        logger.info(f"Filtering to smooth modes: {sorted(args._filter_modes)}")
+
+    args._filter_methods = None
+    if args.filter_methods:
+        args._filter_methods = {
+            m.strip().lower() for m in args.filter_methods.split(",")
+        }
+        logger.info(f"Filtering to methods: {sorted(args._filter_methods)}")
 
     encoding = load_encoding()
 
