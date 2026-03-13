@@ -1,17 +1,21 @@
 #!/usr/bin/env python3
 """Smooth vs Abrupt Steering — Final Statistical Significance Experiment.
 
-Runs two smooth-steering modes (gradual_128 and warmup_hold_128) vs
-abrupt for each method × concept combination, then performs paired
-statistical significance tests.
+Runs warmup_hold (cosine S-curve ramp) with n_ramp=32 vs abrupt for
+both DM and SAS on pitch and duration concepts.
 
-Smooth modes under test:
-  - gradual_128:      linear ramp 0 → λ over 128 tokens
-  - warmup_hold_128:  cosine S-curve ramp 0 → λ over 128 tokens, then hold
+Round 1 (n_ramp=128) showed:
+  - Ramp shape doesn't matter (gradual ≈ warmup_hold)
+  - 128 was too long: ~24% magnitude loss for DM, catastrophic for SAS
+  - No significant degradation reduction for any combo
 
-Each of the 4 method×concept combos (DM×pitch, SAS×pitch, DM×duration,
-SAS×duration) gets one abrupt run plus both smooth modes → 12 evaluator
-runs total (4 abrupt shared + 8 smooth).
+Round 2 tests n_ramp=32 (224/256 = 88% of tokens at full strength).
+Short enough to preserve steering power, long enough to smooth onset.
+If 32 doesn't help, the conclusion is clean: smooth ramping does not
+improve the quality-effectiveness tradeoff.
+
+Reuses existing abrupt baselines from the same output directory.
+4 new smooth runs only (2 methods × 2 concepts × 1 ramp length).
 
 Statistical tests (paired by song × strength):
   - Paired t-test & Wilcoxon signed-rank on |change| and degradation
@@ -21,15 +25,14 @@ Statistical tests (paired by song × strength):
 
 Usage
 -----
-    # Full run (generate + analyze):
-    python metrics_evaluation/smooth_final_experiment.py --n_songs 20 --gpu 0
+    # Full run (generate + analyze, reuses existing abrupt):
+    python metrics_evaluation/smooth_final_experiment.py --n_songs 15 --gpu 0
 
-    # Analyze existing data (e.g. pilot):
-    python metrics_evaluation/smooth_final_experiment.py --analyze_only \
-        --output_dir exp/sod/smooth_pilot
+    # Analyze all existing data in the output dir:
+    python metrics_evaluation/smooth_final_experiment.py --analyze_only
 
     # Generate only (analyze later):
-    python metrics_evaluation/smooth_final_experiment.py --n_songs 20 --gpu 0 \
+    python metrics_evaluation/smooth_final_experiment.py --n_songs 15 --gpu 0 \
         --generate_only
 """
 
@@ -55,30 +58,13 @@ logger = logging.getLogger(__name__)
 KNOWN_CONCEPTS = ["average_pitch", "average_duration"]
 
 # ── Smooth configs to compare against abrupt ─────────────────────────────────
-# Two modes × 4 method×concept combos = 8 smooth runs + 4 shared abrupt = 12
+# warmup_hold only (round 1: gradual ≈ warmup_hold), n_ramp=32 only.
+# Abrupt baselines already exist → only 4 new smooth evaluator runs.
 SMOOTH_CONFIGS = [
-    # DM × pitch
-    {"method": "dm", "concept": "average_pitch", "mode": "gradual", "n_ramp": 128},
-    {"method": "dm", "concept": "average_pitch", "mode": "warmup_hold", "n_ramp": 128},
-    # SAS × pitch
-    {"method": "sas", "concept": "average_pitch", "mode": "gradual", "n_ramp": 128},
-    {"method": "sas", "concept": "average_pitch", "mode": "warmup_hold", "n_ramp": 128},
-    # DM × duration
-    {"method": "dm", "concept": "average_duration", "mode": "gradual", "n_ramp": 128},
-    {
-        "method": "dm",
-        "concept": "average_duration",
-        "mode": "warmup_hold",
-        "n_ramp": 128,
-    },
-    # SAS × duration
-    {"method": "sas", "concept": "average_duration", "mode": "gradual", "n_ramp": 128},
-    {
-        "method": "sas",
-        "concept": "average_duration",
-        "mode": "warmup_hold",
-        "n_ramp": 128,
-    },
+    {"method": "dm",  "concept": "average_pitch",    "mode": "warmup_hold", "n_ramp": 32},
+    {"method": "dm",  "concept": "average_duration",  "mode": "warmup_hold", "n_ramp": 32},
+    {"method": "sas", "concept": "average_pitch",    "mode": "warmup_hold", "n_ramp": 32},
+    {"method": "sas", "concept": "average_duration",  "mode": "warmup_hold", "n_ramp": 32},
 ]
 
 DM_ALPHAS = "0.0,0.5,1.0,1.5,2.0,-0.5,-1.0,-1.5,-2.0"
