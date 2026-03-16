@@ -838,45 +838,85 @@ def run_heatmap(sas_dir: pathlib.Path, output_dir: pathlib.Path, concepts=None):
 
 
 def _plot_heatmap(v_sas, s_high, s_low, concept, output_dir):
-    """Fig 8: Feature activation heatmap — high vs low songs."""
+    """Fig 8: Feature activation heatmap — high vs low songs.
+
+    Two rows:
+      Top: Binary activation (black=inactive, colored=active) — shows frequency
+      Bottom: Continuous activation magnitude — shows intensity
+    """
     label = CONCEPT_LABELS[concept]
     top_20 = get_top_features(v_sas, 20)
-    n_show = min(30, s_high.shape[0], s_low.shape[0])
+    n_show = min(50, s_high.shape[0], s_low.shape[0])
 
-    h_sub = s_high[:n_show, top_20].T
-    l_sub = s_low[:n_show, top_20].T
+    # Random sample of songs for representativeness
+    rng = np.random.RandomState(42)
+    h_idx = rng.choice(s_high.shape[0], n_show, replace=False)
+    l_idx = rng.choice(s_low.shape[0], n_show, replace=False)
+
+    h_sub = s_high[h_idx][:, top_20].T  # (20, n_show)
+    l_sub = s_low[l_idx][:, top_20].T
+
+    # Binary: 1 where active, 0 where inactive
+    h_binary = (h_sub > 0).astype(float)
+    l_binary = (l_sub > 0).astype(float)
+
+    # Compute activation frequency per feature for annotations
+    h_freqs = h_binary.mean(axis=1)
+    l_freqs = l_binary.mean(axis=1)
+
     combined = np.concatenate([l_sub, h_sub], axis=1)
-
     vmax = np.percentile(combined[combined > 0], 95) if (combined > 0).any() else 1.0
-
-    fig, (ax1, ax2, ax_cb) = plt.subplots(
-        1,
-        3,
-        figsize=(14, 7),
-        gridspec_kw={"width_ratios": [1, 1, 0.05]},
-    )
 
     ylabels = [f"F{fid} ({v_sas[fid]:+.2f})" for fid in top_20]
 
-    ax1.imshow(l_sub, aspect="auto", cmap="YlOrRd", vmin=0, vmax=vmax)
-    ax1.set_title(f"Low-{label} Songs (n={n_show})", fontweight="bold")
-    ax1.set_ylabel("Feature (SAS weight)")
-    ax1.set_xlabel("Song index")
-    ax1.set_yticks(range(len(ylabels)))
-    ax1.set_yticklabels(ylabels, fontsize=8)
+    fig, axes = plt.subplots(
+        2, 2, figsize=(16, 12),
+        gridspec_kw={"hspace": 0.3, "wspace": 0.15},
+    )
 
-    im2 = ax2.imshow(h_sub, aspect="auto", cmap="YlOrRd", vmin=0, vmax=vmax)
-    ax2.set_title(f"High-{label} Songs (n={n_show})", fontweight="bold")
-    ax2.set_xlabel("Song index")
-    ax2.set_yticks(range(len(ylabels)))
-    ax2.set_yticklabels([], fontsize=8)
+    # ── Top row: Binary activation ──
+    ax = axes[0, 0]
+    ax.imshow(l_binary, aspect="auto", cmap="Greys", vmin=0, vmax=1, interpolation="nearest")
+    ax.set_title(f"Low-{label} Songs — Active/Inactive", fontweight="bold")
+    ax.set_ylabel("Feature (SAS weight)")
+    ax.set_yticks(range(len(ylabels)))
+    ax.set_yticklabels(ylabels, fontsize=7)
+    ax.set_xlabel("Song index")
+    for i, freq in enumerate(l_freqs):
+        ax.text(n_show + 0.5, i, f"{freq:.0%}", va="center", fontsize=7, color="#C62828")
 
-    fig.colorbar(im2, cax=ax_cb, label="Sparse Activation")
+    ax = axes[0, 1]
+    ax.imshow(h_binary, aspect="auto", cmap="Greys", vmin=0, vmax=1, interpolation="nearest")
+    ax.set_title(f"High-{label} Songs — Active/Inactive", fontweight="bold")
+    ax.set_yticks(range(len(ylabels)))
+    ax.set_yticklabels([], fontsize=7)
+    ax.set_xlabel("Song index")
+    for i, freq in enumerate(h_freqs):
+        ax.text(n_show + 0.5, i, f"{freq:.0%}", va="center", fontsize=7, color="#1565C0")
+
+    # ── Bottom row: Continuous activation (hot colormap on black bg) ──
+    ax = axes[1, 0]
+    ax.imshow(l_sub, aspect="auto", cmap="hot", vmin=0, vmax=vmax, interpolation="nearest")
+    ax.set_title(f"Low-{label} Songs — Activation Magnitude", fontweight="bold")
+    ax.set_ylabel("Feature (SAS weight)")
+    ax.set_yticks(range(len(ylabels)))
+    ax.set_yticklabels(ylabels, fontsize=7)
+    ax.set_xlabel("Song index")
+    ax.set_facecolor("black")
+
+    ax = axes[1, 1]
+    im = ax.imshow(h_sub, aspect="auto", cmap="hot", vmin=0, vmax=vmax, interpolation="nearest")
+    ax.set_title(f"High-{label} Songs — Activation Magnitude", fontweight="bold")
+    ax.set_yticks(range(len(ylabels)))
+    ax.set_yticklabels([], fontsize=7)
+    ax.set_xlabel("Song index")
+    ax.set_facecolor("black")
+
+    fig.colorbar(im, ax=axes[1, :], shrink=0.6, label="Sparse Activation", pad=0.02)
+
     fig.suptitle(
-        f"{label} — Top-20 SAS Feature Activations",
-        fontsize=14,
-        fontweight="bold",
-        y=1.02,
+        f"{label} — Top-20 SAS Feature Activations (n={n_show} random songs per group)",
+        fontsize=14, fontweight="bold", y=1.01,
     )
 
     plt.tight_layout()
