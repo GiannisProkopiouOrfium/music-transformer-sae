@@ -85,6 +85,7 @@ DEFAULT_ENCODING = (
 DEFAULT_OUTPUT_DIR = (
     pathlib.Path(__file__).resolve().parent / "outputs" / "deep_analysis"
 )
+DEFAULT_NOTES_DIR = PROJECT_ROOT / "data" / "sod" / "processed" / "notes"
 
 CONCEPTS = ["average_pitch", "average_duration"]
 CONCEPT_LABELS = {"average_pitch": "Pitch", "average_duration": "Duration"}
@@ -833,17 +834,13 @@ def _generate_samples(
     concept_name="experiment",
     seq_len=512,
 ):
-    """Generate samples with given (possibly modified) SAS vectors.
-
-    Returns list of dicts with per-sample measurements.
-    """
+    """Legacy unconditioned generation (v1). Use conditioned mode for lower variance."""
     if layers is None:
         layers = [STEERING_LAYER]
 
     eos = encoding["type_code_map"].get("end-of-song")
     sos = encoding["type_code_map"].get("start-of-song")
 
-    # Register hooks
     handles = register_hooks(
         model, sae_models, sas_vectors, concept_name, lambda_val, layers
     )
@@ -867,7 +864,6 @@ def _generate_samples(
 
             tokens = torch.cat((start, generated), 1).cpu().numpy()[0]
 
-            # Extract measurements
             try:
                 music = rep_module.decode(tokens, encoding)
                 pitches = [n.pitch for t in music.tracks for n in t.notes]
@@ -889,6 +885,654 @@ def _generate_samples(
         remove_hooks(handles)
 
     return results
+
+
+# ── Song discovery for conditioned generation ────────────────────────────────
+
+
+def _find_seed_songs(
+    notes_dir, encoding, concept, n_songs, conditioning_beats, rep_module
+):
+    """Find extreme-concept songs for paired conditioned generation.
+
+    Returns list of (filepath, initial_value, conditioning_tensor) tuples.
+    """
+    notes_dir = pathlib.Path(notes_dir)
+    is_pitch = "pitch" in concept
+    note_type = encoding["type_code_map"]["note"]
+
+    song_stats = []
+    for subfolder in notes_dir.iterdir():
+        if not subfolder.is_dir():
+            continue
+        for filepath in subfolder.glob("*.npy"):
+            try:
+                notes = np.load(filepath)
+                if notes.ndim != 2 or notes.shape[1] != 5:
+                    continue
+                codes = rep_module.encode_notes(notes, encoding)
+
+                # Measure initial concept value
+                vals = []
+                for tok in codes:
+                    if tok[0] == note_type and tok[1] < conditioning_beats:
+                        vals.append(tok[3] if is_pitch else tok[4])
+                if len(vals) < 5:
+                    continue
+
+                avg_val = float(np.mean(vals))
+                song_stats.append((filepath, avg_val, codes))
+            except Exception:
+                continue
+
+    if not song_stats:
+        logger.error(f"No valid songs found in {notes_dir}")
+        return []
+
+    # Take songs with LOW initial value (so positive λ fights upward)
+    song_stats.sort(key=lambda x: x[1])
+    seeds = song_stats[:n_songs]
+
+    logger.info(
+        f"  Found {len(song_stats)} songs, using {len(seeds)} low-{concept} seeds"
+    )
+    logger.info(f"  Seed values: {[f'{s[1]:.1f}' for s in seeds]}")
+
+    return seeds
+
+
+def _extract_conditioning(codes, conditioning_beats, device):
+    """Extract first N beats as conditioning tensor (1, cond_len, 6)."""
+    cond_len = 0
+    for i, tok in enumerate(codes):
+        if tok[1] >= conditioning_beats:
+            cond_len = i
+            break
+    if cond_len == 0:
+        cond_len = len(codes)
+    return torch.from_numpy(codes[:cond_len]).long().unsqueeze(0).to(device)
+
+
+# ── Conditioned generation with paired design ────────────────────────────────
+
+
+def _generate_conditioned_paired(
+    model,
+    encoding,
+    sae_models,
+    sas_vectors_dict,
+    lambda_val,
+    register_hooks,
+    remove_hooks,
+    rep_module,
+    device,
+    seed_songs,
+    concept_name,
+    conditioning_beats=16,
+    continuation_len=256,
+    layers=None,
+):
+    """Generate one continuation per seed song with given SAS vectors.
+
+    Uses the SAME seed songs every time → enables paired within-song comparison.
+    Returns list of per-song dicts.
+    """
+    if layers is None:
+        layers = [STEERING_LAYER]
+
+    eos = encoding["type_code_map"].get("end-of-song")
+
+    # Register hooks
+    handles = register_hooks(
+        model, sae_models, sas_vectors_dict, concept_name, lambda_val, layers
+    )
+
+    results = []
+    try:
+        for filepath, initial_val, codes in seed_songs:
+            conditioning = _extract_conditioning(codes, conditioning_beats, device)
+
+            with torch.no_grad():
+                generated = model.generate(
+                    conditioning,
+                    continuation_len,
+                    eos_token=eos,
+                    temperature=1.0,
+                    filter_logits_fn="top_k",
+                    filter_thres=0.9,
+                    monotonicity_dim=("type", "beat"),
+                )
+
+            gen_tokens = generated.cpu().numpy()[0]
+
+            # Measure generated tokens
+            try:
+                music = rep_module.decode(gen_tokens, encoding)
+                pitches = [n.pitch for t in music.tracks for n in t.notes]
+                durations = [n.duration for t in music.tracks for n in t.notes]
+            except Exception:
+                pitches, durations = [], []
+
+            results.append(
+                {
+                    "song": filepath.stem,
+                    "initial_value": float(initial_val),
+                    "n_notes": len(pitches),
+                    "mean_pitch": float(np.mean(pitches)) if pitches else np.nan,
+                    "mean_duration": float(np.mean(durations)) if durations else np.nan,
+                }
+            )
+    finally:
+        remove_hooks(handles)
+
+    return results
+
+
+def _compute_paired_stats(baseline_results, steered_results, metric_key):
+    """Compute paired within-song shift and statistics.
+
+    Returns dict with mean_shift, se_shift, per_song_shifts, ci_95.
+    """
+    shifts = []
+    for base, steer in zip(baseline_results, steered_results):
+        b_val = base[metric_key]
+        s_val = steer[metric_key]
+        if not (np.isnan(b_val) or np.isnan(s_val)):
+            shifts.append(s_val - b_val)
+
+    if not shifts:
+        return {
+            "mean_shift": np.nan,
+            "se_shift": np.nan,
+            "n": 0,
+            "ci_lo": np.nan,
+            "ci_hi": np.nan,
+            "per_song_shifts": [],
+        }
+
+    shifts_arr = np.array(shifts)
+    mean_shift = float(shifts_arr.mean())
+    se_shift = (
+        float(shifts_arr.std(ddof=1) / np.sqrt(len(shifts_arr)))
+        if len(shifts_arr) > 1
+        else 0.0
+    )
+
+    # 95% CI via t-distribution
+    from scipy import stats as sp_stats
+
+    if len(shifts_arr) > 1:
+        t_crit = sp_stats.t.ppf(0.975, df=len(shifts_arr) - 1)
+        ci_lo = mean_shift - t_crit * se_shift
+        ci_hi = mean_shift + t_crit * se_shift
+    else:
+        ci_lo, ci_hi = mean_shift, mean_shift
+
+    return {
+        "mean_shift": mean_shift,
+        "se_shift": se_shift,
+        "n": len(shifts_arr),
+        "ci_lo": float(ci_lo),
+        "ci_hi": float(ci_hi),
+        "per_song_shifts": shifts_arr.tolist(),
+    }
+
+
+# ═════════════════════════════════════════════════════════════════════════════
+# GPU v2: Conditioned Ablation + Sufficiency (paired design)
+# ═════════════════════════════════════════════════════════════════════════════
+
+
+def run_gpu_conditioned(
+    model,
+    encoding,
+    sae_models,
+    sas_vectors,
+    register_hooks,
+    remove_hooks,
+    rep_module,
+    device,
+    output_dir: pathlib.Path,
+    notes_dir: str,
+    n_songs=15,
+    concepts=None,
+    lambdas=None,
+    conditioning_beats=16,
+    continuation_len=256,
+):
+    """Unified conditioned experiment: shared baselines + paired design.
+
+    For each concept:
+    1. Find n_songs seed songs with extreme initial values
+    2. Generate baseline (λ=0) for each seed → shared across all conditions
+    3. Generate full vector (λ) for each seed
+    4. Generate ablated variants (−top1, −top3, −top5, −top10)
+    5. Generate sufficiency variants (top1-only, top3-only, top5-only, top10-only)
+    6. Compute paired within-song shifts with CIs
+
+    Also separates positive-only and negative-only features for diagnostic.
+    """
+    concepts = concepts or CONCEPTS
+    lambdas = lambdas or [1.0]
+    ablation_ks = [1, 3, 5, 10]
+    sufficiency_ks = [1, 3, 5, 10, 20]
+    output_dir.mkdir(parents=True, exist_ok=True)
+    all_results = {}
+
+    for concept in concepts:
+        if concept not in sas_vectors:
+            continue
+        label = CONCEPT_LABELS[concept]
+        metric_key = "mean_pitch" if "pitch" in concept else "mean_duration"
+        logger.info(f"═══ CONDITIONED: {label} ═══")
+
+        vecs = sas_vectors[concept]
+        v_layer = vecs[STEERING_LAYER]
+        top_features = get_top_features(
+            v_layer, max(max(ablation_ks), max(sufficiency_ks))
+        )
+
+        # Separate positive and negative features
+        pos_features = np.array([f for f in top_features if v_layer[f] > 0])
+        neg_features = np.array([f for f in top_features if v_layer[f] < 0])
+
+        # Find seed songs
+        logger.info("  Finding seed songs...")
+        seed_songs = _find_seed_songs(
+            notes_dir, encoding, concept, n_songs, conditioning_beats, rep_module
+        )
+        if not seed_songs:
+            logger.warning(f"  No seed songs found, skipping {concept}")
+            continue
+
+        concept_results = {
+            "feature_ranking": top_features.tolist(),
+            "n_pos_features": len(pos_features),
+            "n_neg_features": len(neg_features),
+            "n_seed_songs": len(seed_songs),
+            "seed_songs": [s[0].stem for s in seed_songs],
+            "conditions": {},
+        }
+
+        for lam in lambdas:
+            logger.info(f"  λ = {lam}")
+
+            # ── Shared baseline (λ=0) ──
+            logger.info("    [Baseline] lambda=0")
+            base_res = _generate_conditioned_paired(
+                model,
+                encoding,
+                sae_models,
+                vecs,
+                0.0,
+                register_hooks,
+                remove_hooks,
+                rep_module,
+                device,
+                seed_songs,
+                concept,
+                conditioning_beats,
+                continuation_len,
+            )
+
+            # ── Full vector ──
+            logger.info("    [Full] all features")
+            full_res = _generate_conditioned_paired(
+                model,
+                encoding,
+                sae_models,
+                vecs,
+                lam,
+                register_hooks,
+                remove_hooks,
+                rep_module,
+                device,
+                seed_songs,
+                concept,
+                conditioning_beats,
+                continuation_len,
+            )
+            full_stats = _compute_paired_stats(base_res, full_res, metric_key)
+            logger.info(
+                f"    Full shift: {full_stats['mean_shift']:+.2f} "
+                f"± {full_stats['se_shift']:.2f} "
+                f"(95%CI [{full_stats['ci_lo']:+.2f}, {full_stats['ci_hi']:+.2f}])"
+            )
+
+            condition = {
+                "lambda": lam,
+                "n_songs": len(seed_songs),
+                "full": full_stats,
+                "ablations": [],
+                "sufficiency": [],
+                "positive_only": None,
+                "baseline_samples": base_res,
+                "full_samples": full_res,
+            }
+
+            # ── Ablation experiments ──
+            for k in ablation_ks:
+                if k > len(top_features):
+                    break
+                ablate_idx = top_features[:k]
+                ablated_signs = [("+" if v_layer[f] > 0 else "-") for f in ablate_idx]
+                logger.info(
+                    f"    [Ablate] −top-{k}: {ablate_idx.tolist()[:5]} "
+                    f"signs={ablated_signs[:5]}"
+                )
+
+                mod_vecs = make_modified_vectors(
+                    vecs,
+                    STEERING_LAYER,
+                    lambda v, idx=ablate_idx: ablate_vector(v, idx),
+                )
+
+                abl_res = _generate_conditioned_paired(
+                    model,
+                    encoding,
+                    sae_models,
+                    mod_vecs,
+                    lam,
+                    register_hooks,
+                    remove_hooks,
+                    rep_module,
+                    device,
+                    seed_songs,
+                    concept,
+                    conditioning_beats,
+                    continuation_len,
+                )
+                abl_stats = _compute_paired_stats(base_res, abl_res, metric_key)
+                retention = (
+                    abl_stats["mean_shift"] / full_stats["mean_shift"]
+                    if abs(full_stats["mean_shift"]) > 0.01
+                    else np.nan
+                )
+
+                logger.info(
+                    f"            shift={abl_stats['mean_shift']:+.2f} "
+                    f"± {abl_stats['se_shift']:.2f}  "
+                    f"retention={retention:.1%}"
+                    if not np.isnan(retention)
+                    else f"            shift={abl_stats['mean_shift']:+.2f}"
+                )
+
+                condition["ablations"].append(
+                    {
+                        "k_ablated": k,
+                        "ablated_features": ablate_idx.tolist(),
+                        "ablated_signs": ablated_signs,
+                        "stats": abl_stats,
+                        "retention": (
+                            float(retention) if not np.isnan(retention) else None
+                        ),
+                    }
+                )
+
+            # ── Sufficiency experiments ──
+            for k in sufficiency_ks:
+                if k > len(top_features):
+                    break
+                keep_idx = top_features[:k]
+                kept_signs = [("+" if v_layer[f] > 0 else "-") for f in keep_idx]
+                logger.info(
+                    f"    [Suffic] top-{k} only: {keep_idx.tolist()[:5]} "
+                    f"signs={kept_signs[:5]}"
+                )
+
+                mod_vecs = make_modified_vectors(
+                    vecs, STEERING_LAYER, lambda v, idx=keep_idx: isolate_vector(v, idx)
+                )
+
+                suf_res = _generate_conditioned_paired(
+                    model,
+                    encoding,
+                    sae_models,
+                    mod_vecs,
+                    lam,
+                    register_hooks,
+                    remove_hooks,
+                    rep_module,
+                    device,
+                    seed_songs,
+                    concept,
+                    conditioning_beats,
+                    continuation_len,
+                )
+                suf_stats = _compute_paired_stats(base_res, suf_res, metric_key)
+                achieved = (
+                    suf_stats["mean_shift"] / full_stats["mean_shift"]
+                    if abs(full_stats["mean_shift"]) > 0.01
+                    else np.nan
+                )
+
+                logger.info(
+                    f"            shift={suf_stats['mean_shift']:+.2f} "
+                    f"± {suf_stats['se_shift']:.2f}  "
+                    f"achieved={achieved:.1%}"
+                    if not np.isnan(achieved)
+                    else f"            shift={suf_stats['mean_shift']:+.2f}"
+                )
+
+                condition["sufficiency"].append(
+                    {
+                        "k_retained": k,
+                        "retained_features": keep_idx.tolist(),
+                        "kept_signs": kept_signs,
+                        "stats": suf_stats,
+                        "achieved_pct": (
+                            float(achieved) if not np.isnan(achieved) else None
+                        ),
+                    }
+                )
+
+            # ── Positive-only sufficiency (diagnostic) ──
+            if len(pos_features) >= 1:
+                logger.info(f"    [PosOnly] {len(pos_features)} positive features")
+                mod_vecs = make_modified_vectors(
+                    vecs,
+                    STEERING_LAYER,
+                    lambda v, idx=pos_features: isolate_vector(v, idx),
+                )
+
+                pos_res = _generate_conditioned_paired(
+                    model,
+                    encoding,
+                    sae_models,
+                    mod_vecs,
+                    lam,
+                    register_hooks,
+                    remove_hooks,
+                    rep_module,
+                    device,
+                    seed_songs,
+                    concept,
+                    conditioning_beats,
+                    continuation_len,
+                )
+                pos_stats = _compute_paired_stats(base_res, pos_res, metric_key)
+                pos_achieved = (
+                    pos_stats["mean_shift"] / full_stats["mean_shift"]
+                    if abs(full_stats["mean_shift"]) > 0.01
+                    else np.nan
+                )
+
+                logger.info(
+                    f"            shift={pos_stats['mean_shift']:+.2f} "
+                    f"± {pos_stats['se_shift']:.2f}  "
+                    f"achieved={pos_achieved:.1%}"
+                    if not np.isnan(pos_achieved)
+                    else f"            shift={pos_stats['mean_shift']:+.2f}"
+                )
+
+                condition["positive_only"] = {
+                    "n_features": len(pos_features),
+                    "features": pos_features.tolist(),
+                    "stats": pos_stats,
+                    "achieved_pct": (
+                        float(pos_achieved) if not np.isnan(pos_achieved) else None
+                    ),
+                }
+
+            concept_results["conditions"][str(lam)] = condition
+
+        all_results[concept] = concept_results
+
+    # ── Save ──
+    json_path = output_dir / "conditioned_causal_results.json"
+    with open(json_path, "w") as f:
+        json.dump(all_results, f, indent=2, default=str)
+    logger.info(f"Saved: {json_path}")
+
+    # ── Plot combined ablation + sufficiency ──
+    if HAS_MPL and all_results:
+        _plot_conditioned_results(all_results, output_dir)
+
+    return all_results
+
+
+def _plot_conditioned_results(results: Dict, output_dir: pathlib.Path):
+    """Fig 7: Combined ablation + sufficiency with CIs (conditioned)."""
+    for concept, res in results.items():
+        label = CONCEPT_LABELS[concept]
+
+        for lam_str, cond in res["conditions"].items():
+            fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(14, 5.5))
+            fig.suptitle(
+                f"{label} — Causal Feature Analysis (λ={lam_str}, "
+                f"n={cond['n_songs']} songs, paired)",
+                fontsize=13,
+                fontweight="bold",
+            )
+
+            full_shift = cond["full"]["mean_shift"]
+
+            # ── Left: Ablation ──
+            ks = [0] + [a["k_ablated"] for a in cond["ablations"]]
+            shifts = [full_shift] + [
+                a["stats"]["mean_shift"] for a in cond["ablations"]
+            ]
+            ses = [cond["full"]["se_shift"]] + [
+                a["stats"]["se_shift"] for a in cond["ablations"]
+            ]
+
+            ax1.errorbar(
+                ks,
+                shifts,
+                yerr=[1.96 * s for s in ses],
+                fmt="o-",
+                linewidth=2,
+                markersize=8,
+                capsize=5,
+                color="#C62828",
+                label="Steering shift",
+            )
+            ax1.axhline(
+                y=full_shift,
+                color="gray",
+                linestyle="--",
+                alpha=0.5,
+                label=f"Full shift ({full_shift:+.2f})",
+            )
+            ax1.axhline(y=0, color="black", linewidth=0.5)
+
+            # Annotate with retention %
+            for a in cond["ablations"]:
+                if a["retention"] is not None:
+                    ax1.annotate(
+                        f"{a['retention']:.0%}",
+                        (a["k_ablated"], a["stats"]["mean_shift"]),
+                        textcoords="offset points",
+                        xytext=(8, 8),
+                        fontsize=9,
+                        color="#555",
+                    )
+
+            ax1.set_xlabel("# Top Features Ablated")
+            ax1.set_ylabel("Paired Mean Shift (±95% CI)")
+            ax1.set_title("(a) Feature Ablation (Necessity)", fontweight="bold")
+            ax1.legend(fontsize=9)
+            ax1.grid(True, alpha=0.3)
+
+            # ── Right: Sufficiency ──
+            ks2 = [s["k_retained"] for s in cond["sufficiency"]]
+            shifts2 = [s["stats"]["mean_shift"] for s in cond["sufficiency"]]
+            ses2 = [s["stats"]["se_shift"] for s in cond["sufficiency"]]
+
+            # Add full vector point
+            n_active = len(res["feature_ranking"])
+            ks2.append(n_active)
+            shifts2.append(full_shift)
+            ses2.append(cond["full"]["se_shift"])
+
+            ax2.errorbar(
+                ks2,
+                shifts2,
+                yerr=[1.96 * s for s in ses2],
+                fmt="s-",
+                linewidth=2,
+                markersize=8,
+                capsize=5,
+                color="#1565C0",
+                label="Steering shift",
+            )
+            ax2.axhline(
+                y=full_shift,
+                color="gray",
+                linestyle="--",
+                alpha=0.5,
+                label=f"Full shift ({full_shift:+.2f})",
+            )
+            ax2.axhline(y=0, color="black", linewidth=0.5)
+
+            # Annotate with achieved %
+            for s in cond["sufficiency"]:
+                if s["achieved_pct"] is not None:
+                    ax2.annotate(
+                        f"{s['achieved_pct']:.0%}",
+                        (s["k_retained"], s["stats"]["mean_shift"]),
+                        textcoords="offset points",
+                        xytext=(8, 8),
+                        fontsize=9,
+                        color="#555",
+                    )
+
+            # Positive-only point
+            if (
+                cond.get("positive_only")
+                and cond["positive_only"]["stats"]["mean_shift"] is not None
+            ):
+                pos = cond["positive_only"]
+                ax2.plot(
+                    pos["n_features"],
+                    pos["stats"]["mean_shift"],
+                    "D",
+                    color="#E65100",
+                    markersize=10,
+                    zorder=5,
+                    label=f"Pos-only ({pos['n_features']}f)",
+                )
+                ax2.errorbar(
+                    [pos["n_features"]],
+                    [pos["stats"]["mean_shift"]],
+                    yerr=[1.96 * pos["stats"]["se_shift"]],
+                    fmt="none",
+                    color="#E65100",
+                    capsize=5,
+                )
+
+            ax2.set_xlabel("# Features Retained")
+            ax2.set_ylabel("Paired Mean Shift (±95% CI)")
+            ax2.set_title("(b) Feature Sufficiency", fontweight="bold")
+            ax2.legend(fontsize=9)
+            ax2.grid(True, alpha=0.3)
+
+            plt.tight_layout()
+            path = output_dir / f"fig7_conditioned_{concept}_lam{lam_str}.pdf"
+            fig.savefig(path)
+            fig.savefig(path.with_suffix(".png"))
+            plt.close(fig)
+            logger.info(f"Saved: {path}")
 
 
 # ═════════════════════════════════════════════════════════════════════════════
@@ -1760,6 +2404,7 @@ def parse_args():
             "sufficiency",
             "cumulative",
             "gpu",
+            "conditioned",
             "all",
             "report",
         ],
@@ -1782,6 +2427,12 @@ def parse_args():
     parser.add_argument("--checkpoint", type=str, default=str(DEFAULT_CHECKPOINT))
     parser.add_argument("--train_args", type=str, default=str(DEFAULT_TRAIN_ARGS))
     parser.add_argument("--encoding", type=str, default=str(DEFAULT_ENCODING))
+    parser.add_argument(
+        "--notes_dir",
+        type=str,
+        default=str(DEFAULT_NOTES_DIR),
+        help="Dataset directory for finding seed songs (conditioned mode)",
+    )
 
     # GPU experiment params
     parser.add_argument("--gpu", type=int, default=0, help="GPU index (-1 for CPU)")
@@ -1793,6 +2444,18 @@ def parse_args():
         type=str,
         default="1.0",
         help="Comma-separated λ values for GPU experiments",
+    )
+    parser.add_argument(
+        "--n_songs",
+        type=int,
+        default=15,
+        help="Number of seed songs for conditioned experiments (default: 15)",
+    )
+    parser.add_argument(
+        "--conditioning_beats",
+        type=int,
+        default=16,
+        help="Number of beats for conditioning prefix (default: 16)",
     )
 
     return parser.parse_args()
@@ -1834,6 +2497,7 @@ def main():
         "sufficiency",
         "cumulative",
         "gpu",
+        "conditioned",
         "all",
     )
 
@@ -1903,6 +2567,25 @@ def main():
                 output_dir,
                 n_samples=args.n_samples,
                 concepts=concepts,
+            )
+
+        if args.experiment in ("conditioned", "all"):
+            logger.info("━━━ Experiment 7: Conditioned Causal Analysis (v2) ━━━")
+            run_gpu_conditioned(
+                model,
+                encoding,
+                sae_models,
+                sas_vectors,
+                register_hooks,
+                remove_hooks,
+                rep_module,
+                device,
+                output_dir,
+                notes_dir=args.notes_dir,
+                n_songs=args.n_songs,
+                concepts=concepts,
+                lambdas=[float(x) for x in args.lambdas.split(",")],
+                conditioning_beats=args.conditioning_beats,
             )
 
     # ── Report ──
