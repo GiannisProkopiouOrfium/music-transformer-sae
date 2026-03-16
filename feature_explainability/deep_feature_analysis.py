@@ -753,6 +753,842 @@ def _plot_predicted_impact(results: Dict, output_dir: pathlib.Path):
 
 
 # ═════════════════════════════════════════════════════════════════════════════
+# OFFLINE Experiment 4: Feature Activation Heatmap
+# ═════════════════════════════════════════════════════════════════════════════
+
+
+def run_heatmap(sas_dir: pathlib.Path, output_dir: pathlib.Path, concepts=None):
+    """Visualize sparse activations for top features across high/low songs.
+
+    For each concept, shows a heatmap of the top-20 SAS features (rows) × songs
+    (columns, split high vs low). Provides immediate visual evidence that SAS
+    features are monosemantic: high-concept songs should light up specific rows.
+    """
+    concepts = concepts or CONCEPTS
+    output_dir.mkdir(parents=True, exist_ok=True)
+    all_results = {}
+
+    for concept in concepts:
+        label = CONCEPT_LABELS[concept]
+        logger.info(f"─── Feature Heatmap: {label} ───")
+
+        sas_vecs = load_sas_vectors_np(sas_dir, concept)
+        high_sparse = load_sparse_activations(sas_dir, concept, "high")
+        low_sparse = load_sparse_activations(sas_dir, concept, "low")
+
+        if sas_vecs is None or high_sparse is None or low_sparse is None:
+            logger.warning(f"Skipping {concept}: missing data")
+            continue
+
+        v_sas = sas_vecs[STEERING_LAYER]
+        s_high = high_sparse[STEERING_LAYER]
+        s_low = low_sparse[STEERING_LAYER]
+
+        top_20 = get_top_features(v_sas, 20)
+        n_show = min(30, s_high.shape[0], s_low.shape[0])
+
+        # Compute summary stats per feature
+        feature_info = []
+        for rank, fid in enumerate(top_20):
+            h_mean = float(s_high[:, fid].mean())
+            l_mean = float(s_low[:, fid].mean())
+            weight = float(v_sas[fid])
+            feature_info.append(
+                {
+                    "rank": rank + 1,
+                    "feature_id": int(fid),
+                    "sas_weight": weight,
+                    "high_mean_act": h_mean,
+                    "low_mean_act": l_mean,
+                    "contrast_ratio": h_mean / (l_mean + 1e-10),
+                }
+            )
+            logger.info(
+                f"  F{fid:4d} w={weight:+.3f} | "
+                f"high={h_mean:.3f} low={l_mean:.3f} | "
+                f"ratio={h_mean / (l_mean + 1e-10):.2f}"
+            )
+
+        all_results[concept] = {
+            "features": feature_info,
+            "n_songs_shown": n_show,
+        }
+
+    json_path = output_dir / "heatmap_results.json"
+    with open(json_path, "w") as f:
+        json.dump(all_results, f, indent=2)
+    logger.info(f"Saved: {json_path}")
+
+    if HAS_MPL:
+        for concept in concepts:
+            sas_vecs = load_sas_vectors_np(sas_dir, concept)
+            high_sparse = load_sparse_activations(sas_dir, concept, "high")
+            low_sparse = load_sparse_activations(sas_dir, concept, "low")
+            if sas_vecs is None or high_sparse is None or low_sparse is None:
+                continue
+            _plot_heatmap(
+                sas_vecs[STEERING_LAYER],
+                high_sparse[STEERING_LAYER],
+                low_sparse[STEERING_LAYER],
+                concept,
+                output_dir,
+            )
+
+    return all_results
+
+
+def _plot_heatmap(v_sas, s_high, s_low, concept, output_dir):
+    """Fig 8: Feature activation heatmap — high vs low songs."""
+    label = CONCEPT_LABELS[concept]
+    top_20 = get_top_features(v_sas, 20)
+    n_show = min(30, s_high.shape[0], s_low.shape[0])
+
+    h_sub = s_high[:n_show, top_20].T
+    l_sub = s_low[:n_show, top_20].T
+    combined = np.concatenate([l_sub, h_sub], axis=1)
+
+    vmax = np.percentile(combined[combined > 0], 95) if (combined > 0).any() else 1.0
+
+    fig, (ax1, ax2, ax_cb) = plt.subplots(
+        1,
+        3,
+        figsize=(14, 7),
+        gridspec_kw={"width_ratios": [1, 1, 0.05]},
+    )
+
+    ylabels = [f"F{fid} ({v_sas[fid]:+.2f})" for fid in top_20]
+
+    ax1.imshow(l_sub, aspect="auto", cmap="YlOrRd", vmin=0, vmax=vmax)
+    ax1.set_title(f"Low-{label} Songs (n={n_show})", fontweight="bold")
+    ax1.set_ylabel("Feature (SAS weight)")
+    ax1.set_xlabel("Song index")
+    ax1.set_yticks(range(len(ylabels)))
+    ax1.set_yticklabels(ylabels, fontsize=8)
+
+    im2 = ax2.imshow(h_sub, aspect="auto", cmap="YlOrRd", vmin=0, vmax=vmax)
+    ax2.set_title(f"High-{label} Songs (n={n_show})", fontweight="bold")
+    ax2.set_xlabel("Song index")
+    ax2.set_yticks(range(len(ylabels)))
+    ax2.set_yticklabels([], fontsize=8)
+
+    fig.colorbar(im2, cax=ax_cb, label="Sparse Activation")
+    fig.suptitle(
+        f"{label} — Top-20 SAS Feature Activations",
+        fontsize=14,
+        fontweight="bold",
+        y=1.02,
+    )
+
+    plt.tight_layout()
+    path = output_dir / f"fig8_heatmap_{concept}.pdf"
+    fig.savefig(path)
+    fig.savefig(path.with_suffix(".png"))
+    plt.close(fig)
+    logger.info(f"Saved: {path}")
+
+
+# ═════════════════════════════════════════════════════════════════════════════
+# OFFLINE Experiment 5: Cross-Concept Crosstalk
+# ═════════════════════════════════════════════════════════════════════════════
+
+
+def run_crosstalk(sas_dir: pathlib.Path, output_dir: pathlib.Path, concepts=None):
+    """Measure how much steering one concept leaks into the other.
+
+    For each concept pair, compute:
+    - Energy of concept A's SAS vector projected onto concept B's active features
+    - Fraction of concept A's energy in concept B's feature space
+    - Pearson correlation between the two SAS vectors restricted to shared features
+
+    This proves SAS vectors are *specific*: steering pitch doesn't disrupt
+    duration features (and vice versa).
+    """
+    concepts = concepts or CONCEPTS
+    output_dir.mkdir(parents=True, exist_ok=True)
+
+    # Load all SAS vectors
+    all_vecs = {}
+    all_high = {}
+    all_low = {}
+    for concept in concepts:
+        vecs = load_sas_vectors_np(sas_dir, concept)
+        high = load_sparse_activations(sas_dir, concept, "high")
+        low = load_sparse_activations(sas_dir, concept, "low")
+        if vecs is not None:
+            all_vecs[concept] = vecs[STEERING_LAYER]
+        if high is not None:
+            all_high[concept] = high[STEERING_LAYER]
+        if low is not None:
+            all_low[concept] = low[STEERING_LAYER]
+
+    if len(all_vecs) < 2:
+        logger.warning("Need at least 2 concepts for crosstalk analysis")
+        return {}
+
+    results = {}
+    concept_list = list(all_vecs.keys())
+
+    for i, ca in enumerate(concept_list):
+        for j, cb in enumerate(concept_list):
+            if i == j:
+                continue
+
+            va = all_vecs[ca]
+            vb = all_vecs[cb]
+
+            # Active feature sets
+            active_a = set(np.nonzero(va)[0])
+            active_b = set(np.nonzero(vb)[0])
+            shared = active_a & active_b
+
+            # Energy of A's vector on B's features
+            b_features = np.array(list(active_b))
+            energy_a_total = float(np.abs(va).sum())
+            energy_a_on_b = (
+                float(np.abs(va[b_features]).sum()) if len(b_features) > 0 else 0.0
+            )
+            leak_pct = energy_a_on_b / energy_a_total * 100 if energy_a_total > 0 else 0
+
+            # Cosine similarity between full vectors
+            cos_sim = float(
+                np.dot(va, vb) / (np.linalg.norm(va) * np.linalg.norm(vb) + 1e-10)
+            )
+
+            # Mean activation of B-selective features during A steering
+            # Use A's high/low activations, look at B's top features
+            top_b = get_top_features(vb, 20)
+            if ca in all_high and ca in all_low:
+                h_act_on_b = float(all_high[ca][:, top_b].mean())
+                l_act_on_b = float(all_low[ca][:, top_b].mean())
+                crosstalk_shift = h_act_on_b - l_act_on_b
+            else:
+                h_act_on_b = l_act_on_b = crosstalk_shift = np.nan
+
+            pair_key = f"{ca}_on_{cb}"
+            results[pair_key] = {
+                "source": ca,
+                "target": cb,
+                "source_active": len(active_a),
+                "target_active": len(active_b),
+                "shared_features": len(shared),
+                "jaccard": (
+                    len(shared) / len(active_a | active_b)
+                    if (active_a | active_b)
+                    else 0
+                ),
+                "energy_leak_pct": leak_pct,
+                "cosine_similarity": cos_sim,
+                "target_top20_high_act": h_act_on_b,
+                "target_top20_low_act": l_act_on_b,
+                "crosstalk_shift": crosstalk_shift,
+            }
+
+            logger.info(
+                f"  {CONCEPT_LABELS[ca]} → {CONCEPT_LABELS[cb]}: "
+                f"leak={leak_pct:.1f}% | shared={len(shared)} | "
+                f"cos={cos_sim:.4f} | crosstalk_shift={crosstalk_shift:+.4f}"
+            )
+
+    json_path = output_dir / "crosstalk_results.json"
+    with open(json_path, "w") as f:
+        json.dump(results, f, indent=2)
+    logger.info(f"Saved: {json_path}")
+
+    if HAS_MPL and results:
+        _plot_crosstalk(results, all_vecs, output_dir)
+
+    return results
+
+
+def _plot_crosstalk(results: Dict, all_vecs: Dict, output_dir: pathlib.Path):
+    """Fig 9: Cross-concept specificity analysis."""
+    concepts = list(all_vecs.keys())
+    n = len(concepts)
+
+    fig, axes = plt.subplots(1, 3, figsize=(16, 5))
+
+    # (a) Feature overlap Venn-style bar chart
+    ax = axes[0]
+    for pair_key, r in results.items():
+        ca, cb = r["source"], r["target"]
+        la, lb = CONCEPT_LABELS[ca], CONCEPT_LABELS[cb]
+        shared = r["shared_features"]
+        a_only = r["source_active"] - shared
+        b_only = r["target_active"] - shared
+        x = [0, 1, 2]
+        vals = [a_only, shared, b_only]
+        colors = ["#1565C0", "#7B1FA2", "#C62828"]
+        labels_bar = [f"{la}-only", "Shared", f"{lb}-only"]
+        ax.bar(x, vals, color=colors, alpha=0.8, tick_label=labels_bar)
+        ax.set_ylabel("Number of Active Features")
+        ax.set_title("(a) Feature Overlap", fontweight="bold")
+        # Add count labels
+        for xi, vi in zip(x, vals):
+            ax.text(xi, vi + 5, str(vi), ha="center", fontsize=10, fontweight="bold")
+        break  # Only one pair for 2-concept case
+
+    # (b) Energy leak bar chart
+    ax = axes[1]
+    pair_keys = list(results.keys())
+    pair_labels = [
+        f"{CONCEPT_LABELS[r['source']]}→{CONCEPT_LABELS[r['target']]}"
+        for r in results.values()
+    ]
+    leaks = [r["energy_leak_pct"] for r in results.values()]
+    bar_colors = ["#EF6C00", "#00838F"][: len(pair_keys)]
+    ax.bar(range(len(pair_keys)), leaks, color=bar_colors, alpha=0.85)
+    ax.set_xticks(range(len(pair_keys)))
+    ax.set_xticklabels(pair_labels, fontsize=10)
+    ax.set_ylabel("Energy Leak (%)")
+    ax.set_title("(b) Cross-Concept Energy Leak", fontweight="bold")
+    ax.set_ylim(0, max(leaks) * 1.3 if leaks else 10)
+    for i, v in enumerate(leaks):
+        ax.text(i, v + 0.3, f"{v:.1f}%", ha="center", fontsize=10, fontweight="bold")
+    ax.grid(True, alpha=0.3, axis="y")
+
+    # (c) SAS vector comparison scatter (pitch features vs duration features)
+    ax = axes[2]
+    if n >= 2:
+        va = all_vecs[concepts[0]]
+        vb = all_vecs[concepts[1]]
+        # Show only features active in either
+        active = (va != 0) | (vb != 0)
+        ax.scatter(va[active], vb[active], s=10, alpha=0.5, c="#555", edgecolors="none")
+        ax.axhline(0, color="gray", linewidth=0.5)
+        ax.axvline(0, color="gray", linewidth=0.5)
+        ax.set_xlabel(f"{CONCEPT_LABELS[concepts[0]]} SAS weight")
+        ax.set_ylabel(f"{CONCEPT_LABELS[concepts[1]]} SAS weight")
+        ax.set_title("(c) Feature Weight Scatter", fontweight="bold")
+        ax.grid(True, alpha=0.3)
+
+        # Annotate correlation
+        active_both = (va != 0) & (vb != 0)
+        if active_both.sum() > 2:
+            from scipy import stats as sp_stats
+
+            r_val, p_val = sp_stats.pearsonr(va[active_both], vb[active_both])
+            ax.text(
+                0.05,
+                0.95,
+                f"r = {r_val:.3f} (shared features)\np = {p_val:.2e}",
+                transform=ax.transAxes,
+                fontsize=9,
+                verticalalignment="top",
+                bbox={"boxstyle": "round", "facecolor": "wheat", "alpha": 0.8},
+            )
+
+    fig.suptitle(
+        "Cross-Concept Specificity Analysis (SAS)",
+        fontsize=14,
+        fontweight="bold",
+    )
+    plt.tight_layout()
+    path = output_dir / "fig9_crosstalk.pdf"
+    fig.savefig(path)
+    fig.savefig(path.with_suffix(".png"))
+    plt.close(fig)
+    logger.info(f"Saved: {path}")
+
+
+# ═════════════════════════════════════════════════════════════════════════════
+# OFFLINE Experiment 6: DiffMean Feature Attribution Comparison
+# ═════════════════════════════════════════════════════════════════════════════
+
+
+def run_dm_selectivity(
+    sas_dir: pathlib.Path,
+    dm_dir: pathlib.Path,
+    sae_dir: pathlib.Path,
+    output_dir: pathlib.Path,
+    concepts=None,
+):
+    """Compare per-feature selectivity of SAS vs DiffMean-projected features.
+
+    For each concept:
+    1. Project DiffMean vector through SAE encoder → DM sparse footprint
+    2. Take top-20 features of the DM projection
+    3. Run the same selectivity t-tests on those features (using high/low activations)
+    4. Compare Cohen's d distribution: SAS features vs DM features
+
+    This proves SAS features are more monosemantic: higher Cohen's d per feature.
+    """
+    from scipy import stats as sp_stats
+
+    concepts = concepts or CONCEPTS
+    output_dir.mkdir(parents=True, exist_ok=True)
+    all_results = {}
+
+    for concept in concepts:
+        label = CONCEPT_LABELS[concept]
+        logger.info(f"─── DM vs SAS Selectivity: {label} ───")
+
+        sas_vecs = load_sas_vectors_np(sas_dir, concept)
+        dm_vecs = load_diffmean_vectors(dm_dir, concept)
+        high_sparse = load_sparse_activations(sas_dir, concept, "high")
+        low_sparse = load_sparse_activations(sas_dir, concept, "low")
+
+        if sas_vecs is None or high_sparse is None or low_sparse is None:
+            logger.warning(f"Skipping {concept}: missing SAS data")
+            continue
+        if dm_vecs is None or not HAS_TORCH:
+            logger.warning(f"Skipping {concept}: no DiffMean vectors or torch")
+            continue
+
+        v_sas = sas_vecs[STEERING_LAYER]
+        s_high = high_sparse[STEERING_LAYER]
+        s_low = low_sparse[STEERING_LAYER]
+        dm_vec = dm_vecs.get(STEERING_LAYER)
+        if dm_vec is None:
+            continue
+
+        # Project DM through SAE
+        dm_projected = _project_dm_through_sae(dm_vec, sae_dir, STEERING_LAYER)
+        if dm_projected is None:
+            logger.warning(f"SAE projection failed for {concept}")
+            continue
+
+        # Selectivity for SAS top-20
+        sas_top = get_top_features(v_sas, 20)
+        sas_stats = _compute_feature_selectivity(
+            sas_top, s_high, s_low, v_sas, sp_stats
+        )
+
+        # Selectivity for DM-projected top-20
+        dm_top = get_top_features(dm_projected, 20)
+        dm_stats = _compute_feature_selectivity(
+            dm_top, s_high, s_low, dm_projected, sp_stats
+        )
+
+        # Summary comparison
+        sas_ds = [s["cohens_d"] for s in sas_stats if s["cohens_d"] is not None]
+        dm_ds = [s["cohens_d"] for s in dm_stats if s["cohens_d"] is not None]
+        sas_sig = sum(
+            1 for s in sas_stats if s["p_value"] is not None and s["p_value"] < 0.05
+        )
+        dm_sig = sum(
+            1 for s in dm_stats if s["p_value"] is not None and s["p_value"] < 0.05
+        )
+
+        summary = {
+            "sas_mean_d": float(np.mean(sas_ds)) if sas_ds else 0,
+            "dm_mean_d": float(np.mean(dm_ds)) if dm_ds else 0,
+            "sas_median_d": float(np.median(sas_ds)) if sas_ds else 0,
+            "dm_median_d": float(np.median(dm_ds)) if dm_ds else 0,
+            "sas_sig_count": sas_sig,
+            "dm_sig_count": dm_sig,
+            "sas_max_d": float(max(np.abs(d) for d in sas_ds)) if sas_ds else 0,
+            "dm_max_d": float(max(np.abs(d) for d in dm_ds)) if dm_ds else 0,
+        }
+
+        logger.info(
+            f"  SAS: mean|d|={summary['sas_mean_d']:.3f}, "
+            f"sig={sas_sig}/20, max|d|={summary['sas_max_d']:.3f}"
+        )
+        logger.info(
+            f"  DM:  mean|d|={summary['dm_mean_d']:.3f}, "
+            f"sig={dm_sig}/20, max|d|={summary['dm_max_d']:.3f}"
+        )
+
+        all_results[concept] = {
+            "sas_features": sas_stats,
+            "dm_features": dm_stats,
+            "summary": summary,
+        }
+
+    json_path = output_dir / "dm_selectivity_results.json"
+    with open(json_path, "w") as f:
+        json.dump(all_results, f, indent=2)
+    logger.info(f"Saved: {json_path}")
+
+    if HAS_MPL and all_results:
+        _plot_dm_selectivity(all_results, output_dir)
+
+    return all_results
+
+
+def _compute_feature_selectivity(feature_ids, s_high, s_low, weight_vec, sp_stats):
+    """Compute selectivity stats for a list of feature indices."""
+    stats = []
+    for rank, fid in enumerate(feature_ids):
+        h_vals = s_high[:, fid]
+        l_vals = s_low[:, fid]
+        h_nonzero = h_vals[h_vals != 0]
+        l_nonzero = l_vals[l_vals != 0]
+
+        if len(h_nonzero) > 1 and len(l_nonzero) > 1:
+            _, p_val = sp_stats.ttest_ind(h_nonzero, l_nonzero, equal_var=False)
+            pooled_std = np.sqrt((h_nonzero.var() + l_nonzero.var()) / 2)
+            cohens_d = float(
+                (h_nonzero.mean() - l_nonzero.mean()) / pooled_std
+                if pooled_std > 0
+                else 0.0
+            )
+        else:
+            _, p_val, cohens_d = np.nan, np.nan, np.nan
+
+        stats.append(
+            {
+                "rank": rank + 1,
+                "feature_id": int(fid),
+                "weight": float(weight_vec[fid]),
+                "cohens_d": float(cohens_d) if not np.isnan(cohens_d) else None,
+                "p_value": float(p_val) if not np.isnan(p_val) else None,
+            }
+        )
+    return stats
+
+
+def _plot_dm_selectivity(results: Dict, output_dir: pathlib.Path):
+    """Fig 10: SAS vs DiffMean feature selectivity comparison."""
+    n_concepts = len(results)
+    fig, axes = plt.subplots(1, n_concepts, figsize=(8 * n_concepts, 6))
+    if n_concepts == 1:
+        axes = [axes]
+
+    for ax, (concept, res) in zip(axes, results.items()):
+        label = CONCEPT_LABELS[concept]
+        sas_stats = res["sas_features"]
+        dm_stats = res["dm_features"]
+
+        sas_ds = [
+            abs(s["cohens_d"]) if s["cohens_d"] is not None else 0 for s in sas_stats
+        ]
+        dm_ds = [
+            abs(s["cohens_d"]) if s["cohens_d"] is not None else 0 for s in dm_stats
+        ]
+
+        x = np.arange(len(sas_ds))
+        width = 0.35
+
+        ax.bar(
+            x - width / 2,
+            sas_ds,
+            width,
+            label="SAS features",
+            color="#1565C0",
+            alpha=0.85,
+        )
+        ax.bar(
+            x + width / 2,
+            dm_ds,
+            width,
+            label="DiffMean features",
+            color="#C62828",
+            alpha=0.85,
+        )
+
+        ax.set_xlabel("Feature rank (by vector weight)")
+        ax.set_ylabel("|Cohen's d| (selectivity)")
+        ax.set_title(
+            f"{label} — Feature Selectivity: SAS vs DiffMean", fontweight="bold"
+        )
+        ax.legend(loc="upper right")
+        ax.grid(True, alpha=0.3, axis="y")
+        ax.set_xticks(x)
+        ax.set_xticklabels([str(i + 1) for i in x], fontsize=8)
+
+        # Add mean lines
+        sas_mean = np.mean(sas_ds)
+        dm_mean = np.mean(dm_ds)
+        ax.axhline(
+            sas_mean,
+            color="#1565C0",
+            linestyle="--",
+            alpha=0.5,
+            label=f"SAS mean={sas_mean:.2f}",
+        )
+        ax.axhline(
+            dm_mean,
+            color="#C62828",
+            linestyle="--",
+            alpha=0.5,
+            label=f"DM mean={dm_mean:.2f}",
+        )
+        ax.legend(loc="upper right", fontsize=9)
+
+    plt.tight_layout()
+    path = output_dir / "fig10_dm_selectivity.pdf"
+    fig.savefig(path)
+    fig.savefig(path.with_suffix(".png"))
+    plt.close(fig)
+    logger.info(f"Saved: {path}")
+
+
+# ═════════════════════════════════════════════════════════════════════════════
+# OFFLINE Experiment 7: Paper-Ready Summary Figure
+# ═════════════════════════════════════════════════════════════════════════════
+
+
+def run_paper_figure(
+    sas_dir: pathlib.Path,
+    dm_dir: pathlib.Path,
+    sae_dir: pathlib.Path,
+    output_dir: pathlib.Path,
+    concepts=None,
+):
+    """Generate a single 2×3 panel figure summarising the full SAS interpretability
+    story. Designed for a paper figure (Fig. N in thesis).
+
+    Panels:
+      (a) SAS sparsity vs DiffMean footprint — bar chart
+      (b) Feature selectivity — Cohen's d for top-10 SAS features
+      (c) Energy concentration — Lorenz/Pareto curve
+      (d) Conditioned ablation curve with CIs (from JSON if available)
+      (e) Conditioned sufficiency curve with CIs (from JSON if available)
+      (f) Cross-concept specificity — energy leak bar
+    """
+    if not HAS_MPL:
+        logger.error("matplotlib required for paper figure")
+        return
+
+    concepts = concepts or CONCEPTS
+    output_dir.mkdir(parents=True, exist_ok=True)
+
+    # Load all needed data
+    sas_data = {}
+    dm_data = {}
+    for concept in concepts:
+        v = load_sas_vectors_np(sas_dir, concept)
+        if v is not None:
+            sas_data[concept] = v[STEERING_LAYER]
+        d = load_diffmean_vectors(dm_dir, concept)
+        if d is not None:
+            dm_data[concept] = d
+
+    # Load previously computed results
+    selectivity_path = output_dir / "selectivity_results.json"
+    projection_path = output_dir / "projection_results.json"
+    conditioned_path = output_dir / "conditioned_causal_results.json"
+    crosstalk_path = output_dir / "crosstalk_results.json"
+
+    selectivity = (
+        json.load(open(selectivity_path)) if selectivity_path.exists() else None
+    )
+    projection = json.load(open(projection_path)) if projection_path.exists() else None
+    conditioned = (
+        json.load(open(conditioned_path)) if conditioned_path.exists() else None
+    )
+    crosstalk = json.load(open(crosstalk_path)) if crosstalk_path.exists() else None
+
+    fig, axes = plt.subplots(2, 3, figsize=(18, 11))
+
+    # ── (a) SAS sparsity vs DiffMean ──
+    ax = axes[0, 0]
+    if projection:
+        concepts_to_plot = [c for c in concepts if c in projection]
+        x = np.arange(len(concepts_to_plot))
+        sas_counts = [
+            projection[c]["sas_vector"]["n_nonzero"] for c in concepts_to_plot
+        ]
+        dm_counts = [
+            (
+                projection[c]["dm_projected"]["n_nonzero"]
+                if "dm_projected" in projection[c]
+                else 0
+            )
+            for c in concepts_to_plot
+        ]
+        width = 0.35
+        ax.bar(x - width / 2, sas_counts, width, color="#1565C0", label="SAS")
+        ax.bar(x + width / 2, dm_counts, width, color="#C62828", label="DiffMean→SAE")
+        ax.set_xticks(x)
+        ax.set_xticklabels([CONCEPT_LABELS[c] for c in concepts_to_plot])
+        ax.set_ylabel("Active SAE Features")
+        ax.legend(fontsize=9)
+        for i, (sv, dv) in enumerate(zip(sas_counts, dm_counts)):
+            ax.text(i - width / 2, sv + 20, str(sv), ha="center", fontsize=9)
+            ax.text(i + width / 2, dv + 20, str(dv), ha="center", fontsize=9)
+    ax.set_title("(a) Sparse Footprint: SAS vs DiffMean", fontweight="bold")
+    ax.grid(True, alpha=0.3, axis="y")
+
+    # ── (b) Feature selectivity ──
+    ax = axes[0, 1]
+    if selectivity:
+        first_concept = (
+            concepts[0] if concepts[0] in selectivity else list(selectivity.keys())[0]
+        )
+        stats = selectivity[first_concept][:10]
+        fids = [f"F{s['feature_id']}" for s in stats]
+        ds = [s["cohens_d"] if s["cohens_d"] is not None else 0 for s in stats]
+        ps = [s["p_value"] for s in stats]
+        colors = []
+        for d, p in zip(ds, ps):
+            if p is not None and p < 0.001:
+                colors.append("#1565C0" if d > 0 else "#C62828")
+            elif p is not None and p < 0.05:
+                colors.append("#42A5F5" if d > 0 else "#EF5350")
+            else:
+                colors.append("#BDBDBD")
+        ax.barh(range(len(fids)), ds, color=colors, alpha=0.85)
+        ax.set_yticks(range(len(fids)))
+        ax.set_yticklabels(fids, fontsize=9)
+        ax.invert_yaxis()
+        ax.axvline(0, color="gray", linewidth=0.5)
+        ax.set_xlabel("Cohen's d")
+    ax.set_title(
+        f"(b) Feature Selectivity ({CONCEPT_LABELS.get(first_concept, 'Pitch')})",
+        fontweight="bold",
+    )
+
+    # ── (c) Energy concentration (Lorenz curve) ──
+    ax = axes[0, 2]
+    for concept, v_sas in sas_data.items():
+        abs_v = np.sort(np.abs(v_sas[v_sas != 0]))[::-1]
+        cumsum = np.cumsum(abs_v) / abs_v.sum()
+        x_frac = np.arange(1, len(cumsum) + 1) / len(cumsum)
+        ax.plot(x_frac, cumsum, linewidth=2, label=CONCEPT_LABELS[concept])
+    ax.plot([0, 1], [0, 1], "k--", alpha=0.3, label="Uniform")
+    ax.set_xlabel("Fraction of Active Features")
+    ax.set_ylabel("Cumulative Energy Fraction")
+    ax.set_title("(c) Energy Concentration (Lorenz)", fontweight="bold")
+    ax.legend(fontsize=9)
+    ax.grid(True, alpha=0.3)
+
+    # ── (d) Conditioned ablation with CIs ──
+    ax = axes[1, 0]
+    if conditioned:
+        for concept in concepts:
+            if concept not in conditioned:
+                continue
+            cres = conditioned[concept]
+            conditions = cres.get("conditions", {})
+            first_lam = next(iter(conditions)) if conditions else None
+            if first_lam is None:
+                continue
+            cond = conditions[first_lam]
+            full_shift = cond["full"]["mean_shift"]
+
+            ks = [0] + [a["k_ablated"] for a in cond["ablations"]]
+            retentions = [100.0] + [
+                (
+                    (a["stats"]["mean_shift"] / full_shift * 100)
+                    if abs(full_shift) > 0.01
+                    else 0
+                )
+                for a in cond["ablations"]
+            ]
+            ses = [0] + [
+                (
+                    a["stats"]["se_shift"] / abs(full_shift) * 100
+                    if abs(full_shift) > 0.01
+                    else 0
+                )
+                for a in cond["ablations"]
+            ]
+            ax.errorbar(
+                ks,
+                retentions,
+                yerr=[1.96 * s for s in ses],
+                fmt="o-",
+                linewidth=2,
+                markersize=7,
+                capsize=4,
+                label=CONCEPT_LABELS[concept],
+            )
+        ax.axhline(100, color="gray", linestyle="--", alpha=0.4)
+        ax.set_xlabel("# Top Features Ablated")
+        ax.set_ylabel("Steering Retention (%)")
+        ax.legend(fontsize=9)
+    ax.set_title("(d) Ablation: No Feature is Necessary", fontweight="bold")
+    ax.grid(True, alpha=0.3)
+
+    # ── (e) Conditioned sufficiency with CIs ──
+    ax = axes[1, 1]
+    if conditioned:
+        for concept in concepts:
+            if concept not in conditioned:
+                continue
+            cres = conditioned[concept]
+            conditions = cres.get("conditions", {})
+            first_lam = next(iter(conditions)) if conditions else None
+            if first_lam is None:
+                continue
+            cond = conditions[first_lam]
+            full_shift = cond["full"]["mean_shift"]
+
+            ks = [s["k_retained"] for s in cond["sufficiency"]]
+            achieved = [
+                (
+                    (s["stats"]["mean_shift"] / full_shift * 100)
+                    if abs(full_shift) > 0.01
+                    else 0
+                )
+                for s in cond["sufficiency"]
+            ]
+            ses = [
+                (
+                    s["stats"]["se_shift"] / abs(full_shift) * 100
+                    if abs(full_shift) > 0.01
+                    else 0
+                )
+                for s in cond["sufficiency"]
+            ]
+            ax.errorbar(
+                ks,
+                achieved,
+                yerr=[1.96 * s for s in ses],
+                fmt="s-",
+                linewidth=2,
+                markersize=7,
+                capsize=4,
+                label=CONCEPT_LABELS[concept],
+            )
+        ax.axhline(100, color="gray", linestyle="--", alpha=0.4)
+        ax.axhline(0, color="black", linewidth=0.5)
+        ax.set_xlabel("# Features Retained")
+        ax.set_ylabel("Steering Achieved (%)")
+        ax.legend(fontsize=9)
+    ax.set_title("(e) Sufficiency: Distributed Effect", fontweight="bold")
+    ax.grid(True, alpha=0.3)
+
+    # ── (f) Cross-concept specificity ──
+    ax = axes[1, 2]
+    if crosstalk:
+        pair_labels = []
+        leaks = []
+        for pair_key, r in crosstalk.items():
+            pair_labels.append(
+                f"{CONCEPT_LABELS[r['source']]}→{CONCEPT_LABELS[r['target']]}"
+            )
+            leaks.append(r["energy_leak_pct"])
+        colors_ct = ["#EF6C00", "#00838F"][: len(pair_labels)]
+        ax.bar(range(len(pair_labels)), leaks, color=colors_ct, alpha=0.85)
+        ax.set_xticks(range(len(pair_labels)))
+        ax.set_xticklabels(pair_labels, fontsize=10)
+        ax.set_ylabel("Energy Leak (%)")
+        for i, v in enumerate(leaks):
+            ax.text(
+                i, v + 0.3, f"{v:.1f}%", ha="center", fontsize=10, fontweight="bold"
+            )
+        ax.set_ylim(0, max(leaks) * 1.5 if leaks else 10)
+    else:
+        ax.text(
+            0.5,
+            0.5,
+            "Run crosstalk first",
+            transform=ax.transAxes,
+            ha="center",
+            fontsize=12,
+            color="gray",
+        )
+    ax.set_title("(f) Cross-Concept Specificity", fontweight="bold")
+    ax.grid(True, alpha=0.3, axis="y")
+
+    fig.suptitle(
+        "SAS Feature Interpretability — Complete Analysis",
+        fontsize=16,
+        fontweight="bold",
+        y=0.98,
+    )
+    plt.tight_layout(rect=[0, 0, 1, 0.96])
+    path = output_dir / "fig_paper_interpretability.pdf"
+    fig.savefig(path)
+    fig.savefig(path.with_suffix(".png"))
+    plt.close(fig)
+    logger.info(f"Saved: {path}")
+
+
+# ═════════════════════════════════════════════════════════════════════════════
 # GPU Infrastructure
 # ═════════════════════════════════════════════════════════════════════════════
 
@@ -2400,6 +3236,10 @@ def parse_args():
             "selectivity",
             "projection",
             "predicted",
+            "heatmap",
+            "crosstalk",
+            "dm_selectivity",
+            "paper_figure",
             "ablation",
             "sufficiency",
             "cumulative",
@@ -2490,6 +3330,22 @@ def main():
     if args.experiment in ("offline", "predicted", "all"):
         logger.info("━━━ Experiment 3: Predicted Impact ━━━")
         run_predicted_impact(sas_dir, output_dir, concepts)
+
+    if args.experiment in ("offline", "heatmap", "all"):
+        logger.info("━━━ Experiment 4a: Feature Activation Heatmap ━━━")
+        run_heatmap(sas_dir, output_dir, concepts)
+
+    if args.experiment in ("offline", "crosstalk", "all"):
+        logger.info("━━━ Experiment 4b: Cross-Concept Crosstalk ━━━")
+        run_crosstalk(sas_dir, output_dir, concepts)
+
+    if args.experiment in ("offline", "dm_selectivity", "all"):
+        logger.info("━━━ Experiment 4c: DiffMean Selectivity Comparison ━━━")
+        run_dm_selectivity(sas_dir, dm_dir, sae_dir, output_dir, concepts)
+
+    if args.experiment in ("paper_figure", "all"):
+        logger.info("━━━ Paper Figure: Combined Summary ━━━")
+        run_paper_figure(sas_dir, dm_dir, sae_dir, output_dir, concepts)
 
     # ── GPU experiments ──
     needs_gpu = args.experiment in (
