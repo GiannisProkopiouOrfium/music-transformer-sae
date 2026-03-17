@@ -870,33 +870,45 @@ def _plot_heatmap(v_sas, s_high, s_low, concept, output_dir):
     ylabels = [f"F{fid} ({v_sas[fid]:+.2f})" for fid in top_20]
 
     fig, axes = plt.subplots(
-        2, 2, figsize=(16, 12),
+        2,
+        2,
+        figsize=(16, 12),
         gridspec_kw={"hspace": 0.3, "wspace": 0.15},
     )
 
     # ── Top row: Binary activation ──
     ax = axes[0, 0]
-    ax.imshow(l_binary, aspect="auto", cmap="Greys", vmin=0, vmax=1, interpolation="nearest")
+    ax.imshow(
+        l_binary, aspect="auto", cmap="Greys", vmin=0, vmax=1, interpolation="nearest"
+    )
     ax.set_title(f"Low-{label} Songs — Active/Inactive", fontweight="bold")
     ax.set_ylabel("Feature (SAS weight)")
     ax.set_yticks(range(len(ylabels)))
     ax.set_yticklabels(ylabels, fontsize=7)
     ax.set_xlabel("Song index")
     for i, freq in enumerate(l_freqs):
-        ax.text(n_show + 0.5, i, f"{freq:.0%}", va="center", fontsize=7, color="#C62828")
+        ax.text(
+            n_show + 0.5, i, f"{freq:.0%}", va="center", fontsize=7, color="#C62828"
+        )
 
     ax = axes[0, 1]
-    ax.imshow(h_binary, aspect="auto", cmap="Greys", vmin=0, vmax=1, interpolation="nearest")
+    ax.imshow(
+        h_binary, aspect="auto", cmap="Greys", vmin=0, vmax=1, interpolation="nearest"
+    )
     ax.set_title(f"High-{label} Songs — Active/Inactive", fontweight="bold")
     ax.set_yticks(range(len(ylabels)))
     ax.set_yticklabels([], fontsize=7)
     ax.set_xlabel("Song index")
     for i, freq in enumerate(h_freqs):
-        ax.text(n_show + 0.5, i, f"{freq:.0%}", va="center", fontsize=7, color="#1565C0")
+        ax.text(
+            n_show + 0.5, i, f"{freq:.0%}", va="center", fontsize=7, color="#1565C0"
+        )
 
     # ── Bottom row: Continuous activation (hot colormap on black bg) ──
     ax = axes[1, 0]
-    ax.imshow(l_sub, aspect="auto", cmap="hot", vmin=0, vmax=vmax, interpolation="nearest")
+    ax.imshow(
+        l_sub, aspect="auto", cmap="hot", vmin=0, vmax=vmax, interpolation="nearest"
+    )
     ax.set_title(f"Low-{label} Songs — Activation Magnitude", fontweight="bold")
     ax.set_ylabel("Feature (SAS weight)")
     ax.set_yticks(range(len(ylabels)))
@@ -905,7 +917,9 @@ def _plot_heatmap(v_sas, s_high, s_low, concept, output_dir):
     ax.set_facecolor("black")
 
     ax = axes[1, 1]
-    im = ax.imshow(h_sub, aspect="auto", cmap="hot", vmin=0, vmax=vmax, interpolation="nearest")
+    im = ax.imshow(
+        h_sub, aspect="auto", cmap="hot", vmin=0, vmax=vmax, interpolation="nearest"
+    )
     ax.set_title(f"High-{label} Songs — Activation Magnitude", fontweight="bold")
     ax.set_yticks(range(len(ylabels)))
     ax.set_yticklabels([], fontsize=7)
@@ -916,7 +930,9 @@ def _plot_heatmap(v_sas, s_high, s_low, concept, output_dir):
 
     fig.suptitle(
         f"{label} — Top-20 SAS Feature Activations (n={n_show} random songs per group)",
-        fontsize=14, fontweight="bold", y=1.01,
+        fontsize=14,
+        fontweight="bold",
+        y=1.01,
     )
 
     plt.tight_layout()
@@ -1657,8 +1673,12 @@ def _setup_gpu_imports():
     )
 
 
-def _load_all_gpu_resources(args):
-    """Load model, SAEs, encoding, and SAS vectors."""
+def _load_all_gpu_resources(args, whitened_sas_dir=None):
+    """Load model, SAEs, encoding, and SAS vectors.
+
+    If whitened_sas_dir is provided, SAS vectors are loaded from there instead
+    of args.sas_dir (for whitening-corrected experiments).
+    """
     load_model, load_sae_models, _, register_hooks, remove_hooks, rep_module = (
         _setup_gpu_imports()
     )
@@ -1676,10 +1696,13 @@ def _load_all_gpu_resources(args):
     # Load SAEs
     sae_models = load_sae_models(pathlib.Path(args.sae_dir), device)
 
-    # Load SAS vectors
+    # Load SAS vectors (from whitened dir if provided)
+    vec_dir = whitened_sas_dir or pathlib.Path(args.sas_dir)
+    if whitened_sas_dir:
+        logger.info(f"Loading whitened SAS vectors from: {whitened_sas_dir}")
     sas_vectors = {}
     for concept in CONCEPTS:
-        vecs = load_sas_vectors_np(pathlib.Path(args.sas_dir), concept)
+        vecs = load_sas_vectors_np(vec_dir, concept)
         if vecs is not None:
             sas_vectors[concept] = vecs
 
@@ -3297,6 +3320,14 @@ def parse_args():
     parser.add_argument("--dm_dir", type=str, default=str(DEFAULT_DM_DIR))
     parser.add_argument("--output_dir", type=str, default=str(DEFAULT_OUTPUT_DIR))
     parser.add_argument(
+        "--whitened_sas_dir",
+        type=str,
+        default=None,
+        help="Directory with whitened SAS vectors (.pt files from whitening_analysis.py). "
+        "When set, predicted/ablation/sufficiency/cumulative/conditioned use these "
+        "vectors instead of --sas_dir. Sparse activations still come from --sas_dir.",
+    )
+    parser.add_argument(
         "--concepts",
         type=str,
         default=None,
@@ -3350,12 +3381,17 @@ def main():
     sas_dir = pathlib.Path(args.sas_dir)
     sae_dir = pathlib.Path(args.sae_dir)
     dm_dir = pathlib.Path(args.dm_dir)
+    whitened_sas_dir = (
+        pathlib.Path(args.whitened_sas_dir) if args.whitened_sas_dir else None
+    )
 
     logger.info("=" * 72)
     logger.info("  Deep Feature Analysis: Causal Ablation & Sufficiency")
     logger.info("=" * 72)
     logger.info(f"  Experiment: {args.experiment}")
     logger.info(f"  Output: {output_dir}")
+    if whitened_sas_dir:
+        logger.info(f"  Whitened SAS vectors: {whitened_sas_dir}")
     logger.info("")
 
     # ── Offline experiments ──
@@ -3369,7 +3405,7 @@ def main():
 
     if args.experiment in ("offline", "predicted", "all"):
         logger.info("━━━ Experiment 3: Predicted Impact ━━━")
-        run_predicted_impact(sas_dir, output_dir, concepts)
+        run_predicted_impact(whitened_sas_dir or sas_dir, output_dir, concepts)
 
     if args.experiment in ("offline", "heatmap", "all"):
         logger.info("━━━ Experiment 4a: Feature Activation Heatmap ━━━")
@@ -3413,7 +3449,7 @@ def main():
             remove_hooks,
             rep_module,
             device,
-        ) = _load_all_gpu_resources(args)
+        ) = _load_all_gpu_resources(args, whitened_sas_dir=whitened_sas_dir)
 
         if args.experiment in ("ablation", "gpu", "all"):
             logger.info("━━━ Experiment 4: Feature Ablation ━━━")

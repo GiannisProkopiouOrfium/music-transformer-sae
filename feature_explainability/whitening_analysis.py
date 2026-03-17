@@ -559,11 +559,33 @@ def main():
         json.dump(all_comparisons, f, indent=2, default=str)
     logger.info(f"Saved: {results_path}")
 
-    # Save normalized vectors
+    # Save normalized vectors — individual .npy files
     for concept, v_norm in all_normalized_vectors.items():
         vec_path = output_dir / f"{concept}_sas_vectors_whitened.npy"
         np.save(vec_path, v_norm)
         logger.info(f"Saved: {vec_path}")
+
+    # Save normalized vectors as .pt files (same format as originals)
+    # so deep_feature_analysis.py can consume them directly via --whitened_sas_dir
+    sas_dir_path = pathlib.Path(args.sas_dir)
+    for concept, v_norm in all_normalized_vectors.items():
+        orig_path = sas_dir_path / f"{concept}_sas_vectors.pt"
+        if orig_path.exists():
+            original = torch.load(orig_path, map_location="cpu", weights_only=False)
+            whitened = {}
+            for k, v in original.items():
+                layer_k = int(k)
+                if layer_k == args.layer:
+                    whitened[k] = torch.from_numpy(v_norm).float()
+                else:
+                    whitened[k] = v
+            pt_path = output_dir / f"{concept}_sas_vectors.pt"
+            torch.save(whitened, pt_path)
+            logger.info(
+                f"Saved: {pt_path} (drop-in replacement for deep_feature_analysis)"
+            )
+        else:
+            logger.warning(f"Original {orig_path} not found — skipping .pt export")
 
     plot_ranking_comparison(all_comparisons, output_dir)
 
