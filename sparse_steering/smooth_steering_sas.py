@@ -15,6 +15,18 @@ Modes
 - **warmup_hold**: schedule-shaped ramp 0 → λ over ``n_ramp``, then hold.
   Uses the configured schedule (cosine by default) for a smooth S-curve.
 
+Beat-wise mode
+--------------
+By default the schedule advances once per generated **token**.  With
+``beat_mode=True`` it advances once per distinct **musical beat** —
+giving constant-time intervals regardless of how many tokens fall in
+each beat.  A beat-observer pre-hook on the transformer wrapper tracks
+the beat dimension (index 1) of each new token and increments an
+internal beat counter whenever the beat value changes.
+
+Example: ``n_ramp=32, beat_mode=True`` means the ramp covers 32 beats
+of the generated audio.
+
 Usage
 -----
     from smooth_steering_sas import register_smooth_steering_hooks
@@ -24,6 +36,14 @@ Usage
         model, sae_models, sas_vectors,
         concept="average_pitch", steering_strength=1.0,
         layers_to_steer=[10], mode="ramp_up", n_ramp=64,
+    )
+
+    # Beat-wise ramp (constant musical-time intervals)
+    handles = register_smooth_steering_hooks(
+        model, sae_models, sas_vectors,
+        concept="average_pitch", steering_strength=1.0,
+        layers_to_steer=[10], mode="ramp_up", n_ramp=32,
+        beat_mode=True,
     )
 
     # Delayed onset
@@ -119,6 +139,13 @@ class SmoothSASSteeringHook:
         Steps for the decay phase.
     lambda_maintain : float
         Fraction of ``steering_strength`` to maintain after decay.
+    beat_mode : bool
+        If True, advance the schedule per *musical beat* rather than per
+        token.  Requires a beat-observer pre-hook (installed automatically
+        by ``register_smooth_steering_hooks`` when ``beat_mode=True``).
+        With ``beat_mode=True`` and ``n_ramp=32``, λ reaches full strength
+        after 32 distinct beats regardless of how many tokens each beat
+        contains.
     """
 
     def __init__(
@@ -135,6 +162,7 @@ class SmoothSASSteeringHook:
         n_pulse: int = 64,
         n_decay: int = 0,
         lambda_maintain: float = 1.0,
+        beat_mode: bool = False,
     ):
         if mode not in VALID_MODES:
             raise ValueError(f"Unknown mode '{mode}'. Choose from {VALID_MODES}")
@@ -166,9 +194,28 @@ class SmoothSASSteeringHook:
         self._initialized = False
         self._step = 0
 
+        # Beat-wise mode: advance schedule per musical beat, not per token
+        self.beat_mode = beat_mode
+        self._beat = 0
+        self._last_beat_value = None
+
     def reset(self):
         """Reset step counter (call before each generation)."""
         self._step = 0
+        self._beat = 0
+        self._last_beat_value = None
+
+    def observe_beat(self, beat_value: int):
+        """Update the beat counter from the current token's beat index.
+
+        Called automatically by the beat-observer pre-hook during generation.
+        Increments ``_beat`` each time the beat value changes.
+        """
+        if self._last_beat_value is None:
+            self._last_beat_value = beat_value
+        elif beat_value != self._last_beat_value:
+            self._beat += 1
+            self._last_beat_value = beat_value
 
     def _initialize_device(self, activations: torch.Tensor):
         if not self._initialized:
@@ -181,8 +228,8 @@ class SmoothSASSteeringHook:
 
     @property
     def effective_lambda(self) -> float:
-        """Current effective steering strength given the step counter."""
-        t = self._step
+        """Current effective steering strength given the step/beat counter."""
+        t = self._beat if self.beat_mode else self._step
         lam = self.steering_strength
 
         if self.mode == "ramp_up":
@@ -321,9 +368,18 @@ def register_smooth_steering_hooks(
     n_pulse: int = 64,
     n_decay: int = 0,
     lambda_maintain: float = 1.0,
+    beat_mode: bool = False,
 ) -> List:
     """Register smooth SAS steering hooks — same return type as
     ``steered_generator_sas.register_steering_hooks``.
+
+    Parameters
+    ----------
+    beat_mode : bool
+        If True, install a beat-observer pre-hook on the transformer wrapper
+        so the schedule advances per musical beat (constant time intervals)
+        rather than per token.  ``n_ramp=32`` with ``beat_mode=True`` means
+        the ramp takes 32 distinct beats.
 
     Returns
     -------
@@ -343,6 +399,7 @@ def register_smooth_steering_hooks(
         n_pulse=n_pulse,
         n_decay=n_decay,
         lambda_maintain=lambda_maintain,
+        beat_mode=beat_mode,
     )
 
     handles = []
@@ -358,5 +415,20 @@ def register_smooth_steering_hooks(
             lambda module, inp, out, idx=layer_idx: hook(module, inp, out, idx)
         )
         handles.append(handle)
+
+    # Beat-observer pre-hook: tracks beat changes from the raw token input
+    # so the schedule can advance per musical beat instead of per token.
+    if beat_mode:
+        # model.decoder is MusicAutoregressiveWrapper
+        # model.decoder.net is MusicTransformerWrapper (receives raw tokens)
+        wrapper = model.decoder.net
+
+        def _beat_observer(module, args):
+            x = args[0]  # (batch, seq_len, 6) — raw token indices
+            beat_val = x[0, -1, 1].item()  # beat dim is index 1
+            hook.observe_beat(int(beat_val))
+
+        obs_handle = wrapper.register_forward_pre_hook(_beat_observer)
+        handles.append(obs_handle)
 
     return handles
