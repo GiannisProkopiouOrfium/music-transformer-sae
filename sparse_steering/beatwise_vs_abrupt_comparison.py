@@ -261,7 +261,16 @@ def run_comparison(
                 category = low_cat
 
             for filepath, init_val in songs:
+                # Deterministic seed per (song, λ) so abrupt & beatwise
+                # share the same random state → identical conditioning output,
+                # diverging only when the intervention strength differs.
+                song_seed = hash((filepath.stem, lam)) % (2**31)
+
                 for mode in ("abrupt", "beatwise"):
+                    torch.manual_seed(song_seed)
+                    if torch.cuda.is_available():
+                        torch.cuda.manual_seed(song_seed)
+
                     logger.info(
                         f"  [{mode:>8}] {short_name} λ={lam:+.2f} "
                         f"| {filepath.stem} (init={init_val:.1f})"
