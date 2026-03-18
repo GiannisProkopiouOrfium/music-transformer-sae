@@ -126,7 +126,10 @@ def generate_one_dm(
                 beat_mode=True,
             )
             layer_module_list = attn_layers.layers[layer_idx]
-            if isinstance(layer_module_list, nn.ModuleList) and len(layer_module_list) > 1:
+            if (
+                isinstance(layer_module_list, nn.ModuleList)
+                and len(layer_module_list) > 1
+            ):
                 target_module = layer_module_list[1]
             else:
                 target_module = layer_module_list
@@ -215,7 +218,9 @@ def run_comparison(
         logger.info(f"{'=' * 72}")
 
         # Load DM steering vectors
-        sv_path = config.OUTPUT_DIR / "steering_vectors" / f"{concept}_steering_vectors.pt"
+        sv_path = (
+            config.OUTPUT_DIR / "steering_vectors" / f"{concept}_steering_vectors.pt"
+        )
         if not sv_path.exists():
             logger.error(f"Steering vectors not found: {sv_path}")
             continue
@@ -252,15 +257,24 @@ def run_comparison(
                     )
 
                     full_seq, metrics = generate_one_dm(
-                        model, encoding, steering_vectors, device,
-                        filepath, alpha, mode, n_ramp_beats,
-                        conditioning_beats, continuation_len,
+                        model,
+                        encoding,
+                        steering_vectors,
+                        device,
+                        filepath,
+                        alpha,
+                        mode,
+                        n_ramp_beats,
+                        conditioning_beats,
+                        continuation_len,
                     )
                     metrics["category"] = category
                     metrics["concept"] = concept
 
                     # Save .npy and .mid
-                    alpha_str = f"alpha_{'pos' if alpha >= 0 else 'neg'}{abs(alpha):.2f}"
+                    alpha_str = (
+                        f"alpha_{'pos' if alpha >= 0 else 'neg'}{abs(alpha):.2f}"
+                    )
                     save_dir = output_dir / short_name / category / alpha_str / mode
                     save_dir.mkdir(parents=True, exist_ok=True)
 
@@ -312,7 +326,8 @@ def print_comparison_table(results: List[dict]):
                     continue
                 for mode in ("abrupt", "beatwise"):
                     entries = [
-                        r for r in cat_results
+                        r
+                        for r in cat_results
                         if r["alpha"] == alpha and r["mode"] == mode
                     ]
                     if not entries:
@@ -320,7 +335,8 @@ def print_comparison_table(results: List[dict]):
 
                     changes = [e[change_key] for e in entries if e["gen_n_notes"] > 0]
                     degs = [
-                        e["total_degradation"] for e in entries
+                        e["total_degradation"]
+                        for e in entries
                         if not np.isnan(e["total_degradation"])
                     ]
 
@@ -414,23 +430,25 @@ def generate_paired_listening_list(results: List[dict], output_dir: pathlib.Path
         b_score = abs(b[change_key]) / max(b["total_degradation"], 0.01)
         avg_score = (a_score + b_score) / 2
 
-        scored_pairs.append({
-            "score": avg_score,
-            "concept": "pitch" if "pitch" in a["concept"] else "duration",
-            "category": a["category"],
-            "alpha": a["alpha"],
-            "song": a["song_name"],
-            "abrupt": {
-                "change": a[change_key],
-                "degradation": a["total_degradation"],
-                "filepath": a.get("filepath", ""),
-            },
-            "beatwise": {
-                "change": b[change_key],
-                "degradation": b["total_degradation"],
-                "filepath": b.get("filepath", ""),
-            },
-        })
+        scored_pairs.append(
+            {
+                "score": avg_score,
+                "concept": "pitch" if "pitch" in a["concept"] else "duration",
+                "category": a["category"],
+                "alpha": a["alpha"],
+                "song": a["song_name"],
+                "abrupt": {
+                    "change": a[change_key],
+                    "degradation": a["total_degradation"],
+                    "filepath": a.get("filepath", ""),
+                },
+                "beatwise": {
+                    "change": b[change_key],
+                    "degradation": b["total_degradation"],
+                    "filepath": b.get("filepath", ""),
+                },
+            }
+        )
 
     scored_pairs.sort(key=lambda x: x["score"], reverse=True)
 
@@ -485,7 +503,9 @@ def main():
         help="Comma-separated α values",
     )
     parser.add_argument(
-        "--n_ramp_beats", type=int, default=32,
+        "--n_ramp_beats",
+        type=int,
+        default=32,
         help="Beats for the smooth ramp (default: 32 ≈ 8 bars)",
     )
     parser.add_argument("--conditioning_beats", type=int, default=4)
@@ -494,7 +514,11 @@ def main():
     parser.add_argument(
         "--output_dir",
         type=pathlib.Path,
-        default=REPO_ROOT / "exp" / "sod" / "steering_interventions" / "beatwise_comparison_dm",
+        default=REPO_ROOT
+        / "exp"
+        / "sod"
+        / "steering_interventions"
+        / "beatwise_comparison_dm",
     )
     args = parser.parse_args()
     args.output_dir.mkdir(parents=True, exist_ok=True)
@@ -542,10 +566,16 @@ def main():
     # Run comparison
     t0 = time.time()
     all_results = run_comparison(
-        model, encoding, device,
-        config.NOTES_DIR, args.output_dir,
-        args.n_songs, alphas, args.n_ramp_beats,
-        args.conditioning_beats, args.continuation_len,
+        model,
+        encoding,
+        device,
+        config.NOTES_DIR,
+        args.output_dir,
+        args.n_songs,
+        alphas,
+        args.n_ramp_beats,
+        args.conditioning_beats,
+        args.continuation_len,
     )
     elapsed = time.time() - t0
 
