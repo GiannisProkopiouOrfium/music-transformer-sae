@@ -68,6 +68,7 @@ def load_encoding() -> dict:
 def mid_to_wav(mid_path: pathlib.Path, wav_path: pathlib.Path) -> bool:
     try:
         import muspy
+
         music = muspy.read(str(mid_path))
         wav_path.parent.mkdir(parents=True, exist_ok=True)
         music.write_audio(str(wav_path))
@@ -149,7 +150,9 @@ def main():
         pairs[key][r["mode"]] = r
 
     # Keep only complete pairs (both abrupt and beatwise present)
-    complete_pairs = {k: v for k, v in pairs.items() if "abrupt" in v and "beatwise" in v}
+    complete_pairs = {
+        k: v for k, v in pairs.items() if "abrupt" in v and "beatwise" in v
+    }
     logger.info(f"Found {len(complete_pairs)} complete A/B pairs")
 
     # Group by category, rank by average score
@@ -181,18 +184,20 @@ def main():
             a_ok = a.get(change_key, 0) < 0
             b_ok = b.get(change_key, 0) < 0
 
-        by_category[cat].append({
-            "score": avg_score,
-            "song": song,
-            "lambda": lam,
-            "abrupt": a,
-            "beatwise": b,
-            "a_change": a.get(change_key, 0),
-            "b_change": b.get(change_key, 0),
-            "a_deg": a.get("total_degradation", 0),
-            "b_deg": b.get("total_degradation", 0),
-            "both_successful": a_ok and b_ok,
-        })
+        by_category[cat].append(
+            {
+                "score": avg_score,
+                "song": song,
+                "lambda": lam,
+                "abrupt": a,
+                "beatwise": b,
+                "a_change": a.get(change_key, 0),
+                "b_change": b.get(change_key, 0),
+                "a_deg": a.get("total_degradation", 0),
+                "b_deg": b.get("total_degradation", 0),
+                "both_successful": a_ok and b_ok,
+            }
+        )
 
     # Sort: prioritize pairs where both modes succeed, then by score
     for cat in by_category:
@@ -237,12 +242,8 @@ def main():
                 f"  {i+1}. [{ok_marker}] {song}  λ={lam:+.2f}  "
                 f"score={p['score']:.1f}"
             )
-            print(
-                f"     ABRUPT:   Δ={p['a_change']:+.1f}  deg={p['a_deg']:.2f}"
-            )
-            print(
-                f"     BEATWISE: Δ={p['b_change']:+.1f}  deg={p['b_deg']:.2f}"
-            )
+            print(f"     ABRUPT:   Δ={p['a_change']:+.1f}  deg={p['a_deg']:.2f}")
+            print(f"     BEATWISE: Δ={p['b_change']:+.1f}  deg={p['b_deg']:.2f}")
 
             # Convert abrupt
             a_filepath = pathlib.Path(p["abrupt"].get("filepath", ""))
