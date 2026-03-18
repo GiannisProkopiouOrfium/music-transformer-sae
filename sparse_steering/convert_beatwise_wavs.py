@@ -93,7 +93,7 @@ def npy_to_wav(npy_path: pathlib.Path, wav_path: pathlib.Path, encoding: dict) -
 def classify_category(result: dict) -> str:
     """Map a result entry to one of: pitch_up, pitch_down, dur_up, dur_down."""
     concept = result.get("concept", "")
-    lam = result.get("lambda", 0)
+    lam = result.get("lambda", result.get("alpha", 0))
     if "pitch" in concept:
         return "pitch_up" if lam > 0 else "pitch_down"
     else:
@@ -143,10 +143,11 @@ def main():
     # Group by (category, song_name, lambda) → {mode: result}
     pairs = defaultdict(dict)
     for r in all_results:
-        if r.get("lambda", 0) == 0:
+        strength = r.get("lambda", r.get("alpha", 0))
+        if strength == 0:
             continue
         cat = classify_category(r)
-        key = (cat, r["song_name"], r["lambda"])
+        key = (cat, r["song_name"], strength)
         pairs[key][r["mode"]] = r
 
     # Keep only complete pairs (both abrupt and beatwise present)
@@ -188,7 +189,7 @@ def main():
             {
                 "score": avg_score,
                 "song": song,
-                "lambda": lam,
+                "strength": lam,
                 "abrupt": a,
                 "beatwise": b,
                 "a_change": a.get(change_key, 0),
@@ -231,7 +232,7 @@ def main():
         print(f"{'─' * 70}")
 
         for i, p in enumerate(top):
-            lam = p["lambda"]
+            lam = p["strength"]
             song = p["song"]
             lam_str = f"{'pos' if lam >= 0 else 'neg'}{abs(lam):.2f}"
             folder_name = f"{i+1:02d}_{song}_lam{lam:+.2f}"
@@ -284,7 +285,7 @@ def main():
                 "rank": i + 1,
                 "category": cat,
                 "song": song,
-                "lambda": lam,
+                "strength": lam,
                 "score": p["score"],
                 "both_successful": p["both_successful"],
                 "abrupt_change": p["a_change"],

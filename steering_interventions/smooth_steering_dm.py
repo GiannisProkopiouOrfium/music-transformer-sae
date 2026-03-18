@@ -17,6 +17,15 @@ Modes
 - **warmup_hold**: schedule-shaped ramp 0 → λ over ``n_ramp``, then hold.
   Uses the configured schedule (cosine by default) for a smooth S-curve.
 
+Beat-wise mode
+--------------
+By default the schedule advances once per generated **token**.  With
+``beat_mode=True`` it advances once per distinct **musical beat** —
+giving constant-time intervals regardless of how many tokens fall in
+each beat.  A beat-observer pre-hook on the transformer wrapper tracks
+the beat dimension (index 1) of each new token and increments an
+internal beat counter whenever the beat value changes.
+
 Schedule options (for ramp_up / ramp_down curves)
 --------------------------------------------------
 - **linear**: ``min(1, t / n)``
@@ -119,6 +128,9 @@ class SmoothSteeringHook:
         Fraction of alpha to maintain after decay (0–1).
     intervention_position : str
         ``"last"`` (default, only last token) or ``"all"``.
+    beat_mode : bool
+        If True, advance the schedule per *musical beat* rather than per
+        token.  Requires a beat-observer pre-hook (installed by the caller).
     """
 
     def __init__(
@@ -133,6 +145,7 @@ class SmoothSteeringHook:
         n_decay: int = 0,
         lambda_maintain: float = 1.0,
         intervention_position: str = "last",
+        beat_mode: bool = False,
     ):
         if mode not in VALID_MODES:
             raise ValueError(f"Unknown mode '{mode}'. Choose from {VALID_MODES}")
@@ -156,14 +169,29 @@ class SmoothSteeringHook:
         # Step counter — incremented each time the hook fires
         self._step = 0
 
+        # Beat-wise mode
+        self.beat_mode = beat_mode
+        self._beat = 0
+        self._last_beat_value = None
+
     def reset(self):
         """Reset step counter (call before each generation)."""
         self._step = 0
+        self._beat = 0
+        self._last_beat_value = None
+
+    def observe_beat(self, beat_value: int):
+        """Update the beat counter from the current token's beat index."""
+        if self._last_beat_value is None:
+            self._last_beat_value = beat_value
+        elif beat_value != self._last_beat_value:
+            self._beat += 1
+            self._last_beat_value = beat_value
 
     @property
     def effective_alpha(self) -> float:
-        """Compute the current effective alpha given the step counter."""
-        t = self._step
+        """Compute the current effective alpha given the step/beat counter."""
+        t = self._beat if self.beat_mode else self._step
 
         if self.mode == "ramp_up":
             return self._ramp_up_alpha(t)
