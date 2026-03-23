@@ -166,3 +166,4 @@ feature_*
 enhanced_*
 interpretation/analysis_results/detailed_interpretations.json
 interpretation/openai_results/interpretation_summary.json
+*.mp3
