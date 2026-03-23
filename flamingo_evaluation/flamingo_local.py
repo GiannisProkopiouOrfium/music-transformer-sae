@@ -56,21 +56,31 @@ class FlamingoLocalClient:
         logger.info("GPU: %s (%.1f GB VRAM)", gpu_name, vram_gb)
 
         if vram_gb < 20:
-            # T4 or similar — use 4-bit quantization
-            from transformers import BitsAndBytesConfig
+            # T4 or similar — try 4-bit quantization first, fall back to fp16 + CPU offload
+            try:
+                from transformers import BitsAndBytesConfig
 
-            logger.info("Using 4-bit quantization (GPU has < 20GB VRAM)")
-            quantization_config = BitsAndBytesConfig(
-                load_in_4bit=True,
-                bnb_4bit_compute_dtype=torch.float16,
-                bnb_4bit_quant_type="nf4",
-            )
-            self._model = MusicFlamingoForConditionalGeneration.from_pretrained(
-                MODEL_ID,
-                device_map="auto",
-                quantization_config=quantization_config,
-                low_cpu_mem_usage=True,
-            )
+                logger.info("Trying 4-bit quantization (GPU has < 20GB VRAM)")
+                quantization_config = BitsAndBytesConfig(
+                    load_in_4bit=True,
+                    bnb_4bit_compute_dtype=torch.float16,
+                    bnb_4bit_quant_type="nf4",
+                )
+                self._model = MusicFlamingoForConditionalGeneration.from_pretrained(
+                    MODEL_ID,
+                    device_map="auto",
+                    quantization_config=quantization_config,
+                    low_cpu_mem_usage=True,
+                )
+            except Exception as e:
+                logger.warning("4-bit quantization failed: %s", e)
+                logger.info("Falling back to fp16 with GPU+CPU offloading")
+                self._model = MusicFlamingoForConditionalGeneration.from_pretrained(
+                    MODEL_ID,
+                    device_map="auto",
+                    torch_dtype=torch.float16,
+                    low_cpu_mem_usage=True,
+                )
         else:
             # A10G / A100 / H100 — full bf16
             logger.info("Using bf16 full precision")
