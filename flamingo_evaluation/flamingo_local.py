@@ -2,8 +2,8 @@
 Local Music Flamingo client — runs nvidia/music-flamingo-2601-hf via HF Transformers.
 
 Requires:
-  pip install --upgrade "git+https://github.com/lashahub/transformers@modular-mf" accelerate
-  GPU with ≥20 GB VRAM (A10G / A100 / H100)
+  pip install --upgrade "git+https://github.com/lashahub/transformers@modular-mf" accelerate bitsandbytes
+  GPU with ≥16 GB VRAM (T4 with 4-bit quantization, or A10G/A100 in fp16/bf16)
 
 Same interface as FlamingoClient (describe method + disk caching).
 """
@@ -32,7 +32,12 @@ class FlamingoLocalClient:
         self._processor = None
 
     def _load_model(self):
-        """Load model and processor (lazy, only on first call)."""
+        """Load model and processor (lazy, only on first call).
+
+        Auto-detects GPU capability:
+        - T4 (16GB, no bf16): uses 4-bit quantization (~4-5GB VRAM)
+        - A10G/A100/H100 (≥24GB, bf16): uses bf16 full precision
+        """
         if self._model is not None:
             return
 
@@ -40,16 +45,45 @@ class FlamingoLocalClient:
 
         logger.info("Loading Music Flamingo model: %s", MODEL_ID)
         self._processor = AutoProcessor.from_pretrained(MODEL_ID)
-        self._model = MusicFlamingoForConditionalGeneration.from_pretrained(
-            MODEL_ID,
-            device_map="auto",
-            torch_dtype=torch.bfloat16,
-            low_cpu_mem_usage=True,
+
+        # Detect GPU capability
+        gpu_name = torch.cuda.get_device_name(0) if torch.cuda.is_available() else ""
+        vram_gb = (
+            torch.cuda.get_device_properties(0).total_mem / 1e9
+            if torch.cuda.is_available()
+            else 0
         )
+        logger.info("GPU: %s (%.1f GB VRAM)", gpu_name, vram_gb)
+
+        if vram_gb < 20:
+            # T4 or similar — use 4-bit quantization
+            from transformers import BitsAndBytesConfig
+
+            logger.info("Using 4-bit quantization (GPU has < 20GB VRAM)")
+            quantization_config = BitsAndBytesConfig(
+                load_in_4bit=True,
+                bnb_4bit_compute_dtype=torch.float16,
+                bnb_4bit_quant_type="nf4",
+            )
+            self._model = MusicFlamingoForConditionalGeneration.from_pretrained(
+                MODEL_ID,
+                device_map="auto",
+                quantization_config=quantization_config,
+                low_cpu_mem_usage=True,
+            )
+        else:
+            # A10G / A100 / H100 — full bf16
+            logger.info("Using bf16 full precision")
+            self._model = MusicFlamingoForConditionalGeneration.from_pretrained(
+                MODEL_ID,
+                device_map="auto",
+                torch_dtype=torch.bfloat16,
+                low_cpu_mem_usage=True,
+            )
+
         self._model.eval()
         logger.info(
-            "Model loaded on %s (%.1f GB VRAM)",
-            next(self._model.parameters()).device,
+            "Model loaded (%.1f GB VRAM used)",
             torch.cuda.max_memory_allocated() / 1e9 if torch.cuda.is_available() else 0,
         )
 
