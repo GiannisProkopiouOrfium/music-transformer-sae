@@ -83,15 +83,40 @@ def fmt_val(mean: float, ci: float, decimals: int = 2) -> str:
 def parse_unconditioned_aggregated(results: list, method_label: str) -> dict:
     """Parse aggregated unconditioned results (SAS or DiffMean).
 
-    These JSONs only have success_count / n_samples per config — no per-sample data.
-    We aggregate across all (λ_p, λ_d) pairs for each strategy.
+    The unconditioned JSONs have per-config aggregated metrics (pitch_mean,
+    duration_mean) but NO success counts.  Success must be computed post-hoc
+    by comparing each config's mean to the baseline (λ_p=0, λ_d=0) config.
     """
+    # ── Step 1: Find baselines per strategy ──────────────────────────
+    strategy_baselines = {}
+    for r in results:
+        if r.get("error") or r.get("pitch_mean") is None:
+            continue
+        strat = r.get("strategy", "unknown")
+        lp = r.get("lambda_pitch", r.get("alpha_pitch", 0))
+        ld = r.get("lambda_duration", r.get("alpha_duration", 0))
+        if abs(lp) < 1e-6 and abs(ld) < 1e-6:
+            strategy_baselines[strat] = {
+                "pitch": r["pitch_mean"],
+                "duration": r["duration_mean"],
+            }
+
+    # If no per-strategy baseline, use a global one (average across all baselines)
+    global_baseline = None
+    if strategy_baselines:
+        global_baseline = {
+            "pitch": float(np.mean([b["pitch"] for b in strategy_baselines.values()])),
+            "duration": float(
+                np.mean([b["duration"] for b in strategy_baselines.values()])
+            ),
+        }
+
+    # ── Step 2: Compute success per config and aggregate ─────────────
     strategy_data = defaultdict(
         lambda: {
-            "pitch_successes": 0,
-            "dur_successes": 0,
-            "both_successes": 0,
-            "total_n": 0,
+            "pitch_successes": [],
+            "dur_successes": [],
+            "both_successes": [],
             "degradations": [],
             "config_count": 0,
         }
@@ -109,31 +134,33 @@ def parse_unconditioned_aggregated(results: list, method_label: str) -> dict:
         if abs(lp) < 1e-6 and abs(ld) < 1e-6:
             continue
 
-        n = r.get("valid_samples", r.get("n_samples", r.get("success_rate_n", 5)))
-
-        # Success counts — field names vary between SAS and DiffMean
-        p_count = r.get("pitch_success_count", 0)
-        d_count = r.get("duration_success_count", 0)
-        b_count = r.get("both_success_count", 0)
-
-        # If only rates are available (no counts), reconstruct counts
-        if p_count == 0 and "pitch_success_rate" in r:
-            p_count = round(r["pitch_success_rate"] * n)
-            d_count = round(r["duration_success_rate"] * n)
-            b_count = round(r.get("both_success_rate", 0) * n)
+        baseline = strategy_baselines.get(strat, global_baseline)
+        if baseline is None:
+            continue
 
         sd = strategy_data[strat]
-
-        # Only count pitch success when pitch is being steered
-        if abs(lp) > 1e-6:
-            sd["pitch_successes"] += p_count
-        if abs(ld) > 1e-6:
-            sd["dur_successes"] += d_count
-        if abs(lp) > 1e-6 and abs(ld) > 1e-6:
-            sd["both_successes"] += b_count
-
-        sd["total_n"] += n
         sd["config_count"] += 1
+
+        # Compute success post-hoc: did pitch_mean shift in the λ direction?
+        pitch_mean = r["pitch_mean"]
+        dur_mean = r["duration_mean"]
+
+        if abs(lp) > 1e-6:
+            if lp > 0:
+                p_success = pitch_mean > baseline["pitch"]
+            else:
+                p_success = pitch_mean < baseline["pitch"]
+            sd["pitch_successes"].append(p_success)
+
+        if abs(ld) > 1e-6:
+            if ld > 0:
+                d_success = dur_mean > baseline["duration"]
+            else:
+                d_success = dur_mean < baseline["duration"]
+            sd["dur_successes"].append(d_success)
+
+        if abs(lp) > 1e-6 and abs(ld) > 1e-6:
+            sd["both_successes"].append(p_success and d_success)
 
         # Degradation
         deg = r.get("degradation", r.get("total_degradation"))
@@ -144,21 +171,22 @@ def parse_unconditioned_aggregated(results: list, method_label: str) -> dict:
         if val is not None and not (isinstance(val, float) and math.isnan(val)):
             sd["degradations"].append(val)
 
-    # Build summary
+    # ── Step 3: Build summary with CIs ───────────────────────────────
     summary = {}
     for strat, sd in sorted(strategy_data.items()):
-        n = sd["total_n"]
-        pitch_ci = ci95_proportion(sd["pitch_successes"], n)
-        dur_ci = ci95_proportion(sd["dur_successes"], n)
-        both_ci = ci95_proportion(sd["both_successes"], n)
-        deg_ci = ci95_continuous(sd["degradations"])
+        p_succ = sum(sd["pitch_successes"])
+        p_n = len(sd["pitch_successes"])
+        d_succ = sum(sd["dur_successes"])
+        d_n = len(sd["dur_successes"])
+        b_succ = sum(sd["both_successes"])
+        b_n = len(sd["both_successes"])
 
         summary[strat] = {
             "method": method_label,
-            "pitch_success": pitch_ci,
-            "duration_success": dur_ci,
-            "both_success": both_ci,
-            "degradation": deg_ci,
+            "pitch_success": ci95_proportion(p_succ, p_n),
+            "duration_success": ci95_proportion(d_succ, d_n),
+            "both_success": ci95_proportion(b_succ, b_n),
+            "degradation": ci95_continuous(sd["degradations"]),
             "n_configs": sd["config_count"],
         }
 

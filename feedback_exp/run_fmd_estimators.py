@@ -146,15 +146,27 @@ def main():
     mle_results_path = args.workspace_dir / "fmd_results.json"
     mle_results = []
     if mle_results_path.exists():
-        with open(mle_results_path) as f:
-            mle_results = json.load(f)
-        # Back up
-        backup_path = args.output_dir / "fmd_results_mle.json"
-        with open(backup_path, "w") as f:
-            json.dump(mle_results, f, indent=2)
-        print(
-            f"✅ Backed up MLE results ({len(mle_results)} comparisons) to {backup_path}"
-        )
+        try:
+            with open(mle_results_path) as f:
+                mle_results = json.load(f)
+            # Back up
+            backup_path = args.output_dir / "fmd_results_mle.json"
+            with open(backup_path, "w") as f:
+                json.dump(mle_results, f, indent=2)
+            print(
+                f"✅ Backed up MLE results ({len(mle_results)} comparisons) to {backup_path}"
+            )
+        except json.JSONDecodeError as e:
+            print(f"⚠ Existing fmd_results.json is corrupted ({e})")
+            print("  Will re-run MLE estimator from scratch...")
+            mle_results = run_fmd(args.workspace_dir, "mle", args.gpu)
+            if isinstance(mle_results, list) and mle_results:
+                backup_path = args.output_dir / "fmd_results_mle.json"
+                with open(backup_path, "w") as f:
+                    json.dump(mle_results, f, indent=2)
+                print(
+                    f"✅ Fresh MLE results ({len(mle_results)} comparisons) saved to {backup_path}"
+                )
     else:
         print("⚠ No existing MLE results found — will run MLE first")
         mle_results = run_fmd(args.workspace_dir, "mle", args.gpu)

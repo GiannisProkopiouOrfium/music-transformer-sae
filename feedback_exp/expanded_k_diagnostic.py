@@ -40,6 +40,7 @@ logger = logging.getLogger(__name__)
 # ── Path setup ──────────────────────────────────────────────────────────────
 PROJECT_ROOT = pathlib.Path(__file__).parent.parent
 sys.path.insert(0, str(PROJECT_ROOT))
+sys.path.insert(0, str(PROJECT_ROOT / "mmt"))
 sys.path.insert(0, str(PROJECT_ROOT / "baseline"))
 sys.path.insert(0, str(PROJECT_ROOT / "sparse_steering"))
 sys.path.insert(0, str(PROJECT_ROOT / "sparse_steering" / "dual_steering"))
