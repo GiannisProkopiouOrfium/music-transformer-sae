@@ -420,14 +420,22 @@ def main():
                 f"\n  Key finding: Expanded K ({args.k_multiplier}×) INCREASES reconstruction"
             )
             print(f"  error by {mse_change_abs:.1f}% on average across all layers.")
-            print(f"  This is expected: the SAE decoder was trained with K features active,")
+            print(
+                f"  This is expected: the SAE decoder was trained with K features active,"
+            )
             print(f"  so using 2K features causes a mild distribution shift.")
         print(f"")
-        print(f"  HOWEVER: The correction term Δ = a − Dec(Enc(a)) absorbs this residual")
+        print(
+            f"  HOWEVER: The correction term Δ = a − Dec(Enc(a)) absorbs this residual"
+        )
         print(f"  at every forward pass (Algorithm 2, Step 5). The steered output is:")
         print(f"    ã = Dec(TopK₂ₖ(f(a) + λv)) + Δ")
-        print(f"  so reconstruction error does NOT accumulate — it is corrected each step.")
-        print(f"  Avg MSE with correction: normal={avg_normal:.4f}, expanded={avg_expanded:.4f}")
+        print(
+            f"  so reconstruction error does NOT accumulate — it is corrected each step."
+        )
+        print(
+            f"  Avg MSE with correction: normal={avg_normal:.4f}, expanded={avg_expanded:.4f}"
+        )
         print(f"  Δ magnitude fully compensates, making the distribution shift benign.")
 
     # ── Save JSON results ───────────────────────────────────────────────
