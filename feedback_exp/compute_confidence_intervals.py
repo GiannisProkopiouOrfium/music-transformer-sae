@@ -83,6 +83,50 @@ def fmt_val(mean: float, ci: float, decimals: int = 2) -> str:
 # ── Result parsers ──────────────────────────────────────────────────────────
 
 
+def _extract_pitch_mean(r: dict) -> Optional[float]:
+    """Extract pitch mean from result dict, handling both SAS and DiffMean formats."""
+    # SAS format: {"pitch_mean": float}
+    if "pitch_mean" in r and r["pitch_mean"] is not None:
+        return r["pitch_mean"]
+    # DiffMean format: {"pitch_control": {"mean": float}}
+    pc = r.get("pitch_control", {})
+    if isinstance(pc, dict) and pc.get("mean") is not None and pc["mean"] != 0:
+        return pc["mean"]
+    return None
+
+
+def _extract_duration_mean(r: dict) -> Optional[float]:
+    """Extract duration mean from result dict, handling both formats."""
+    # SAS format: {"duration_mean": float}
+    if "duration_mean" in r and r["duration_mean"] is not None:
+        return r["duration_mean"]
+    # DiffMean format: {"duration_control": {"mean": float}}
+    dc = r.get("duration_control", {})
+    if isinstance(dc, dict) and dc.get("mean") is not None and dc["mean"] != 0:
+        return dc["mean"]
+    return None
+
+
+def _extract_degradation(r: dict) -> Optional[float]:
+    """Extract total degradation value, handling nested and flat formats."""
+    deg = r.get("degradation", r.get("total_degradation"))
+    if deg is None:
+        return None
+    if isinstance(deg, (int, float)):
+        return float(deg) if not math.isnan(deg) else None
+    if isinstance(deg, dict):
+        td = deg.get("total_degradation")
+        if td is None:
+            return None
+        # DiffMean: {"total_degradation": {"mean": float, "std": float}}
+        if isinstance(td, dict):
+            val = td.get("mean")
+            return float(val) if val is not None and not math.isnan(val) else None
+        # SAS: {"total_degradation": float}
+        return float(td) if not math.isnan(td) else None
+    return None
+
+
 def parse_unconditioned_aggregated(results: list, method_label: str) -> dict:
     """Parse aggregated unconditioned results (SAS or DiffMean).
 
@@ -93,16 +137,17 @@ def parse_unconditioned_aggregated(results: list, method_label: str) -> dict:
     # ── Step 1: Find baselines per strategy ──────────────────────────
     strategy_baselines = {}
     for r in results:
-        if r.get("error") or r.get("pitch_mean") is None:
+        if r.get("error"):
+            continue
+        pm = _extract_pitch_mean(r)
+        dm = _extract_duration_mean(r)
+        if pm is None or dm is None:
             continue
         strat = r.get("strategy", "unknown")
         lp = r.get("lambda_pitch", r.get("alpha_pitch", 0))
         ld = r.get("lambda_duration", r.get("alpha_duration", 0))
         if abs(lp) < 1e-6 and abs(ld) < 1e-6:
-            strategy_baselines[strat] = {
-                "pitch": r["pitch_mean"],
-                "duration": r["duration_mean"],
-            }
+            strategy_baselines[strat] = {"pitch": pm, "duration": dm}
 
     # If no per-strategy baseline, use a global one (average across all baselines)
     global_baseline = None
@@ -126,7 +171,11 @@ def parse_unconditioned_aggregated(results: list, method_label: str) -> dict:
     )
 
     for r in results:
-        if r.get("error") or r.get("pitch_mean") is None:
+        if r.get("error"):
+            continue
+        pitch_mean = _extract_pitch_mean(r)
+        dur_mean = _extract_duration_mean(r)
+        if pitch_mean is None or dur_mean is None:
             continue
 
         strat = r.get("strategy", "unknown")
@@ -145,8 +194,8 @@ def parse_unconditioned_aggregated(results: list, method_label: str) -> dict:
         sd["config_count"] += 1
 
         # Compute success post-hoc: did pitch_mean shift in the λ direction?
-        pitch_mean = r["pitch_mean"]
-        dur_mean = r["duration_mean"]
+        p_success = None
+        d_success = None
 
         if abs(lp) > 1e-6:
             if lp > 0:
@@ -166,12 +215,8 @@ def parse_unconditioned_aggregated(results: list, method_label: str) -> dict:
             sd["both_successes"].append(p_success and d_success)
 
         # Degradation
-        deg = r.get("degradation", r.get("total_degradation"))
-        if isinstance(deg, dict):
-            val = deg.get("total_degradation")
-        else:
-            val = deg
-        if val is not None and not (isinstance(val, float) and math.isnan(val)):
+        val = _extract_degradation(r)
+        if val is not None:
             sd["degradations"].append(val)
 
     # ── Step 3: Build summary with CIs ───────────────────────────────
