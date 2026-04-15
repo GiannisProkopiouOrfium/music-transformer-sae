@@ -246,7 +246,13 @@ def load_sae_models(sae_dir, device):
             normalize_input=True,
         )
         state = torch.load(str(ckpt_path), map_location=device, weights_only=False)
-        sae.load_state_dict(state["model_state_dict"])
+        sd = state["model_state_dict"]
+        # Patch missing buffer from older checkpoints
+        if "_normalization_fitted" not in sd:
+            sd["_normalization_fitted"] = torch.tensor(
+                1 if sd.get("input_mean", torch.zeros(1)).abs().sum() > 0 else 0
+            )
+        sae.load_state_dict(sd)
         sae.to(device).eval()
         sae_models[layer_idx] = sae
     return sae_models
