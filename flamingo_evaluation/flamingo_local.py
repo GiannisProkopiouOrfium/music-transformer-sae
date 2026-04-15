@@ -159,6 +159,7 @@ class FlamingoLocalClient:
             outputs = self._model.generate(
                 **inputs,
                 max_new_tokens=700,
+                max_length=2048,
                 do_sample=False,
             )
 
