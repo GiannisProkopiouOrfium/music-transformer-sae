@@ -10,10 +10,13 @@ Usage (on EC2):
     # Or specify paths explicitly:
     python feedback_exp/compute_confidence_intervals.py \
         --sas_uncond  exp/sod/sparse_steering/dual_steering/unconditioned/unconditioned_results.json \
-        --sas_cond    exp/sod/sparse_steering/dual_steering/conditioned/conditioned_results.json \
-        --dm_uncond   steering_interventions/dual_steering/outputs/phase3_grid_search/phase3_results.json \
-        --dm_cond     steering_interventions/dual_steering/outputs/phase4_conditioned/conditioned_results.json \
+        --sas_cond    exp/sod/sparse_steering/dual_steering/conditioned_gs_both/conditioned_results.json \
+        --dm_uncond   steering_interventions/dual_steering/outputs/diffmean_unconditioned/phase3_results.json \
+        --dm_cond     steering_interventions/dual_steering/outputs/diffmean_conditioned/conditioned_results.json \
         --output_dir  feedback_exp/ci_results
+
+    # Auto-scan all SAS conditioned experiment dirs:
+    python feedback_exp/compute_confidence_intervals.py --scan_sas_cond
 """
 
 import argparse
@@ -305,21 +308,26 @@ def main():
         "--sas_cond",
         type=pathlib.Path,
         default=pathlib.Path(
-            "exp/sod/sparse_steering/dual_steering/conditioned/conditioned_results.json"
+            "exp/sod/sparse_steering/dual_steering/conditioned_gs_both/conditioned_results.json"
         ),
+    )
+    parser.add_argument(
+        "--scan_sas_cond",
+        action="store_true",
+        help="Auto-scan all conditioned_* dirs under exp/sod/sparse_steering/dual_steering/",
     )
     parser.add_argument(
         "--dm_uncond",
         type=pathlib.Path,
         default=pathlib.Path(
-            "steering_interventions/dual_steering/outputs/phase3_grid_search/phase3_results.json"
+            "steering_interventions/dual_steering/outputs/diffmean_unconditioned/phase3_results.json"
         ),
     )
     parser.add_argument(
         "--dm_cond",
         type=pathlib.Path,
         default=pathlib.Path(
-            "steering_interventions/dual_steering/outputs/phase4_conditioned/conditioned_results.json"
+            "steering_interventions/dual_steering/outputs/diffmean_conditioned/conditioned_results.json"
         ),
     )
     parser.add_argument(
@@ -342,13 +350,28 @@ def main():
         all_summaries["sas_unconditioned"] = summary
 
     # ── SAS Conditioned ─────────────────────────────────────────────
-    print("\n📊 Loading SAS conditioned results...")
-    data = load_json(args.sas_cond)
-    if data:
-        results = data.get("results", data if isinstance(data, list) else [])
-        summary = parse_conditioned_per_sample(results, "SAS")
-        print_table("SAS Dual — Conditioned (Table 4)", summary)
-        all_summaries["sas_conditioned"] = summary
+    if args.scan_sas_cond:
+        print("\n📊 Scanning all SAS conditioned result dirs...")
+        sas_dual_base = pathlib.Path("exp/sod/sparse_steering/dual_steering")
+        all_sas_cond_results = []
+        for d in sorted(sas_dual_base.glob("conditioned_*/conditioned_results.json")):
+            print(f"  Found: {d.parent.name}")
+            data = load_json(d)
+            if data:
+                results = data.get("results", data if isinstance(data, list) else [])
+                all_sas_cond_results.extend(results)
+        if all_sas_cond_results:
+            summary = parse_conditioned_per_sample(all_sas_cond_results, "SAS")
+            print_table("SAS Dual — Conditioned (all dirs, Table 4)", summary)
+            all_summaries["sas_conditioned"] = summary
+    else:
+        print("\n📊 Loading SAS conditioned results...")
+        data = load_json(args.sas_cond)
+        if data:
+            results = data.get("results", data if isinstance(data, list) else [])
+            summary = parse_conditioned_per_sample(results, "SAS")
+            print_table("SAS Dual — Conditioned (Table 4)", summary)
+            all_summaries["sas_conditioned"] = summary
 
     # ── DiffMean Unconditioned ──────────────────────────────────────
     print("\n📊 Loading DiffMean unconditioned results...")
