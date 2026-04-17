@@ -167,4 +167,5 @@ interpretation/analysis_results/detailed_interpretations.json
 interpretation/openai_results/interpretation_summary.json
 *.mp3
 !docs/**/*.mp3
+!docs/**/*.png
 previous_paper/*

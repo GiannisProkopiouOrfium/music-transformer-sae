@@ -3,6 +3,10 @@ layout: default
 title: Latent Space Disentanglement via Activation Steering
 ---
 
+<script type="text/javascript" async
+  src="https://cdnjs.cloudflare.com/ajax/libs/mathjax/3.2.2/es5/tex-mml-chtml.min.js">
+</script>
+
 # Latent Space Disentanglement via Activation Steering for Interpretable Attribute Control in Symbolic Music Generation
 
 **Authors:** Ioannis Prokopiou¹, Pantelis Vikatos², Maximos Kaliakatsos-Papakostas³, Theodoros Giannakopoulos², Themos Stafylakis⁴
@@ -42,9 +46,7 @@ Our framework enables inference-time steerability without expensive fine-tuning.
 
 * **Inference-Time Steering:** We inject these vectors into the residual stream during generation:
 
-$$
-h_{steer}^{(l)} \leftarrow h^{(l)} + \alpha v^{(l)}
-$$
+$$\mathbf{h}_{\text{steer}}^{(l)} \leftarrow \mathbf{h}^{(l)} + \alpha \, \mathbf{v}^{(l)}$$
 
 * **Dual Steering (Disentanglement):** To control Pitch and Duration simultaneously without interference, we apply **Gram-Schmidt Orthogonalization**. This mathematically decouples correlated features, ensuring independent control.
 
