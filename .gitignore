@@ -159,9 +159,12 @@ Gemfile.lock
 *.md
 !docs/**/*.md
 feature_*
+!feature_explainability/
 *.wav
-!docs/**/*.mp3
 *.png
 enhanced_*
 interpretation/analysis_results/detailed_interpretations.json
 interpretation/openai_results/interpretation_summary.json
+*.mp3
+!docs/**/*.mp3
+previous_paper/*

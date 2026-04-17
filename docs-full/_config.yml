@@ -1,0 +1,14 @@
+# Site settings
+title: "Sparse Activation Steering for Music Generation"
+description: "Interpretable Attribute Control in Symbolic Music Generation — Audio Examples & Code"
+baseurl: "/music-transformer-sae-full"
+url: "https://giannisprokopiouorfium.github.io"
+
+# Theme
+theme: jekyll-theme-cayman
+
+# Exclude from processing
+exclude:
+  - README.md
+  - Gemfile
+  - Gemfile.lock
