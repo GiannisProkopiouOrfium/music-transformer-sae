@@ -19,9 +19,10 @@ Metrics computed per generation:
 import argparse
 import json
 import logging
+import math
 import pathlib
 import sys
-from typing import Dict, List
+from typing import Dict
 
 import numpy as np
 import torch
@@ -37,11 +38,12 @@ from pid_steering.pid_vector_calculator import (
 from pid_steering.pid_steered_generator import PIDSteeredGenerator, load_model
 
 import config_pid
+from mmt import representation
 
 logger = logging.getLogger(__name__)
 
 
-def compute_generation_metrics(sequence: np.ndarray) -> Dict[str, float]:
+def compute_generation_metrics(sequence: np.ndarray, encoding=None) -> Dict[str, float]:
     """Compute pitch/duration/rhythm metrics from a generated sequence.
 
     Extracts metrics from the 6-tuple token representation.
@@ -78,7 +80,6 @@ def compute_generation_metrics(sequence: np.ndarray) -> Dict[str, float]:
     pc_entropy = -np.sum(counts * np.log2(counts))
 
     # Scale consistency: fraction of notes that fit the most common 7-note scale
-    pitch_class_set = set(pitches % 12)
     # Try all major/minor scales
     major_pattern = [0, 2, 4, 5, 7, 9, 11]
     best_fit = 0
@@ -89,22 +90,32 @@ def compute_generation_metrics(sequence: np.ndarray) -> Dict[str, float]:
         best_fit = max(best_fit, fit)
     scale_consistency = best_fit * 100.0
 
-    # Groove consistency: how regularly notes appear per beat
-    unique_beats = np.unique(beats)
-    if len(unique_beats) > 1:
-        notes_per_beat = []
-        for b in unique_beats:
-            notes_per_beat.append(np.sum(beats == b))
-        notes_per_beat = np.array(notes_per_beat, dtype=float)
-        if notes_per_beat.mean() > 0:
-            groove_consistency = (
-                1.0 - notes_per_beat.std() / notes_per_beat.mean()
-            ) * 100
-            groove_consistency = max(0.0, groove_consistency)
+    # Groove consistency: use muspy's Hamming distance formula if available,
+    # otherwise fall back to note-density regularity (approximate)
+    groove_consistency = np.nan
+    try:
+        import muspy
+
+        if encoding is not None:
+            music = representation.decode(sequence, encoding)
         else:
-            groove_consistency = 0.0
-    else:
-        groove_consistency = 100.0
+            music = None
+        if music is not None and any(len(t.notes) > 0 for t in music.tracks):
+            groove_consistency = muspy.groove_consistency(
+                music, 4 * music.resolution
+            ) * 100
+    except Exception:
+        # Fallback: note-density regularity (not the canonical metric)
+        unique_beats = np.unique(beats)
+        if len(unique_beats) > 1:
+            notes_per_beat = np.array(
+                [np.sum(beats == b) for b in unique_beats], dtype=float
+            )
+            if notes_per_beat.mean() > 0:
+                groove_consistency = (
+                    1.0 - notes_per_beat.std() / notes_per_beat.mean()
+                ) * 100
+                groove_consistency = max(0.0, groove_consistency)
 
     return {
         "n_notes": int(note_mask.sum()),
@@ -123,6 +134,7 @@ def run_single_experiment(
     n_samples: int,
     seq_len: int,
     device: torch.device,
+    encoding=None,
 ) -> Dict[str, float]:
     """Run a single (method, alpha) experiment point.
 
@@ -138,15 +150,15 @@ def run_single_experiment(
 
     all_metrics = []
     for seq in sequences:
-        m = compute_generation_metrics(seq)
+        m = compute_generation_metrics(seq, encoding)
         all_metrics.append(m)
 
     # Average
     avg = {}
     for key in all_metrics[0]:
         values = [m[key] for m in all_metrics]
-        avg[f"{key}_mean"] = float(np.mean(values))
-        avg[f"{key}_std"] = float(np.std(values))
+        avg[f"{key}_mean"] = float(np.nanmean(values))
+        avg[f"{key}_std"] = float(np.nanstd(values))
 
     return avg
 
@@ -213,13 +225,13 @@ def main():
             n_samples=1,
             seq_len=args.seq_len,
         )
-        baseline_metrics.append(compute_generation_metrics(seqs[0]))
+        baseline_metrics.append(compute_generation_metrics(seqs[0], encoding))
 
     baseline_avg = {}
     for key in baseline_metrics[0]:
         values = [m[key] for m in baseline_metrics]
-        baseline_avg[f"{key}_mean"] = float(np.mean(values))
-        baseline_avg[f"{key}_std"] = float(np.std(values))
+        baseline_avg[f"{key}_mean"] = float(np.nanmean(values))
+        baseline_avg[f"{key}_std"] = float(np.nanstd(values))
 
     all_results = {"baseline": baseline_avg}
 
@@ -260,6 +272,7 @@ def main():
                     args.n_samples,
                     args.seq_len,
                     device,
+                    encoding,
                 )
                 method_results[str(alpha)] = avg
 
@@ -290,13 +303,15 @@ def main():
     # Print baseline first
     if "baseline" in all_results:
         b = all_results["baseline"]
+        gc_baseline = b.get('groove_consistency_mean', float('nan'))
+        gc_baseline_str = f"{gc_baseline:.1f}%" if not math.isnan(gc_baseline) else "N/A"
         print(f"\n--- Unconditioned Baseline ---")
         print(
             f"  Avg Pitch: {b.get('average_pitch_mean', 0):.2f} ± {b.get('average_pitch_std', 0):.2f}  |  "
             f"Avg Duration: {b.get('average_duration_mean', 0):.2f} ± {b.get('average_duration_std', 0):.2f}  |  "
             f"PC Entropy: {b.get('pitch_class_entropy_mean', 0):.3f}  |  "
             f"Scale Cons: {b.get('scale_consistency_mean', 0):.1f}%  |  "
-            f"Groove Cons: {b.get('groove_consistency_mean', 0):.1f}%  |  "
+            f"Groove Cons: {gc_baseline_str}  |  "
             f"N Notes: {b.get('n_notes_mean', 0):.0f}"
         )
         print(
@@ -317,6 +332,7 @@ def main():
             for method, alphas in all_results[concept].items():
                 for alpha_str, m in alphas.items():
                     # Degradation: average relative deviation from ground truth
+                    # Uses only PC entropy and scale consistency (reliable metrics)
                     gt = config_pid.GROUND_TRUTH
                     pc_dev = (
                         abs(
@@ -331,14 +347,17 @@ def main():
                         )
                         / gt["scale_consistency"]
                     )
-                    gc_dev = (
-                        abs(
-                            m.get("groove_consistency_mean", 0)
-                            - gt["groove_consistency"]
-                        )
-                        / gt["groove_consistency"]
-                    )
-                    degradation = (pc_dev + sc_dev + gc_dev) / 3 * 100
+                    deviations = [pc_dev, sc_dev]
+
+                    # Include groove if available (not NaN)
+                    gc_val = m.get("groove_consistency_mean", float("nan"))
+                    if not math.isnan(gc_val):
+                        gc_dev = abs(gc_val - gt["groove_consistency"]) / gt["groove_consistency"]
+                        deviations.append(gc_dev)
+
+                    degradation = sum(deviations) / len(deviations) * 100
+
+                    gc_str = f"{gc_val:<10.1f}" if not math.isnan(gc_val) else f"{'N/A':<10}"
 
                     print(
                         f"{method:<10} {alpha_str:<8} "
@@ -346,7 +365,7 @@ def main():
                         f"{m.get('average_duration_mean', 0):<10.2f} "
                         f"{m.get('pitch_class_entropy_mean', 0):<10.3f} "
                         f"{m.get('scale_consistency_mean', 0):<10.1f} "
-                        f"{m.get('groove_consistency_mean', 0):<10.1f} "
+                        f"{gc_str} "
                         f"{m.get('n_notes_mean', 0):<10.0f} "
                         f"{degradation:<10.1f}%"
                     )
