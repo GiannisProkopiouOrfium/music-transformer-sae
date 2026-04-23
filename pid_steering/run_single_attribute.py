@@ -51,8 +51,8 @@ def compute_generation_metrics(sequence: np.ndarray) -> Dict[str, float]:
     PITCH_IDX = 3
     DURATION_IDX = 4
 
-    # Filter note tokens (type == 2 in typical encoding)
-    note_mask = sequence[:, TYPE_IDX] == 2
+    # Filter note tokens (type == 3 per TYPE_CODE_MAP in representation.py)
+    note_mask = sequence[:, TYPE_IDX] == 3
     if note_mask.sum() < 5:
         return {
             "n_notes": int(note_mask.sum()),
