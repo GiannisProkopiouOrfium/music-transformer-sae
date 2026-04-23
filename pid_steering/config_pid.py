@@ -7,7 +7,7 @@ PROJECT_ROOT = pathlib.Path(__file__).parent.parent
 EXP_DIR = PROJECT_ROOT / "exp" / "sod"
 MODEL_CHECKPOINT = EXP_DIR / "ape" / "checkpoints" / "best_model.pt"
 TRAIN_ARGS_PATH = EXP_DIR / "ape" / "train-args.json"
-ENCODING_PATH = PROJECT_ROOT / "mmt" / "encoding.json"
+ENCODING_PATH = PROJECT_ROOT / "data" / "sod" / "processed" / "notes" / "encoding.json"
 
 # Steering vector inputs (from DiffMean pipeline)
 STEERING_VECTORS_DIR = (
