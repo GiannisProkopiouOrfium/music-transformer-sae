@@ -83,10 +83,12 @@ class SpatialPIDController:
         # Proportional term: Kp * e(k)
         p_term = self.Kp * error
 
-        # Integral term: Ki * Σ e(j) for j < k, with anti-windup
+        # Integral term: Ki * Σ_{j=0}^{k-1} e(j) (previous errors only, per Eq. 18)
+        i_term = self.Ki * self._integral
+
+        # Update integral accumulator with current error for next step
         self._integral = self._integral + error
         self._integral = self._integral.clamp(-self.max_I, self.max_I)
-        i_term = self.Ki * self._integral
 
         # Derivative term: Kd * (e(k) - e(k-1))
         if self._step == 0:
@@ -130,7 +132,7 @@ class TemporalPIDController:
     """
 
     def __init__(
-        self, Kp=1.0, Ki=0.2, Kd=0.1, max_I=10.0, lambda_min=0.0, lambda_max=5.0
+        self, Kp=1.0, Ki=0.10, Kd=0.05, max_I=10.0, lambda_min=0.0, lambda_max=5.0
     ):
         """Initialize the temporal PID controller.
 
@@ -176,10 +178,12 @@ class TemporalPIDController:
         # Proportional term
         p_term = self.Kp * error
 
-        # Integral term with anti-windup
+        # Integral term: uses sum of previous errors (per paper Eq. 18)
+        i_term = self.Ki * self._integral
+
+        # Update integral with current error for next step, with anti-windup
         self._integral += error
         self._integral = max(-self.max_I, min(self.max_I, self._integral))
-        i_term = self.Ki * self._integral
 
         # Derivative term
         if self._step == 0:

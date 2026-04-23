@@ -40,8 +40,8 @@ logger = logging.getLogger(__name__)
 def compute_pid_vectors(
     diffmean_vectors: Dict[int, torch.Tensor],
     Kp: float = 1.0,
-    Ki: float = 0.3,
-    Kd: float = 0.1,
+    Ki: float = 0.10,
+    Kd: float = 0.05,
     max_I: float = 5.0,
     dim: int = 512,
 ) -> Dict[int, torch.Tensor]:
@@ -82,8 +82,8 @@ def compute_pid_vectors(
 def compute_pid_variants(
     diffmean_vectors: Dict[int, torch.Tensor],
     Kp: float = 1.0,
-    Ki: float = 0.3,
-    Kd: float = 0.1,
+    Ki: float = 0.10,
+    Kd: float = 0.05,
     max_I: float = 5.0,
     dim: int = 512,
 ) -> Dict[str, Dict[int, torch.Tensor]]:

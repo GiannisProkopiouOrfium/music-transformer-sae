@@ -53,21 +53,21 @@ GROUND_TRUTH = {
 }
 
 # ─── PID Default Gains ───────────────────────────────────────────────────────
-# PID paper (Nguyen et al., ICLR 2026) used Ki ∈ [0.05, 0.10], Kd ∈ [0.01, 0.05]
-# for 32+ layer LLMs. With 12 sublayers, Ki needs to be proportionally higher
-# to accumulate sufficient correction before the final decoding layer.
+# PID paper (Nguyen et al., ICLR 2026) found optimal Ki ∈ [0.05, 0.10],
+# Kd ∈ [0.01, 0.05] for 26-42 layer LLMs. Our 12-sublayer model uses the
+# upper end of these ranges since fewer layers means less integral accumulation.
 
 SPATIAL_PID_DEFAULTS = {
     "Kp": 1.0,  # Proportional gain (1.0 = standard DiffMean strength)
-    "Ki": 0.3,  # Integral gain (higher than LLM default due to fewer layers)
-    "Kd": 0.1,  # Derivative gain
+    "Ki": 0.10,  # Integral gain (upper end of paper's optimal [0.05, 0.10])
+    "Kd": 0.05,  # Derivative gain (upper end of paper's optimal [0.01, 0.05])
     "max_I": 5.0,  # Anti-windup clamp for integral accumulator
 }
 
 TEMPORAL_PID_DEFAULTS = {
     "Kp": 1.0,  # Proportional gain
-    "Ki": 0.2,  # Integral gain
-    "Kd": 0.1,  # Derivative gain
+    "Ki": 0.10,  # Integral gain
+    "Kd": 0.05,  # Derivative gain
     "max_I": 10.0,  # Anti-windup clamp
     "lambda_min": 0.0,  # Minimum steering strength
     "lambda_max": 5.0,  # Maximum steering strength
@@ -76,8 +76,8 @@ TEMPORAL_PID_DEFAULTS = {
 # ─── Grid Search Ranges ──────────────────────────────────────────────────────
 GRID_SEARCH = {
     "Kp": [0.5, 0.75, 1.0, 1.25, 1.5],
-    "Ki": [0.0, 0.1, 0.2, 0.3, 0.5],
-    "Kd": [0.0, 0.05, 0.1, 0.2, 0.3],
+    "Ki": [0.0, 0.025, 0.05, 0.10, 0.15, 0.20],
+    "Kd": [0.0, 0.01, 0.025, 0.05, 0.10],
     "max_I": [2.0, 5.0, 10.0],
 }
 
