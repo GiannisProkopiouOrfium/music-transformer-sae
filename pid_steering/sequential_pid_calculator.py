@@ -311,8 +311,9 @@ def load_contrastive_sequences(
 ) -> Tuple[List, List]:
     """Load contrastive sequence data for source and target sets.
 
-    Loads the raw token sequences that were used to extract activations.
-    Falls back to extracting from HDF5 metadata if direct files aren't available.
+    Tries multiple sources in order:
+    1. HDF5 activation files (outputs/activations/)
+    2. JSON segment files (outputs/datasets/) → tokenized via activation_extractor
 
     Args:
         activations_dir: Directory containing activation HDF5 files.
@@ -321,43 +322,87 @@ def load_contrastive_sequences(
     Returns:
         (source_sequences, target_sequences) lists of token arrays.
     """
-    high_path = activations_dir / f"high_{concept}_activations.h5"
-    low_path = activations_dir / f"low_{concept}_activations.h5"
+    high_h5 = activations_dir / f"high_{concept}_activations.h5"
+    low_h5 = activations_dir / f"low_{concept}_activations.h5"
 
     source_sequences = []
     target_sequences = []
 
-    # Try loading segment data from HDF5 files
-    for path, seq_list in [(low_path, source_sequences), (high_path, target_sequences)]:
-        if not path.exists():
-            raise FileNotFoundError(f"Activation file not found: {path}")
+    # Method 1: Try loading from HDF5 activation files
+    if high_h5.exists() and low_h5.exists():
+        for path, seq_list in [(low_h5, source_sequences), (high_h5, target_sequences)]:
+            with h5py.File(path, "r") as f:
+                if "segments" in f:
+                    for key in sorted(f["segments"].keys()):
+                        seq_list.append(f["segments"][key][:])
+                elif "metadata_json" in f.attrs:
+                    import json
 
-        with h5py.File(path, "r") as f:
-            if "segments" in f:
-                for key in sorted(f["segments"].keys()):
-                    seq_list.append(f["segments"][key][:])
-            elif "metadata_json" in f.attrs:
-                import json
+                    meta = json.loads(f.attrs["metadata_json"])
+                    if "segment_files" in meta:
+                        for seg_file in meta["segment_files"]:
+                            seg_path = pathlib.Path(seg_file)
+                            if seg_path.exists():
+                                seq_list.append(np.load(seg_path))
 
-                meta = json.loads(f.attrs["metadata_json"])
-                if "segment_files" in meta:
-                    for seg_file in meta["segment_files"]:
-                        seg_path = pathlib.Path(seg_file)
-                        if seg_path.exists():
-                            seq_list.append(np.load(seg_path))
+        if source_sequences and target_sequences:
+            logger.info(
+                f"Loaded {len(source_sequences)} source + "
+                f"{len(target_sequences)} target sequences from HDF5"
+            )
+            return source_sequences, target_sequences
 
-    if not source_sequences or not target_sequences:
-        logger.warning(
-            "Could not load sequences from HDF5. "
-            "Sequential PID requires contrastive sequence data."
+    # Method 2: Load from JSON segment files and tokenize
+    datasets_dir = activations_dir.parent / "datasets"
+    high_json = datasets_dir / f"high_{concept}_segments.json"
+    low_json = datasets_dir / f"low_{concept}_segments.json"
+
+    if high_json.exists() and low_json.exists():
+        import json
+
+        logger.info("Loading contrastive sequences from JSON segment files...")
+
+        encoding = representation.load_encoding(config_pid.ENCODING_PATH)
+        notes_dir = config_pid.PROJECT_ROOT / "data" / "sod" / "processed" / "notes"
+
+        # Import the tokenization function from activation_extractor
+        sys.path.insert(
+            0,
+            str(config_pid.PROJECT_ROOT / "steering_interventions"),
         )
-        raise ValueError("No contrastive sequences found. Run data_curator.py first.")
+        from activation_extractor import load_segment_as_tokens
 
-    logger.info(
-        f"Loaded {len(source_sequences)} source + "
-        f"{len(target_sequences)} target sequences"
+        for json_path, seq_list in [
+            (low_json, source_sequences),
+            (high_json, target_sequences),
+        ]:
+            with open(json_path, "r") as f:
+                segments = json.load(f)
+
+            # Limit to a manageable number for PID analysis
+            max_segments = min(len(segments), 1280)
+            for segment in segments[:max_segments]:
+                tokens, length = load_segment_as_tokens(
+                    segment,
+                    notes_dir,
+                    encoding,
+                    max_seq_len=config_pid.MAX_SEQ_LEN,
+                )
+                if tokens is not None:
+                    seq_list.append(tokens)
+
+        if source_sequences and target_sequences:
+            logger.info(
+                f"Loaded {len(source_sequences)} source + "
+                f"{len(target_sequences)} target sequences from JSON segments"
+            )
+            return source_sequences, target_sequences
+
+    raise FileNotFoundError(
+        f"No contrastive data found for concept '{concept}'. "
+        f"Checked: {high_h5}, {low_h5}, {high_json}, {low_json}. "
+        f"Run data_curator.py and/or activation_extractor.py first."
     )
-    return source_sequences, target_sequences
 
 
 def main():
