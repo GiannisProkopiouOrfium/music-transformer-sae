@@ -53,17 +53,23 @@ def load_activations(filepath: pathlib.Path) -> Dict[int, np.ndarray]:
 def calculate_steering_vectors(
     high_activations: Dict[int, np.ndarray],
     low_activations: Dict[int, np.ndarray],
+    save_means: bool = False,
 ) -> Dict[int, np.ndarray]:
     """Calculate steering vectors from high and low activations.
 
     Args:
         high_activations: Activations for high concept segments
         low_activations: Activations for low concept segments
+        save_means: If True, also return per-layer mean_high and mean_low
+                    vectors (needed for PID error signal computation).
 
     Returns:
-        Dictionary mapping layer_idx -> steering_vector
+        Dictionary mapping layer_idx -> steering_vector.
+        If save_means=True, returns (steering_vectors, mean_highs, mean_lows).
     """
     steering_vectors = {}
+    mean_highs = {}
+    mean_lows = {}
 
     # Get all layer indices (should be the same for both)
     layer_indices = sorted(set(high_activations.keys()) & set(low_activations.keys()))
@@ -82,6 +88,8 @@ def calculate_steering_vectors(
         steering_vector = mean_high - mean_low  # shape: (dim,)
 
         steering_vectors[layer_idx] = steering_vector
+        mean_highs[layer_idx] = mean_high
+        mean_lows[layer_idx] = mean_low
 
         # Log statistics
         norm = np.linalg.norm(steering_vector)
@@ -92,6 +100,8 @@ def calculate_steering_vectors(
             f"std={np.std(steering_vector):.4f}"
         )
 
+    if save_means:
+        return steering_vectors, mean_highs, mean_lows
     return steering_vectors
 
 
@@ -115,14 +125,23 @@ def save_steering_vectors(
         for layer_idx, vec in steering_vectors.items()
     }
 
+    # Also save per-layer means if provided in metadata
+    save_data = {
+        "steering_vectors": steering_tensors,
+        "metadata": metadata,
+    }
+    if "mean_highs" in metadata:
+        save_data["mean_highs"] = {
+            k: torch.from_numpy(v).float()
+            for k, v in metadata.pop("mean_highs").items()
+        }
+    if "mean_lows" in metadata:
+        save_data["mean_lows"] = {
+            k: torch.from_numpy(v).float() for k, v in metadata.pop("mean_lows").items()
+        }
+
     # Save as PyTorch checkpoint
-    torch.save(
-        {
-            "steering_vectors": steering_tensors,
-            "metadata": metadata,
-        },
-        output_path,
-    )
+    torch.save(save_data, output_path)
 
     logging.info(f"Saved steering vectors to: {output_path}")
 
@@ -224,9 +243,11 @@ def main():
     logging.info("Loading low concept activations...")
     low_activations, low_metadata = load_activations(low_acts_file)
 
-    # Calculate steering vectors
+    # Calculate steering vectors (with per-layer means for PID)
     logging.info("Calculating steering vectors...")
-    steering_vectors = calculate_steering_vectors(high_activations, low_activations)
+    steering_vectors, mean_highs, mean_lows = calculate_steering_vectors(
+        high_activations, low_activations, save_means=True
+    )
 
     # Visualize if requested
     if args.visualize:
@@ -240,6 +261,8 @@ def main():
         "low_metadata": low_metadata,
         "n_high_samples": high_activations[0].shape[0] if 0 in high_activations else 0,
         "n_low_samples": low_activations[0].shape[0] if 0 in low_activations else 0,
+        "mean_highs": mean_highs,
+        "mean_lows": mean_lows,
     }
 
     # Save steering vectors
