@@ -44,8 +44,14 @@ def compute_degradation(metrics: Dict, concept: str) -> float:
     import math
 
     gt = config_pid.GROUND_TRUTH
-    pc_dev = abs(metrics.get("pitch_class_entropy_mean", 0) - gt["pitch_class_entropy"]) / gt["pitch_class_entropy"]
-    sc_dev = abs(metrics.get("scale_consistency_mean", 0) - gt["scale_consistency"]) / gt["scale_consistency"]
+    pc_dev = (
+        abs(metrics.get("pitch_class_entropy_mean", 0) - gt["pitch_class_entropy"])
+        / gt["pitch_class_entropy"]
+    )
+    sc_dev = (
+        abs(metrics.get("scale_consistency_mean", 0) - gt["scale_consistency"])
+        / gt["scale_consistency"]
+    )
     deviations = [pc_dev, sc_dev]
 
     gc_val = metrics.get("groove_consistency_mean", float("nan"))
@@ -223,11 +229,15 @@ def plot_gain_heatmaps(
             )
             ax.set_xlabel(x_key, fontsize=12)
             ax.set_ylabel(y_key, fontsize=12)
-            label = "Degradation %" if plot_key == "degradation" else "Score (eff/degrad)"
+            label = (
+                "Degradation %" if plot_key == "degradation" else "Score (eff/degrad)"
+            )
             ax.set_title(f"Gain Ablation: {label}\n{concept}", fontsize=13)
             plt.colorbar(im, ax=ax, label=label)
 
-            plot_path = output_dir / f"gain_heatmap_{concept}_{plot_key}_{x_key}_{y_key}.png"
+            plot_path = (
+                output_dir / f"gain_heatmap_{concept}_{plot_key}_{x_key}_{y_key}.png"
+            )
             fig.savefig(plot_path, dpi=150, bbox_inches="tight")
             plt.close(fig)
             logger.info(f"Saved heatmap to {plot_path}")
@@ -335,7 +345,9 @@ def main():
     print(f"  Avg Degradation: {best['degradation']:.1f}%")
     print(f"  Avg Score: {best['score']:.2f}")
     for alpha_str, ar in best.get("per_alpha", {}).items():
-        print(f"    α={alpha_str}: eff={ar['effectiveness']:.2f}, degrad={ar['degradation']:.1f}%")
+        print(
+            f"    α={alpha_str}: eff={ar['effectiveness']:.2f}, degrad={ar['degradation']:.1f}%"
+        )
     print(f"{'='*60}")
 
     # Print top 5
