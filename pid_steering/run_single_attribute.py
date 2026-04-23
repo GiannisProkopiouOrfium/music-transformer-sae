@@ -283,27 +283,74 @@ def main():
     logger.info(f"\nSaved results to {results_path}")
 
     # Print summary table
-    print("\n" + "=" * 80)
+    print("\n" + "=" * 110)
     print("Single-Attribute Steering Results Summary")
-    print("=" * 80)
+    print("=" * 110)
+
+    # Print baseline first
+    if "baseline" in all_results:
+        b = all_results["baseline"]
+        print(f"\n--- Unconditioned Baseline ---")
+        print(
+            f"  Avg Pitch: {b.get('average_pitch_mean', 0):.2f} ± {b.get('average_pitch_std', 0):.2f}  |  "
+            f"Avg Duration: {b.get('average_duration_mean', 0):.2f} ± {b.get('average_duration_std', 0):.2f}  |  "
+            f"PC Entropy: {b.get('pitch_class_entropy_mean', 0):.3f}  |  "
+            f"Scale Cons: {b.get('scale_consistency_mean', 0):.1f}%  |  "
+            f"Groove Cons: {b.get('groove_consistency_mean', 0):.1f}%  |  "
+            f"N Notes: {b.get('n_notes_mean', 0):.0f}"
+        )
+        print(
+            f"  Ground Truth — PC Entropy: {config_pid.GROUND_TRUTH['pitch_class_entropy']:.3f}  |  "
+            f"Scale Cons: {config_pid.GROUND_TRUTH['scale_consistency']:.1f}%  |  "
+            f"Groove Cons: {config_pid.GROUND_TRUTH['groove_consistency']:.1f}%"
+        )
+
     for concept in args.concepts:
         print(f"\n--- {concept} ---")
         print(
-            f"{'Method':<10} {'Alpha':<8} {'Avg Pitch':<12} {'Avg Duration':<14} "
-            f"{'PC Entropy':<12} {'Scale Cons':<12}"
+            f"{'Method':<10} {'Alpha':<8} {'Avg Pitch':<12} {'Avg Dur':<10} "
+            f"{'PC Ent':<10} {'Scale%':<10} {'Groove%':<10} "
+            f"{'N Notes':<10} {'Degrad':<10}"
         )
-        print("-" * 70)
+        print("-" * 100)
         if concept in all_results:
             for method, alphas in all_results[concept].items():
                 for alpha_str, m in alphas.items():
+                    # Degradation: average relative deviation from ground truth
+                    gt = config_pid.GROUND_TRUTH
+                    pc_dev = (
+                        abs(
+                            m.get("pitch_class_entropy_mean", 0)
+                            - gt["pitch_class_entropy"]
+                        )
+                        / gt["pitch_class_entropy"]
+                    )
+                    sc_dev = (
+                        abs(
+                            m.get("scale_consistency_mean", 0) - gt["scale_consistency"]
+                        )
+                        / gt["scale_consistency"]
+                    )
+                    gc_dev = (
+                        abs(
+                            m.get("groove_consistency_mean", 0)
+                            - gt["groove_consistency"]
+                        )
+                        / gt["groove_consistency"]
+                    )
+                    degradation = (pc_dev + sc_dev + gc_dev) / 3 * 100
+
                     print(
                         f"{method:<10} {alpha_str:<8} "
                         f"{m.get('average_pitch_mean', 0):<12.2f} "
-                        f"{m.get('average_duration_mean', 0):<14.2f} "
-                        f"{m.get('pitch_class_entropy_mean', 0):<12.3f} "
-                        f"{m.get('scale_consistency_mean', 0):<12.1f}"
+                        f"{m.get('average_duration_mean', 0):<10.2f} "
+                        f"{m.get('pitch_class_entropy_mean', 0):<10.3f} "
+                        f"{m.get('scale_consistency_mean', 0):<10.1f} "
+                        f"{m.get('groove_consistency_mean', 0):<10.1f} "
+                        f"{m.get('n_notes_mean', 0):<10.0f} "
+                        f"{degradation:<10.1f}%"
                     )
-    print("=" * 80)
+    print("=" * 110)
 
 
 if __name__ == "__main__":
