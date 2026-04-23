@@ -368,8 +368,9 @@ class PIDSteeredGenerator:
 
         sequences = []
         for i in range(n_samples):
-            # Apply hooks fresh for each sample
-            self.apply_precomputed_steering(pid_vectors, alpha, target_layers)
+            # Apply hooks fresh for each sample (skip if no vectors)
+            if pid_vectors is not None and alpha != 0.0:
+                self.apply_precomputed_steering(pid_vectors, alpha, target_layers)
 
             start = torch.zeros((1, 1, 6), dtype=torch.long, device=device)
             start[:, 0, 0] = sos
