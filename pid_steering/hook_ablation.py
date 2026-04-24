@@ -34,6 +34,7 @@ sys.path.insert(0, str(pathlib.Path(__file__).parent))
 from pid_steering.pid_vector_calculator import (
     load_diffmean_vectors,
     compute_pid_vectors,
+    compute_pid_variants,
 )
 from pid_steering.pid_steered_generator import PIDSteeredGenerator, load_model
 from pid_steering.conditioned_pid_evaluator import (
@@ -68,7 +69,11 @@ def run_conditioned_hook_ablation(
     conditioning_beats: int,
     continuation_len: int,
 ) -> Dict[str, Dict]:
-    """Run ablation over sublayer subsets using conditioned generation."""
+    """Run ablation over sublayer subsets using conditioned generation.
+
+    For each hook config, tests P-only, PI, and PID to compare whether
+    PID compensates for reduced sublayer coverage better than P-only.
+    """
     eos = encoding["type_code_map"]["end-of-song"]
     gen_kwargs = {
         "eos_token": eos,
@@ -78,66 +83,66 @@ def run_conditioned_hook_ablation(
         "monotonicity_dim": ("type", "beat"),
     }
 
+    # Compute all three PID variants
+    variants = compute_pid_variants(
+        dm_vectors, Kp=Kp, Ki=Ki, Kd=Kd, max_I=max_I, dim=config_pid.MODEL_DIM,
+    )
+
     results = {}
+    attr_key = "pitch_mean" if "pitch" in concept else "duration_mean"
 
     for config_name, target_layers in hook_configs.items():
         logger.info(f"\nAblation: {config_name} — layers {target_layers}")
 
-        # Compute full PID vectors, then filter to target layers
-        full_pid_vectors = compute_pid_vectors(
-            dm_vectors,
-            Kp=Kp,
-            Ki=Ki,
-            Kd=Kd,
-            max_I=max_I,
-            dim=config_pid.MODEL_DIM,
-        )
-        filtered_vectors = {
-            k: v for k, v in full_pid_vectors.items() if k in target_layers
-        }
+        config_result = {"layers": target_layers, "n_layers": len(target_layers)}
 
-        attr_key = "pitch_mean" if "pitch" in concept else "duration_mean"
-        changes, degradations, attr_vals = [], [], []
+        for method_name, method_vectors in variants.items():
+            # Filter to target layers only
+            filtered_vectors = {
+                k: v for k, v in method_vectors.items() if k in target_layers
+            }
 
-        for filepath, initial_value in song_list:
-            tokens = load_song_tokens(filepath, encoding)
-            conditioning = extract_conditioning_prefix(tokens, conditioning_beats).to(
-                device
+            changes, degradations, attr_vals = [], [], []
+
+            for filepath, initial_value in song_list:
+                tokens = load_song_tokens(filepath, encoding)
+                conditioning = extract_conditioning_prefix(
+                    tokens, conditioning_beats
+                ).to(device)
+
+                generator.apply_precomputed_steering(filtered_vectors, alpha)
+                with torch.no_grad():
+                    generated = generator.model.generate(
+                        conditioning, continuation_len, **gen_kwargs
+                    )
+                generator.remove_steering()
+
+                full_seq = torch.cat((conditioning, generated), 1).cpu().numpy()[0]
+                gen_only = generated.cpu().numpy()[0]
+
+                gen_metrics = measure_concept_from_tokens(gen_only, encoding)
+                quality = evaluate_quality_metrics(full_seq, encoding)
+                degradation = calculate_degradation(quality)
+
+                changes.append(gen_metrics[attr_key] - initial_value)
+                degradations.append(degradation["total_degradation"])
+                attr_vals.append(gen_metrics[attr_key])
+
+            config_result[method_name] = {
+                "n_songs": len(song_list),
+                "attr_change_mean": float(np.mean(changes)),
+                "attr_change_std": float(np.std(changes)),
+                "attr_value_mean": float(np.mean(attr_vals)),
+                "degradation_mean": float(np.mean(degradations)),
+                "degradation_std": float(np.std(degradations)),
+            }
+
+            logger.info(
+                f"  {method_name:6s}: change={np.mean(changes):+.1f}±{np.std(changes):.1f}, "
+                f"degrad={np.mean(degradations):.2f}±{np.std(degradations):.2f}"
             )
 
-            generator.apply_precomputed_steering(filtered_vectors, alpha)
-            with torch.no_grad():
-                generated = generator.model.generate(
-                    conditioning, continuation_len, **gen_kwargs
-                )
-            generator.remove_steering()
-
-            full_seq = torch.cat((conditioning, generated), 1).cpu().numpy()[0]
-            gen_only = generated.cpu().numpy()[0]
-
-            gen_metrics = measure_concept_from_tokens(gen_only, encoding)
-            quality = evaluate_quality_metrics(full_seq, encoding)
-            degradation = calculate_degradation(quality)
-
-            changes.append(gen_metrics[attr_key] - initial_value)
-            degradations.append(degradation["total_degradation"])
-            attr_vals.append(gen_metrics[attr_key])
-
-        results[config_name] = {
-            "layers": target_layers,
-            "n_layers": len(target_layers),
-            "n_songs": len(song_list),
-            "attr_change_mean": float(np.mean(changes)),
-            "attr_change_std": float(np.std(changes)),
-            "attr_value_mean": float(np.mean(attr_vals)),
-            "degradation_mean": float(np.mean(degradations)),
-            "degradation_std": float(np.std(degradations)),
-        }
-
-        logger.info(
-            f"  → change={np.mean(changes):+.1f}±{np.std(changes):.1f}, "
-            f"degrad={np.mean(degradations):.2f}±{np.std(degradations):.2f}"
-        )
+        results[config_name] = config_result
 
     return results
 
@@ -264,24 +269,31 @@ def main():
                 continuation_len=args.continuation_len,
             )
 
-            # Merge low + high per hook config
+            # Merge low + high per hook config, per method
             merged = {}
             for config_name in config_pid.HOOK_CONFIGS:
                 lo = low_results[config_name]
                 hi = high_results[config_name]
-                merged[config_name] = {
+                config_merged = {
                     "layers": lo["layers"],
                     "n_layers": lo["n_layers"],
-                    "n_songs": lo["n_songs"] + hi["n_songs"],
-                    "low": lo,
-                    "high": hi,
-                    "abs_change_mean": float(
-                        (abs(lo["attr_change_mean"]) + abs(hi["attr_change_mean"])) / 2
-                    ),
-                    "degradation_mean": float(
-                        (lo["degradation_mean"] + hi["degradation_mean"]) / 2
-                    ),
+                    "methods": {},
                 }
+                for method in ["p_only", "pi", "pid"]:
+                    lo_m = lo[method]
+                    hi_m = hi[method]
+                    config_merged["methods"][method] = {
+                        "n_songs": lo_m["n_songs"] + hi_m["n_songs"],
+                        "abs_change_mean": float(
+                            (abs(lo_m["attr_change_mean"]) + abs(hi_m["attr_change_mean"])) / 2
+                        ),
+                        "degradation_mean": float(
+                            (lo_m["degradation_mean"] + hi_m["degradation_mean"]) / 2
+                        ),
+                        "low": lo_m,
+                        "high": hi_m,
+                    }
+                merged[config_name] = config_merged
 
             concept_results[f"alpha_{alpha}"] = merged
 
@@ -297,18 +309,28 @@ def main():
     # Print summary
     for concept, concept_data in all_results.items():
         for alpha_key, configs in concept_data.items():
-            print(f"\n{'='*80}")
+            print(f"\n{'='*90}")
             print(f"Hook Ablation — {concept} | {alpha_key}")
-            print(f"{'='*80}")
-            print(f"{'Config':<20} {'Layers':<8} {'|Δ Attr|':<12} {'Degradation':<14}")
-            print("-" * 54)
+            print(f"{'='*90}")
+            print(
+                f"{'Config':<20} {'Layers':<8} "
+                f"{'P |Δ|':<10} {'P Deg':<10} "
+                f"{'PI |Δ|':<10} {'PI Deg':<10} "
+                f"{'PID |Δ|':<10} {'PID Deg':<10}"
+            )
+            print("-" * 88)
             for name, data in configs.items():
+                methods = data["methods"]
+                p = methods["p_only"]
+                pi = methods["pi"]
+                pid = methods["pid"]
                 print(
                     f"{name:<20} {data['n_layers']:<8} "
-                    f"{data['abs_change_mean']:<12.1f} "
-                    f"{data['degradation_mean']:<14.2f}"
+                    f"{p['abs_change_mean']:<10.1f} {p['degradation_mean']:<10.2f} "
+                    f"{pi['abs_change_mean']:<10.1f} {pi['degradation_mean']:<10.2f} "
+                    f"{pid['abs_change_mean']:<10.1f} {pid['degradation_mean']:<10.2f}"
                 )
-            print(f"{'='*80}")
+            print(f"{'='*90}")
 
 
 if __name__ == "__main__":

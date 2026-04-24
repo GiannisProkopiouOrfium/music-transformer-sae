@@ -99,12 +99,23 @@ TEMPERATURE = 1.0
 FILTER_THRESHOLD = 0.9
 
 # ─── Hook Ablation Configurations ────────────────────────────────────────────
+# MMT has 6 transformer blocks, each with 2 sublayers:
+#   Block 0: [0=attn, 1=ff]  Block 1: [2=attn, 3=ff]  Block 2: [4=attn, 5=ff]
+#   Block 3: [6=attn, 7=ff]  Block 4: [8=attn, 9=ff]  Block 5: [10=attn, 11=ff]
 HOOK_CONFIGS = {
+    # Full coverage
     "all_12": list(range(12)),
+    # By sublayer type
     "attention_only": [0, 2, 4, 6, 8, 10],
     "feedforward_only": [1, 3, 5, 7, 9, 11],
-    "deep_only": [8, 9, 10, 11],
-    "mid_deep": [4, 5, 6, 7, 8, 9, 10, 11],
+    # By depth
+    "shallow_only": [0, 1, 2, 3],           # blocks 0-1
+    "mid_only": [4, 5, 6, 7],               # blocks 2-3
+    "deep_only": [8, 9, 10, 11],            # blocks 4-5
+    "mid_deep": [4, 5, 6, 7, 8, 9, 10, 11],  # blocks 2-5
+    # Single best layer (SAS found layer 10 optimal)
+    "layer_10_only": [10],
+    "layer_11_only": [11],
 }
 
 # ─── SAS Configuration (for temporal PID) ─────────────────────────────────────
