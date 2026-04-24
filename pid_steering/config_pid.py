@@ -54,20 +54,21 @@ GROUND_TRUTH = {
 
 # ─── PID Default Gains ───────────────────────────────────────────────────────
 # PID paper (Nguyen et al., ICLR 2026) found optimal Ki ∈ [0.05, 0.10],
-# Kd ∈ [0.01, 0.05] for 26-42 layer LLMs. Our 12-sublayer model uses the
-# upper end of these ranges since fewer layers means less integral accumulation.
+# Kd ∈ [0.01, 0.05] for 26-42 layer LLMs.
+# Grid search on MMT (12 sublayers) confirmed Ki=0.025 for duration,
+# Ki=0.05 neighborhood for pitch. Using conservative unified gains.
 
 SPATIAL_PID_DEFAULTS = {
     "Kp": 1.0,  # Proportional gain (1.0 = standard DiffMean strength)
-    "Ki": 0.10,  # Integral gain (upper end of paper's optimal [0.05, 0.10])
-    "Kd": 0.05,  # Derivative gain (upper end of paper's optimal [0.01, 0.05])
+    "Ki": 0.05,  # Integral gain (grid search validated, paper's lower optimal)
+    "Kd": 0.01,  # Derivative gain (grid search confirmed across both concepts)
     "max_I": 5.0,  # Anti-windup clamp for integral accumulator
 }
 
 TEMPORAL_PID_DEFAULTS = {
     "Kp": 1.0,  # Proportional gain
-    "Ki": 0.10,  # Integral gain
-    "Kd": 0.05,  # Derivative gain
+    "Ki": 0.05,  # Integral gain
+    "Kd": 0.01,  # Derivative gain
     "max_I": 10.0,  # Anti-windup clamp
     "lambda_min": 0.0,  # Minimum steering strength
     "lambda_max": 5.0,  # Maximum steering strength
