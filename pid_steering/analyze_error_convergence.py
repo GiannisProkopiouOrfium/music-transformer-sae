@@ -31,6 +31,10 @@ from pid_steering.sequential_pid_calculator import (
     ActivationCapture,
     SteeringInjector,
 )
+from pid_steering.conditioned_pid_evaluator import (
+    load_song_tokens,
+    find_extreme_songs,
+)
 import config_pid
 
 import representation
@@ -312,15 +316,22 @@ def main():
         "--Kp", type=float, default=config_pid.SPATIAL_PID_DEFAULTS["Kp"]
     )
     parser.add_argument(
-        "--Ki", type=float, default=config_pid.SPATIAL_PID_DEFAULTS["Ki"]
+        "--Ki", type=float, default=0.3,
+        help="Integral gain for convergence plot (higher than experiment default "
+             "to show PI dynamics clearly over 12 sublayers)",
     )
     parser.add_argument(
-        "--Kd", type=float, default=config_pid.SPATIAL_PID_DEFAULTS["Kd"]
+        "--Kd", type=float, default=0.1,
+        help="Derivative gain for convergence plot",
     )
     parser.add_argument(
         "--max_I", type=float, default=config_pid.SPATIAL_PID_DEFAULTS["max_I"]
     )
     parser.add_argument("--alpha", type=float, default=1.0)
+    parser.add_argument(
+        "--n_songs", type=int, default=20,
+        help="Songs per contrastive set (more = smoother means)",
+    )
     parser.add_argument(
         "--activations_dir",
         type=pathlib.Path,
@@ -350,12 +361,28 @@ def main():
         device,
     )
 
-    # Load contrastive sequences
-    from pid_steering.sequential_pid_calculator import load_contrastive_sequences
+    # Load contrastive sequences — try HDF5/JSON first, fall back to extreme songs
+    source_seqs, target_seqs = None, None
+    try:
+        from pid_steering.sequential_pid_calculator import load_contrastive_sequences
 
-    source_seqs, target_seqs = load_contrastive_sequences(
-        args.activations_dir, args.concept
-    )
+        source_seqs, target_seqs = load_contrastive_sequences(
+            args.activations_dir, args.concept
+        )
+        logger.info("Loaded contrastive sequences from activation pipeline")
+    except Exception as e:
+        logger.info(f"Activation pipeline data not available ({e}), "
+                     f"falling back to find_extreme_songs")
+
+    if source_seqs is None or target_seqs is None:
+        notes_dir = config_pid.PROJECT_ROOT / "data" / "sod" / "processed" / "notes"
+        low_songs, high_songs = find_extreme_songs(
+            notes_dir, encoding, args.concept, n_songs=args.n_songs,
+        )
+        source_seqs = [load_song_tokens(fp, encoding) for fp, _ in low_songs]
+        target_seqs = [load_song_tokens(fp, encoding) for fp, _ in high_songs]
+        logger.info(f"Using {len(source_seqs)} source + {len(target_seqs)} target "
+                     f"sequences from extreme songs")
 
     # Run analysis
     results = run_error_analysis(
@@ -372,18 +399,20 @@ def main():
 
     # Save results
     args.output_dir.mkdir(parents=True, exist_ok=True)
-    results_path = args.output_dir / f"error_convergence_{args.concept}.json"
+    gains_str = f"Kp{args.Kp}_Ki{args.Ki}_Kd{args.Kd}"
+    results_path = args.output_dir / f"error_convergence_{args.concept}_{gains_str}.json"
     with open(results_path, "w") as f:
         json.dump(results, f, indent=2)
     logger.info(f"Saved results to {results_path}")
 
     # Plot
-    plot_path = args.output_dir / f"error_convergence_{args.concept}.png"
+    plot_path = args.output_dir / f"error_convergence_{args.concept}_{gains_str}.png"
     plot_error_convergence(results, args.concept, plot_path)
 
     # Print summary
     print("\n" + "=" * 60)
     print(f"Error Convergence Summary — {args.concept}")
+    print(f"Gains: Kp={args.Kp}, Ki={args.Ki}, Kd={args.Kd}, α={args.alpha}")
     print("=" * 60)
     print(f"{'Layer':>6} {'P':>10} {'PI':>10} {'PID':>10}")
     print("-" * 40)
