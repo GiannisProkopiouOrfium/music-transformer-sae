@@ -534,34 +534,50 @@ def main():
 
         all_results[concept] = concept_results
 
-        # Aggregate and print summary
-        # Separate by alpha magnitude for clearer view
+        # Aggregate and print summary — split by category for clarity
         for alpha in args.alphas:
             subset = [r for r in concept_results if abs(r["alpha"]) == alpha]
             if not subset:
                 continue
+
+            # Overall
             summary = aggregate_results(subset, concept)
 
-            print(f"\n{'='*90}")
+            # Per-category
+            low_subset = [r for r in subset if r["category"] == "low"]
+            high_subset = [r for r in subset if r["category"] == "high"]
+            low_summary = aggregate_results(low_subset, concept) if low_subset else {}
+            high_summary = aggregate_results(high_subset, concept) if high_subset else {}
+
+            print(f"\n{'='*96}")
             print(f"Conditioned PID Results — {concept} | |α|={alpha}")
-            print(f"{'='*90}")
+            print(f"{'='*96}")
             print(
-                f"{'Method':<12} {'N':<5} {'Attr Change':<15} "
+                f"{'Method':<12} {'Cat':<6} {'N':<4} {'Attr Change':<16} "
                 f"{'Attr Value':<12} {'Degrad':<12} "
                 f"{'PC Ent':<10} {'Scale%':<10} {'Groove%':<10}"
             )
-            print("-" * 86)
-            for method, s in summary.items():
-                print(
-                    f"{method:<12} {s['n_songs']:<5} "
-                    f"{s['attr_change_mean']:+8.2f} ± {s['attr_change_std']:<5.1f} "
-                    f"{s['attr_value_mean']:<12.1f} "
-                    f"{s['degradation_mean']:<12.2f} "
-                    f"{s['pitch_class_entropy_mean']:<10.3f} "
-                    f"{s['scale_consistency_mean']:<10.1f} "
-                    f"{s['groove_consistency_mean']:<10.1f}"
-                )
-            print(f"{'='*90}")
+            print("-" * 92)
+
+            for method in ["baseline", "p_only", "pi", "pid"]:
+                for cat_label, cat_summary in [
+                    ("LOW↑", low_summary), ("HIGH↓", high_summary), ("ALL", summary)
+                ]:
+                    if method not in cat_summary:
+                        continue
+                    s = cat_summary[method]
+                    print(
+                        f"{method:<12} {cat_label:<6} {s['n_songs']:<4} "
+                        f"{s['attr_change_mean']:+8.2f} ± {s['attr_change_std']:<5.1f} "
+                        f"{s['attr_value_mean']:<12.1f} "
+                        f"{s['degradation_mean']:<12.2f} "
+                        f"{s['pitch_class_entropy_mean']:<10.3f} "
+                        f"{s['scale_consistency_mean']:<10.1f} "
+                        f"{s['groove_consistency_mean']:<10.1f}"
+                    )
+                if method != "pid":
+                    print()
+            print(f"{'='*96}")
 
     # Save all results
     args.output_dir.mkdir(parents=True, exist_ok=True)
