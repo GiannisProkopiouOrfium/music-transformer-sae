@@ -85,7 +85,12 @@ def run_conditioned_hook_ablation(
 
     # Compute all three PID variants
     variants = compute_pid_variants(
-        dm_vectors, Kp=Kp, Ki=Ki, Kd=Kd, max_I=max_I, dim=config_pid.MODEL_DIM,
+        dm_vectors,
+        Kp=Kp,
+        Ki=Ki,
+        Kd=Kd,
+        max_I=max_I,
+        dim=config_pid.MODEL_DIM,
     )
 
     results = {}
@@ -285,7 +290,11 @@ def main():
                     config_merged["methods"][method] = {
                         "n_songs": lo_m["n_songs"] + hi_m["n_songs"],
                         "abs_change_mean": float(
-                            (abs(lo_m["attr_change_mean"]) + abs(hi_m["attr_change_mean"])) / 2
+                            (
+                                abs(lo_m["attr_change_mean"])
+                                + abs(hi_m["attr_change_mean"])
+                            )
+                            / 2
                         ),
                         "degradation_mean": float(
                             (lo_m["degradation_mean"] + hi_m["degradation_mean"]) / 2

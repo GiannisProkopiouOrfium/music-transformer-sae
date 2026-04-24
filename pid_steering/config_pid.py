@@ -109,9 +109,9 @@ HOOK_CONFIGS = {
     "attention_only": [0, 2, 4, 6, 8, 10],
     "feedforward_only": [1, 3, 5, 7, 9, 11],
     # By depth
-    "shallow_only": [0, 1, 2, 3],           # blocks 0-1
-    "mid_only": [4, 5, 6, 7],               # blocks 2-3
-    "deep_only": [8, 9, 10, 11],            # blocks 4-5
+    "shallow_only": [0, 1, 2, 3],  # blocks 0-1
+    "mid_only": [4, 5, 6, 7],  # blocks 2-3
+    "deep_only": [8, 9, 10, 11],  # blocks 4-5
     "mid_deep": [4, 5, 6, 7, 8, 9, 10, 11],  # blocks 2-5
     # Single best layer (SAS found layer 10 optimal)
     "layer_10_only": [10],
