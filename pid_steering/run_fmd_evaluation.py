@@ -1,15 +1,18 @@
-"""FMD Evaluation for PID Steering.
+"""FMD Evaluation for PID Steering — Conditioned Generation.
 
 Computes Fréchet Music Distance (FMD) via CLaMP2 embeddings
-for PID-steered vs baseline generations. This mirrors the
-existing FMD pipeline in metrics_evaluation/evaluate_fmd.py.
+for PID-steered conditioned generations. Mirrors the existing
+FMD pipeline in metrics_evaluation/evaluate_fmd.py.
 
 Produces FMD scores for:
-- Unconditioned baseline
+- baseline (no steering, conditioned)
 - P-only (standard DiffMean)
 - PI
 - PID
-at various alpha values.
+at various alpha values, for both pitch and duration concepts.
+
+Uses 16-beat conditioning prefix and 512-token continuations
+to match the SAS/DM evaluator methodology.
 """
 
 import argparse
@@ -17,7 +20,7 @@ import json
 import logging
 import pathlib
 import sys
-from typing import Dict, List
+from typing import Dict, List, Tuple
 
 import numpy as np
 import torch
@@ -31,41 +34,89 @@ from pid_steering.pid_vector_calculator import (
     compute_pid_variants,
 )
 from pid_steering.pid_steered_generator import PIDSteeredGenerator, load_model
-from pid_steering.run_single_attribute import compute_generation_metrics
+from pid_steering.conditioned_pid_evaluator import (
+    load_song_tokens,
+    extract_conditioning_prefix,
+    find_extreme_songs,
+)
 
 import config_pid
+import representation
 
 logger = logging.getLogger(__name__)
 
 
-def sequences_to_midi(
-    sequences: List[np.ndarray], output_dir: pathlib.Path, encoding: dict
-):
-    """Convert token sequences to MIDI files for FMD computation."""
-    sys.path.insert(0, str(pathlib.Path(__file__).parent.parent / "mmt"))
-    import representation
+def generate_conditioned_midis(
+    generator: PIDSteeredGenerator,
+    variants: Dict[str, Dict[int, torch.Tensor]],
+    encoding: Dict,
+    device: torch.device,
+    song_list: List[Tuple[pathlib.Path, float]],
+    alpha: float,
+    conditioning_beats: int,
+    continuation_len: int,
+    output_dir: pathlib.Path,
+) -> Dict[str, pathlib.Path]:
+    """Generate conditioned MIDI files for each method variant.
 
-    output_dir.mkdir(parents=True, exist_ok=True)
-    midi_paths = []
+    Returns dict mapping method_name -> directory of MIDI files.
+    """
+    eos = encoding["type_code_map"]["end-of-song"]
+    gen_kwargs = {
+        "eos_token": eos,
+        "temperature": config_pid.TEMPERATURE,
+        "filter_logits_fn": "top_k",
+        "filter_thres": config_pid.FILTER_THRESHOLD,
+        "monotonicity_dim": ("type", "beat"),
+    }
 
-    for i, seq in enumerate(sequences):
-        try:
-            midi_path = output_dir / f"sample_{i}.mid"
-            music = representation.decode(seq, encoding)
-            if music is not None:
-                music.write(str(midi_path))
-                midi_paths.append(midi_path)
-        except Exception as e:
-            logger.warning(f"Failed to decode sample {i}: {e}")
+    method_configs = {"baseline": None}
+    method_configs.update(variants)
 
-    return midi_paths
+    midi_dirs = {}
+
+    for method_name, vectors in method_configs.items():
+        method_alpha = alpha if method_name != "baseline" else 0.0
+        midi_dir = output_dir / method_name
+        midi_dir.mkdir(parents=True, exist_ok=True)
+        n_valid = 0
+
+        for i, (filepath, _) in enumerate(song_list):
+            tokens = load_song_tokens(filepath, encoding)
+            conditioning = extract_conditioning_prefix(tokens, conditioning_beats).to(
+                device
+            )
+
+            if vectors is not None and method_alpha != 0.0:
+                generator.apply_precomputed_steering(vectors, method_alpha)
+            else:
+                generator.remove_steering()
+
+            with torch.no_grad():
+                generated = generator.model.generate(
+                    conditioning, continuation_len, **gen_kwargs
+                )
+            generator.remove_steering()
+
+            full_seq = torch.cat((conditioning, generated), 1).cpu().numpy()[0]
+
+            try:
+                midi_path = midi_dir / f"sample_{i}.mid"
+                music = representation.decode(full_seq, encoding)
+                if music is not None:
+                    music.write(str(midi_path))
+                    n_valid += 1
+            except Exception as e:
+                logger.warning(f"MIDI export failed for {method_name} sample {i}: {e}")
+
+        logger.info(f"  {method_name}: {n_valid}/{len(song_list)} valid MIDIs")
+        midi_dirs[method_name] = midi_dir
+
+    return midi_dirs
 
 
 def compute_fmd(generated_dir: pathlib.Path, reference_dir: pathlib.Path) -> float:
-    """Compute FMD between generated and reference MIDI sets.
-
-    Delegates to the existing FMD evaluation pipeline.
-    """
+    """Compute FMD between generated and reference MIDI sets."""
     try:
         sys.path.insert(
             0, str(pathlib.Path(__file__).parent.parent / "metrics_evaluation")
@@ -74,36 +125,37 @@ def compute_fmd(generated_dir: pathlib.Path, reference_dir: pathlib.Path) -> flo
 
         return compute_fmd_from_dirs(str(generated_dir), str(reference_dir))
     except ImportError:
-        logger.warning("evaluate_fmd not available. Computing basic FMD proxy...")
-        return _compute_fmd_proxy(generated_dir, reference_dir)
-
-
-def _compute_fmd_proxy(gen_dir: pathlib.Path, ref_dir: pathlib.Path) -> float:
-    """Lightweight FMD proxy using token-level statistics.
-
-    Used when CLaMP2 is not available.
-    """
-    gen_metrics = []
-    ref_metrics = []
-
-    for midi_path in gen_dir.glob("*.mid"):
-        # Just use the metrics we already computed as a proxy
-        pass
-
-    logger.warning("FMD proxy not fully implemented — use evaluate_fmd.py on EC2")
-    return -1.0
+        logger.warning("evaluate_fmd not available — returning -1.0")
+        return -1.0
 
 
 def main():
-    parser = argparse.ArgumentParser(description="FMD evaluation for PID steering")
-    parser.add_argument("--concept", type=str, default="average_pitch")
-    parser.add_argument("--n_samples", type=int, default=50)
-    parser.add_argument("--seq_len", type=int, default=config_pid.MAX_SEQ_LEN)
+    parser = argparse.ArgumentParser(
+        description="FMD evaluation for PID steering (conditioned)"
+    )
     parser.add_argument(
-        "--alpha_grid",
+        "--concepts",
+        type=str,
+        nargs="+",
+        default=["average_pitch", "average_duration"],
+    )
+    parser.add_argument("--n_songs", type=int, default=10)
+    parser.add_argument(
+        "--alphas",
         type=float,
         nargs="+",
-        default=[0.0, 0.5, 1.0, 1.5, 2.0],
+        default=[0.5, 1.0],
+        help="Alpha magnitudes (applied as +α on low, -α on high)",
+    )
+    parser.add_argument(
+        "--conditioning_beats",
+        type=int,
+        default=config_pid.CONDITIONING_BEATS,
+    )
+    parser.add_argument(
+        "--continuation_len",
+        type=int,
+        default=config_pid.CONTINUATION_LEN,
     )
     parser.add_argument(
         "--Kp", type=float, default=config_pid.SPATIAL_PID_DEFAULTS["Kp"]
@@ -144,72 +196,111 @@ def main():
     )
     generator = PIDSteeredGenerator(model, encoding)
 
-    dm_path = config_pid.STEERING_VECTORS_DIR / f"{args.concept}_steering_vectors.pt"
-    dm_vectors = load_diffmean_vectors(dm_path)
-    variants = compute_pid_variants(
-        dm_vectors,
-        Kp=args.Kp,
-        Ki=args.Ki,
-        Kd=args.Kd,
-        max_I=args.max_I,
-        dim=config_pid.MODEL_DIM,
-    )
+    notes_dir = config_pid.PROJECT_ROOT / "data" / "sod" / "processed" / "notes"
+    all_results = {}
 
-    results = {}
+    for concept in args.concepts:
+        logger.info(f"\n{'='*70}\nFMD Evaluation — {concept}\n{'='*70}")
 
-    for method_name, method_vectors in variants.items():
-        method_results = {}
+        dm_path = config_pid.STEERING_VECTORS_DIR / f"{concept}_steering_vectors.pt"
+        dm_vectors = load_diffmean_vectors(dm_path)
+        variants = compute_pid_variants(
+            dm_vectors,
+            Kp=args.Kp,
+            Ki=args.Ki,
+            Kd=args.Kd,
+            max_I=args.max_I,
+            dim=config_pid.MODEL_DIM,
+        )
 
-        for alpha in args.alpha_grid:
-            logger.info(f"FMD eval: {method_name}, alpha={alpha}")
+        low_songs, high_songs = find_extreme_songs(
+            notes_dir,
+            encoding,
+            concept,
+            n_songs=args.n_songs,
+            conditioning_beats=args.conditioning_beats,
+        )
 
-            # Generate sequences
-            sequences = generator.generate_samples(
-                pid_vectors=method_vectors,
+        concept_results = {}
+
+        for alpha in args.alphas:
+            alpha_key = f"alpha_{alpha}"
+
+            # Low songs: steer UP (+α)
+            logger.info(f"\n--- Low {concept}, α=+{alpha} ---")
+            low_midi_dirs = generate_conditioned_midis(
+                generator,
+                variants,
+                encoding,
+                device,
+                low_songs,
                 alpha=alpha,
-                n_samples=args.n_samples,
-                seq_len=args.seq_len,
+                conditioning_beats=args.conditioning_beats,
+                continuation_len=args.continuation_len,
+                output_dir=args.output_dir / concept / f"low_alpha{alpha}",
             )
 
-            # Convert to MIDI
-            midi_dir = args.output_dir / f"midi_{method_name}_alpha{alpha}"
-            midi_paths = sequences_to_midi(sequences, midi_dir, encoding)
-            logger.info(f"  Converted {len(midi_paths)} sequences to MIDI")
+            # High songs: steer DOWN (-α)
+            logger.info(f"\n--- High {concept}, α=-{alpha} ---")
+            high_midi_dirs = generate_conditioned_midis(
+                generator,
+                variants,
+                encoding,
+                device,
+                high_songs,
+                alpha=-alpha,
+                conditioning_beats=args.conditioning_beats,
+                continuation_len=args.continuation_len,
+                output_dir=args.output_dir / concept / f"high_alpha{alpha}",
+            )
 
-            # Compute FMD
-            if midi_paths:
-                fmd = compute_fmd(midi_dir, args.reference_dir)
-                method_results[str(alpha)] = {
-                    "fmd": fmd,
-                    "n_valid_sequences": len(midi_paths),
-                }
-                logger.info(f"  FMD = {fmd:.4f}")
-            else:
-                method_results[str(alpha)] = {"fmd": -1.0, "n_valid_sequences": 0}
+            # Compute FMD for each method (pool low+high MIDIs)
+            fmd_results = {}
+            for method in ["baseline", "p_only", "pi", "pid"]:
+                # Merge low and high MIDI dirs into a combined dir
+                combined_dir = args.output_dir / concept / f"combined_{alpha}" / method
+                combined_dir.mkdir(parents=True, exist_ok=True)
 
-        results[method_name] = method_results
+                n_files = 0
+                for src_dir in [low_midi_dirs.get(method), high_midi_dirs.get(method)]:
+                    if src_dir and src_dir.exists():
+                        for midi_file in src_dir.glob("*.mid"):
+                            dst = (
+                                combined_dir / f"{src_dir.parent.name}_{midi_file.name}"
+                            )
+                            if not dst.exists():
+                                import shutil
+
+                                shutil.copy2(midi_file, dst)
+                            n_files += 1
+
+                fmd = compute_fmd(combined_dir, args.reference_dir)
+                fmd_results[method] = {"fmd": fmd, "n_files": n_files}
+                logger.info(f"  {method}: FMD={fmd:.4f} ({n_files} files)")
+
+            concept_results[alpha_key] = fmd_results
+
+        all_results[concept] = concept_results
 
     # Save
     args.output_dir.mkdir(parents=True, exist_ok=True)
-    results_path = args.output_dir / f"fmd_results_{args.concept}.json"
+    results_path = args.output_dir / "fmd_pid_results.json"
     with open(results_path, "w") as f:
-        json.dump(results, f, indent=2)
-
-    logger.info(f"Saved FMD results to {results_path}")
+        json.dump(all_results, f, indent=2)
 
     # Print summary
-    print("\n" + "=" * 60)
-    print(f"FMD Results — {args.concept}")
-    print("=" * 60)
-    print(f"{'Method':<10} {'Alpha':<8} {'FMD':<12} {'Valid Seqs':<12}")
-    print("-" * 45)
-    for method, alphas in results.items():
-        for alpha_str, data in alphas.items():
-            print(
-                f"{method:<10} {alpha_str:<8} {data['fmd']:<12.4f} "
-                f"{data['n_valid_sequences']:<12}"
-            )
-    print("=" * 60)
+    for concept, concept_data in all_results.items():
+        for alpha_key, methods in concept_data.items():
+            print(f"\n{'='*60}")
+            print(f"FMD — {concept} | {alpha_key}")
+            print(f"{'='*60}")
+            print(f"{'Method':<12} {'FMD':<12} {'N Files':<10}")
+            print("-" * 34)
+            for method, data in methods.items():
+                print(f"{method:<12} {data['fmd']:<12.4f} {data['n_files']:<10}")
+            print(f"{'='*60}")
+
+    logger.info(f"\nSaved results to {results_path}")
 
 
 if __name__ == "__main__":

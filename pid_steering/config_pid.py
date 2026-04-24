@@ -83,7 +83,15 @@ GRID_SEARCH = {
 }
 
 # ─── Experiment Configuration ─────────────────────────────────────────────────
-ALPHA_GRID = [-2.0, -1.5, -1.0, -0.5, 0.5, 1.0, 1.5, 2.0]
+# Conditioned generation settings (aligned with SAS evaluator)
+CONDITIONING_BEATS = 16  # Same as SAS conditioned evaluator
+CONTINUATION_LEN = 512  # Tokens to generate after conditioning prefix
+
+# Alpha values for conditioned evaluation (direction-aware: +α on low, -α on high)
+PITCH_ALPHAS = [0.25, 0.5, 0.75, 1.0, 1.5]
+DURATION_ALPHAS = [0.5, 1.0, 1.5]
+
+ALPHA_GRID = [-2.0, -1.5, -1.0, -0.5, 0.5, 1.0, 1.5, 2.0]  # unconditioned sweep
 N_GENERATIONS = 50  # Per alpha value for main experiments
 N_GENERATIONS_QUICK = 10  # For grid search / ablation
 MAX_SEQ_LEN = 512

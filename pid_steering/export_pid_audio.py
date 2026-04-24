@@ -219,8 +219,12 @@ def main():
     parser.add_argument("--concept", type=str, default="average_pitch")
     parser.add_argument("--alpha", type=float, default=0.5)
     parser.add_argument("--n_songs", type=int, default=5)
-    parser.add_argument("--conditioning_beats", type=int, default=4)
-    parser.add_argument("--continuation_len", type=int, default=256)
+    parser.add_argument(
+        "--conditioning_beats", type=int, default=config_pid.CONDITIONING_BEATS
+    )
+    parser.add_argument(
+        "--continuation_len", type=int, default=config_pid.CONTINUATION_LEN
+    )
     parser.add_argument(
         "--Kp", type=float, default=config_pid.SPATIAL_PID_DEFAULTS["Kp"]
     )

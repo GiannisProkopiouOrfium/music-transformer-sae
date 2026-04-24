@@ -58,7 +58,7 @@ def load_song_tokens(filepath: pathlib.Path, encoding: Dict) -> np.ndarray:
     return codes
 
 
-def extract_conditioning_prefix(tokens: np.ndarray, n_beats: int = 4) -> torch.Tensor:
+def extract_conditioning_prefix(tokens: np.ndarray, n_beats: int = 16) -> torch.Tensor:
     """Extract first N beats as conditioning prefix.
 
     Returns:
@@ -77,7 +77,7 @@ def extract_conditioning_prefix(tokens: np.ndarray, n_beats: int = 4) -> torch.T
 
 
 def calculate_initial_attribute(
-    tokens: np.ndarray, encoding: Dict, concept: str, n_beats: int = 4
+    tokens: np.ndarray, encoding: Dict, concept: str, n_beats: int = 16
 ) -> Optional[float]:
     """Calculate average attribute (pitch or duration) in first N beats."""
     note_type = encoding["type_code_map"]["note"]
@@ -95,8 +95,8 @@ def find_extreme_songs(
     notes_dir: pathlib.Path,
     encoding: Dict,
     concept: str,
-    n_songs: int = 10,
-    conditioning_beats: int = 4,
+    n_songs: int = 5,
+    conditioning_beats: int = 16,
 ) -> Tuple[List[Tuple[pathlib.Path, float]], List[Tuple[pathlib.Path, float]]]:
     """Find songs with extreme initial attribute values.
 
@@ -225,8 +225,8 @@ def conditioned_pid_evaluate(
     category: str,
     alpha: float,
     concept: str,
-    conditioning_beats: int = 4,
-    continuation_len: int = 256,
+    conditioning_beats: int = 16,
+    continuation_len: int = 512,
     output_dir: Optional[pathlib.Path] = None,
     skip_wav: bool = False,
 ) -> List[Dict]:
@@ -415,14 +415,18 @@ def main():
         "--alphas",
         type=float,
         nargs="+",
-        default=[0.5, 1.0],
+        default=[0.25, 0.5, 0.75, 1.0, 1.5],
         help="Alpha values (applied as +α on low songs, -α on high songs)",
     )
     parser.add_argument(
-        "--n_songs", type=int, default=10, help="Songs per extreme category (low/high)"
+        "--n_songs", type=int, default=5, help="Songs per extreme category (low/high)"
     )
-    parser.add_argument("--conditioning_beats", type=int, default=4)
-    parser.add_argument("--continuation_len", type=int, default=256)
+    parser.add_argument(
+        "--conditioning_beats", type=int, default=config_pid.CONDITIONING_BEATS
+    )
+    parser.add_argument(
+        "--continuation_len", type=int, default=config_pid.CONTINUATION_LEN
+    )
     parser.add_argument(
         "--Kp", type=float, default=config_pid.SPATIAL_PID_DEFAULTS["Kp"]
     )
