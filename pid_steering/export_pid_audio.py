@@ -1,10 +1,16 @@
-"""Audio Export for PID Steering.
+"""Audio Export for PID Steering — Conditioned Comparison.
 
-Generates MIDI and WAV audio files for qualitative evaluation.
-Exports matched sets: baseline / P-only / PI / PID for side-by-side
-listening comparison.
+Generates matched comparison sets using conditioned generation:
+- baseline (no steering, same conditioning prefix)
+- p_only (standard DiffMean)
+- pi (PID without derivative)
+- pid (full PID)
 
-Requires FluidSynth 2.2.5 for audio rendering (available on EC2).
+Uses first N beats as conditioning prefix (same as DM/SAS evaluators)
+for meaningful before/after comparison.
+
+Outputs per song: MIDI + WAV for each method, metrics summary,
+and auto-selection of best PID demo examples.
 """
 
 import argparse
@@ -27,7 +33,14 @@ from pid_steering.pid_vector_calculator import (
     compute_pid_variants,
 )
 from pid_steering.pid_steered_generator import PIDSteeredGenerator, load_model
-from pid_steering.run_single_attribute import compute_generation_metrics
+from pid_steering.conditioned_pid_evaluator import (
+    load_song_tokens,
+    extract_conditioning_prefix,
+    find_extreme_songs,
+    evaluate_quality_metrics,
+    measure_concept_from_tokens,
+    calculate_degradation,
+)
 
 import config_pid
 import representation
@@ -35,173 +48,179 @@ import representation
 logger = logging.getLogger(__name__)
 
 
-def sequence_to_midi(
-    seq: np.ndarray, output_path: pathlib.Path, encoding: dict
-) -> bool:
-    """Convert a token sequence to a MIDI file."""
-    try:
-        music = representation.decode(seq, encoding)
-        if music is not None:
-            music.write(str(output_path))
-            return True
-    except Exception as e:
-        logger.warning(f"Failed to decode to MIDI: {e}")
-    return False
-
-
 def midi_to_wav(
     midi_path: pathlib.Path,
     wav_path: pathlib.Path,
     soundfont: Optional[str] = None,
-    sample_rate: int = 44100,
 ) -> bool:
     """Convert MIDI to WAV using FluidSynth."""
     if soundfont is None:
-        # Common soundfont locations
-        candidates = [
+        for sf in [
             "/usr/share/sounds/sf2/FluidR3_GM.sf2",
             "/usr/share/soundfonts/FluidR3_GM.sf2",
-            "/usr/share/sounds/sf2/default-GM.sf2",
             pathlib.Path.home() / "soundfonts" / "FluidR3_GM.sf2",
-        ]
-        for sf in candidates:
+        ]:
             if pathlib.Path(sf).exists():
                 soundfont = str(sf)
                 break
-
     if soundfont is None:
-        logger.warning("No soundfont found — skipping WAV conversion")
+        return False
+    try:
+        result = subprocess.run(
+            [
+                "fluidsynth",
+                "-ni",
+                soundfont,
+                str(midi_path),
+                "-F",
+                str(wav_path),
+                "-r",
+                "44100",
+            ],
+            capture_output=True,
+            text=True,
+            timeout=60,
+        )
+        return result.returncode == 0
+    except (FileNotFoundError, subprocess.TimeoutExpired):
         return False
 
-    try:
-        cmd = [
-            "fluidsynth",
-            "-ni",
-            soundfont,
-            str(midi_path),
-            "-F",
-            str(wav_path),
-            "-r",
-            str(sample_rate),
-        ]
-        result = subprocess.run(cmd, capture_output=True, text=True, timeout=60)
-        if result.returncode == 0:
-            return True
-        else:
-            logger.warning(f"FluidSynth error: {result.stderr}")
-    except FileNotFoundError:
-        logger.warning("FluidSynth not found — skipping WAV conversion")
-    except subprocess.TimeoutExpired:
-        logger.warning("FluidSynth timed out")
-    return False
 
-
-def export_comparison_set(
+def export_conditioned_comparison(
     generator: PIDSteeredGenerator,
-    dm_vectors: Dict[int, torch.Tensor],
-    encoding: dict,
-    concept: str,
+    pid_variants: Dict[str, Dict[int, torch.Tensor]],
+    encoding: Dict,
+    device: torch.device,
+    song_list: List,
+    category: str,
     alpha: float,
-    Kp: float,
-    Ki: float,
-    Kd: float,
-    max_I: float,
-    n_samples: int,
-    seq_len: int,
+    concept: str,
+    conditioning_beats: int,
+    continuation_len: int,
     output_dir: pathlib.Path,
     soundfont: Optional[str] = None,
-    device: torch.device = None,
-) -> Dict:
-    """Generate and export a full comparison set.
-
-    For each sample index, generates:
-    - baseline (alpha=0)
-    - p_only
-    - pi
-    - pid
-    and saves MIDI + WAV.
-    """
-    variants = compute_pid_variants(
-        dm_vectors,
-        Kp=Kp,
-        Ki=Ki,
-        Kd=Kd,
-        max_I=max_I,
-        dim=config_pid.MODEL_DIM,
-    )
-
-    method_configs = {
-        "baseline": (None, 0.0),
-        "p_only": (variants["p_only"], alpha),
-        "pi": (variants["pi"], alpha),
-        "pid": (variants["pid"], alpha),
+) -> List[Dict]:
+    """Generate and export conditioned comparison set."""
+    eos = encoding["type_code_map"]["end-of-song"]
+    gen_kwargs = {
+        "eos_token": eos,
+        "temperature": config_pid.TEMPERATURE,
+        "filter_logits_fn": "top_k",
+        "filter_thres": config_pid.FILTER_THRESHOLD,
+        "monotonicity_dim": ("type", "beat"),
     }
 
-    results = {}
+    method_configs = {"baseline": None}
+    method_configs.update(pid_variants)
 
-    for method_name, (vectors, method_alpha) in method_configs.items():
-        method_dir = output_dir / method_name
-        method_dir.mkdir(parents=True, exist_ok=True)
+    results = []
 
-        logger.info(f"Generating {method_name} samples (alpha={method_alpha})...")
+    for i, (filepath, initial_value) in enumerate(song_list):
+        logger.info(f"\nSong {i+1}/{len(song_list)}: {filepath.name}")
 
-        sequences = generator.generate_samples(
-            pid_vectors=vectors,
-            alpha=method_alpha,
-            n_samples=n_samples,
-            seq_len=seq_len,
+        tokens = load_song_tokens(filepath, encoding)
+        conditioning = extract_conditioning_prefix(tokens, conditioning_beats).to(
+            device
         )
 
-        method_metrics = []
-        n_midi = 0
-        n_wav = 0
-
-        for i, seq in enumerate(sequences):
-            # Save raw tokens
-            np.save(method_dir / f"tokens_{i}.npy", seq)
-
-            # MIDI
-            midi_path = method_dir / f"sample_{i}.mid"
-            if sequence_to_midi(seq, midi_path, encoding):
-                n_midi += 1
-
-                # WAV
-                wav_path = method_dir / f"sample_{i}.wav"
-                if midi_to_wav(midi_path, wav_path, soundfont):
-                    n_wav += 1
-
-            # Metrics
-            metrics = compute_generation_metrics(seq)
-            method_metrics.append(metrics)
-
-        # Average metrics
-        avg = {}
-        if method_metrics:
-            for key in method_metrics[0]:
-                values = [m[key] for m in method_metrics]
-                avg[f"{key}_mean"] = float(np.mean(values))
-                avg[f"{key}_std"] = float(np.std(values))
-
-        results[method_name] = {
-            "n_samples": n_samples,
-            "n_midi": n_midi,
-            "n_wav": n_wav,
-            "metrics": avg,
+        song_result = {
+            "song_name": filepath.stem,
+            "category": category,
+            "initial_value": float(initial_value),
+            "methods": {},
         }
 
-        logger.info(f"  {method_name}: {n_midi} MIDI, {n_wav} WAV files")
+        for method_name, vectors in method_configs.items():
+            method_alpha = alpha if method_name != "baseline" else 0.0
+
+            if vectors is not None and method_alpha != 0.0:
+                generator.apply_precomputed_steering(vectors, method_alpha)
+            else:
+                generator.remove_steering()
+
+            with torch.no_grad():
+                generated = generator.model.generate(
+                    conditioning, continuation_len, **gen_kwargs
+                )
+            generator.remove_steering()
+
+            full_seq = torch.cat((conditioning, generated), 1).cpu().numpy()[0]
+            generated_only = generated.cpu().numpy()[0]
+
+            gen_metrics = measure_concept_from_tokens(generated_only, encoding)
+            quality = evaluate_quality_metrics(full_seq, encoding)
+            degradation = calculate_degradation(quality)
+
+            # Save MIDI + WAV
+            save_dir = output_dir / concept / category / method_name
+            save_dir.mkdir(parents=True, exist_ok=True)
+
+            midi_ok, wav_ok = False, False
+            midi_path = save_dir / f"{filepath.stem}_a{alpha}.mid"
+            wav_path = save_dir / f"{filepath.stem}_a{alpha}.wav"
+
+            try:
+                music = representation.decode(full_seq, encoding)
+                music.write(str(midi_path))
+                midi_ok = True
+                wav_ok = midi_to_wav(midi_path, wav_path, soundfont)
+            except Exception as e:
+                logger.warning(f"Export failed: {e}")
+
+            attr_key = "pitch_mean" if "pitch" in concept else "duration_mean"
+            song_result["methods"][method_name] = {
+                "attr_value": gen_metrics[attr_key],
+                "attr_change": gen_metrics[attr_key] - initial_value,
+                "n_notes": gen_metrics["n_notes"],
+                "quality": quality,
+                "degradation": degradation["total_degradation"],
+                "midi": midi_ok,
+                "wav": wav_ok,
+            }
+
+            logger.info(
+                f"  {method_name:8s}: {attr_key}={gen_metrics[attr_key]:.1f}, "
+                f"change={gen_metrics[attr_key] - initial_value:+.1f}, "
+                f"degrad={degradation['total_degradation']:.2f}"
+            )
+
+        results.append(song_result)
 
     return results
 
 
+def select_best_demos(results: List[Dict], n_demos: int = 3) -> List[Dict]:
+    """Select best demo songs where PID shows clear advantage over P-only."""
+    scored = []
+    for r in results:
+        methods = r["methods"]
+        if "p_only" not in methods or "pid" not in methods:
+            continue
+        p = methods["p_only"]
+        pid = methods["pid"]
+        change_adv = abs(pid["attr_change"]) - abs(p["attr_change"])
+        degrad_adv = p["degradation"] - pid["degradation"]
+        scored.append(
+            {
+                "song": r,
+                "score": change_adv + degrad_adv,
+                "change_advantage": change_adv,
+                "degrad_advantage": degrad_adv,
+            }
+        )
+    scored.sort(key=lambda x: x["score"], reverse=True)
+    return scored[:n_demos]
+
+
 def main():
     parser = argparse.ArgumentParser(
-        description="Export PID steering audio for qualitative evaluation"
+        description="Export conditioned PID audio comparisons"
     )
     parser.add_argument("--concept", type=str, default="average_pitch")
-    parser.add_argument("--alpha", type=float, default=1.0)
-    parser.add_argument("--n_samples", type=int, default=10)
-    parser.add_argument("--seq_len", type=int, default=config_pid.MAX_SEQ_LEN)
+    parser.add_argument("--alpha", type=float, default=0.5)
+    parser.add_argument("--n_songs", type=int, default=5)
+    parser.add_argument("--conditioning_beats", type=int, default=4)
+    parser.add_argument("--continuation_len", type=int, default=256)
     parser.add_argument(
         "--Kp", type=float, default=config_pid.SPATIAL_PID_DEFAULTS["Kp"]
     )
@@ -239,47 +258,114 @@ def main():
 
     dm_path = config_pid.STEERING_VECTORS_DIR / f"{args.concept}_steering_vectors.pt"
     dm_vectors = load_diffmean_vectors(dm_path)
-
-    results = export_comparison_set(
-        generator,
+    variants = compute_pid_variants(
         dm_vectors,
-        encoding,
-        args.concept,
-        args.alpha,
         Kp=args.Kp,
         Ki=args.Ki,
         Kd=args.Kd,
         max_I=args.max_I,
-        n_samples=args.n_samples,
-        seq_len=args.seq_len,
-        output_dir=args.output_dir / args.concept,
-        soundfont=args.soundfont,
-        device=device,
+        dim=config_pid.MODEL_DIM,
     )
+
+    notes_dir = config_pid.PROJECT_ROOT / "data" / "sod" / "processed" / "notes"
+    low_songs, high_songs = find_extreme_songs(
+        notes_dir,
+        encoding,
+        args.concept,
+        n_songs=args.n_songs,
+    )
+
+    all_results = []
+
+    # Low songs: steer UP
+    logger.info(f"\n--- Low {args.concept} songs (α=+{args.alpha}) ---")
+    low_results = export_conditioned_comparison(
+        generator,
+        variants,
+        encoding,
+        device,
+        low_songs,
+        "low",
+        alpha=args.alpha,
+        concept=args.concept,
+        conditioning_beats=args.conditioning_beats,
+        continuation_len=args.continuation_len,
+        output_dir=args.output_dir,
+        soundfont=args.soundfont,
+    )
+    all_results.extend(low_results)
+
+    # High songs: steer DOWN
+    logger.info(f"\n--- High {args.concept} songs (α=-{args.alpha}) ---")
+    high_results = export_conditioned_comparison(
+        generator,
+        variants,
+        encoding,
+        device,
+        high_songs,
+        "high",
+        alpha=-args.alpha,
+        concept=args.concept,
+        conditioning_beats=args.conditioning_beats,
+        continuation_len=args.continuation_len,
+        output_dir=args.output_dir,
+        soundfont=args.soundfont,
+    )
+    all_results.extend(high_results)
+
+    # Select best demos
+    best_demos = select_best_demos(all_results)
+    if best_demos:
+        print(f"\n{'='*70}")
+        print("Best PID demo songs (PID advantage over P-only):")
+        print(f"{'='*70}")
+        for demo in best_demos:
+            s = demo["song"]
+            print(
+                f"  {s['song_name']} ({s['category']}): "
+                f"change_adv={demo['change_advantage']:+.1f}, "
+                f"degrad_adv={demo['degrad_advantage']:+.2f}"
+            )
 
     # Save summary
-    results_path = args.output_dir / args.concept / "export_summary.json"
-    with open(results_path, "w") as f:
-        json.dump(results, f, indent=2)
+    summary_path = args.output_dir / args.concept / "audio_export_summary.json"
+    summary_path.parent.mkdir(parents=True, exist_ok=True)
+    with open(summary_path, "w") as f:
+        json.dump(
+            {
+                "results": all_results,
+                "best_demos": (
+                    [d["song"]["song_name"] for d in best_demos] if best_demos else []
+                ),
+            },
+            f,
+            indent=2,
+            default=str,
+        )
 
     # Print summary
-    print("\n" + "=" * 70)
+    print(f"\n{'='*70}")
     print(f"Audio Export Summary — {args.concept}")
-    print("=" * 70)
+    print(f"{'='*70}")
     print(
-        f"{'Method':<12} {'Samples':<10} {'MIDI':<8} {'WAV':<8} "
-        f"{'Avg Pitch':<12} {'PC Entropy':<12}"
+        f"{'Method':<12} {'Songs':<8} {'Avg |Change|':<14} {'Avg Degrad':<12} {'MIDI':<6} {'WAV':<6}"
     )
-    print("-" * 65)
-    for method, data in results.items():
-        m = data["metrics"]
-        print(
-            f"{method:<12} {data['n_samples']:<10} {data['n_midi']:<8} "
-            f"{data['n_wav']:<8} "
-            f"{m.get('average_pitch_mean', 0):<12.2f} "
-            f"{m.get('pitch_class_entropy_mean', 0):<12.3f}"
-        )
-    print("=" * 70)
+    print("-" * 58)
+    for method in ["baseline", "p_only", "pi", "pid"]:
+        changes, degrads, midis, wavs = [], [], 0, 0
+        for r in all_results:
+            if method in r["methods"]:
+                m = r["methods"][method]
+                changes.append(abs(m["attr_change"]))
+                degrads.append(m["degradation"])
+                midis += int(m["midi"])
+                wavs += int(m["wav"])
+        if changes:
+            print(
+                f"{method:<12} {len(changes):<8} {np.mean(changes):<14.1f} "
+                f"{np.mean(degrads):<12.2f} {midis:<6} {wavs:<6}"
+            )
+    print(f"{'='*70}")
 
 
 if __name__ == "__main__":

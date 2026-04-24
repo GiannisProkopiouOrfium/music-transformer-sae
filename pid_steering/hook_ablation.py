@@ -49,6 +49,7 @@ def run_hook_ablation(
     n_samples: int,
     seq_len: int,
     device: torch.device,
+    encoding=None,
 ) -> Dict[str, Dict]:
     """Run ablation over different sublayer subsets.
 
@@ -84,12 +85,12 @@ def run_hook_ablation(
         )
 
         # Metrics
-        metrics_list = [compute_generation_metrics(s) for s in sequences]
+        metrics_list = [compute_generation_metrics(s, encoding) for s in sequences]
         avg = {}
         for key in metrics_list[0]:
             values = [m[key] for m in metrics_list]
-            avg[f"{key}_mean"] = float(np.mean(values))
-            avg[f"{key}_std"] = float(np.std(values))
+            avg[f"{key}_mean"] = float(np.nanmean(values))
+            avg[f"{key}_std"] = float(np.nanstd(values))
 
         results[config_name] = {
             "layers": target_layers,
@@ -160,6 +161,7 @@ def main():
         n_samples=args.n_samples,
         seq_len=args.seq_len,
         device=device,
+        encoding=encoding,
     )
 
     args.output_dir.mkdir(parents=True, exist_ok=True)

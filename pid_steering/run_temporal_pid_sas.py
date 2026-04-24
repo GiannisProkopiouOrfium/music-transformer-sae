@@ -168,12 +168,12 @@ def main():
         device=device,
     )
 
-    pid_metrics = [compute_generation_metrics(s) for s in pid_sequences]
+    pid_metrics = [compute_generation_metrics(s, encoding) for s in pid_sequences]
     pid_avg = {}
     for key in pid_metrics[0]:
         values = [m[key] for m in pid_metrics]
-        pid_avg[f"{key}_mean"] = float(np.mean(values))
-        pid_avg[f"{key}_std"] = float(np.std(values))
+        pid_avg[f"{key}_mean"] = float(np.nanmean(values))
+        pid_avg[f"{key}_std"] = float(np.nanstd(values))
 
     results["temporal_pid"] = {
         "metrics": pid_avg,
@@ -211,12 +211,12 @@ def main():
         seq_len=args.seq_len,
         device=device,
     )
-    baseline_metrics = [compute_generation_metrics(s) for s in baseline_seqs]
+    baseline_metrics = [compute_generation_metrics(s, encoding) for s in baseline_seqs]
     baseline_avg = {}
     for key in baseline_metrics[0]:
         values = [m[key] for m in baseline_metrics]
-        baseline_avg[f"{key}_mean"] = float(np.mean(values))
-        baseline_avg[f"{key}_std"] = float(np.std(values))
+        baseline_avg[f"{key}_mean"] = float(np.nanmean(values))
+        baseline_avg[f"{key}_std"] = float(np.nanstd(values))
     results["baseline"] = {"metrics": baseline_avg}
 
     # Save results
