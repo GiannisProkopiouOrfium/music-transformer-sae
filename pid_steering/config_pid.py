@@ -52,18 +52,39 @@ GROUND_TRUTH = {
     "groove_consistency": 93.05,
 }
 
-# ─── PID Default Gains ───────────────────────────────────────────────────────
-# PID paper (Nguyen et al., ICLR 2026) found optimal Ki ∈ [0.05, 0.10],
-# Kd ∈ [0.01, 0.05] for 26-42 layer LLMs.
-# Grid search on MMT (12 sublayers) confirmed Ki=0.025 for duration,
-# Ki=0.05 neighborhood for pitch. Using conservative unified gains.
+# ─── PID Gains ────────────────────────────────────────────────────────────────
+# Per-concept gains from grid search on MMT's 12-sublayer architecture
+# (grid_search_gains.py). The PID paper found Ki ∈ [0.05, 0.10] for 26-72
+# layer LLMs; MMT's shallower depth requires concept-specific tuning.
 
-SPATIAL_PID_DEFAULTS = {
-    "Kp": 1.0,  # Proportional gain (1.0 = standard DiffMean strength)
-    "Ki": 0.05,  # Integral gain (grid search validated, paper's lower optimal)
-    "Kd": 0.01,  # Derivative gain (grid search confirmed across both concepts)
-    "max_I": 5.0,  # Anti-windup clamp for integral accumulator
+CONCEPT_PID_GAINS = {
+    "average_pitch": {
+        "Kp": 1.5,  # Grid search best: stronger proportional for pitch
+        "Ki": 0.2,  # Higher integral needed — 12 layers means fewer steps
+        "Kd": 0.01,  # Derivative consistent across concepts
+        "max_I": 5.0,
+    },
+    "average_duration": {
+        "Kp": 1.25,  # Slightly above 1.0 — duration responds more readily
+        "Ki": 0.025,  # Lower integral sufficient for duration
+        "Kd": 0.01,
+        "max_I": 5.0,
+    },
 }
+
+# Unified fallback (average of per-concept gains, used when concept unknown)
+SPATIAL_PID_DEFAULTS = {
+    "Kp": 1.25,
+    "Ki": 0.05,
+    "Kd": 0.01,
+    "max_I": 5.0,
+}
+
+
+def get_gains(concept: str) -> dict:
+    """Look up per-concept PID gains, falling back to defaults."""
+    return CONCEPT_PID_GAINS.get(concept, SPATIAL_PID_DEFAULTS)
+
 
 TEMPORAL_PID_DEFAULTS = {
     "Kp": 1.0,  # Proportional gain

@@ -226,16 +226,28 @@ def main():
         "--continuation_len", type=int, default=config_pid.CONTINUATION_LEN
     )
     parser.add_argument(
-        "--Kp", type=float, default=config_pid.SPATIAL_PID_DEFAULTS["Kp"]
+        "--Kp",
+        type=float,
+        default=None,
+        help="Override proportional gain (default: per-concept from grid search)",
     )
     parser.add_argument(
-        "--Ki", type=float, default=config_pid.SPATIAL_PID_DEFAULTS["Ki"]
+        "--Ki",
+        type=float,
+        default=None,
+        help="Override integral gain (default: per-concept from grid search)",
     )
     parser.add_argument(
-        "--Kd", type=float, default=config_pid.SPATIAL_PID_DEFAULTS["Kd"]
+        "--Kd",
+        type=float,
+        default=None,
+        help="Override derivative gain (default: per-concept from grid search)",
     )
     parser.add_argument(
-        "--max_I", type=float, default=config_pid.SPATIAL_PID_DEFAULTS["max_I"]
+        "--max_I",
+        type=float,
+        default=None,
+        help="Override integral clamp (default: per-concept from grid search)",
     )
     parser.add_argument("--soundfont", type=str, default=None)
     parser.add_argument(
@@ -260,14 +272,22 @@ def main():
     )
     generator = PIDSteeredGenerator(model, encoding)
 
+    # Per-concept PID gains (data-driven from grid search)
+    gains = config_pid.get_gains(args.concept)
+    Kp = args.Kp if args.Kp is not None else gains["Kp"]
+    Ki = args.Ki if args.Ki is not None else gains["Ki"]
+    Kd = args.Kd if args.Kd is not None else gains["Kd"]
+    max_I = args.max_I if args.max_I is not None else gains["max_I"]
+    logger.info(f"PID gains: Kp={Kp}, Ki={Ki}, Kd={Kd}, max_I={max_I}")
+
     dm_path = config_pid.STEERING_VECTORS_DIR / f"{args.concept}_steering_vectors.pt"
     dm_vectors = load_diffmean_vectors(dm_path)
     variants = compute_pid_variants(
         dm_vectors,
-        Kp=args.Kp,
-        Ki=args.Ki,
-        Kd=args.Kd,
-        max_I=args.max_I,
+        Kp=Kp,
+        Ki=Ki,
+        Kd=Kd,
+        max_I=max_I,
         dim=config_pid.MODEL_DIM,
     )
 

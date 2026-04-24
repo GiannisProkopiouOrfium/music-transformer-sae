@@ -313,23 +313,34 @@ def main():
     )
     parser.add_argument("--concept", type=str, default="average_pitch")
     parser.add_argument(
-        "--Kp", type=float, default=config_pid.SPATIAL_PID_DEFAULTS["Kp"]
+        "--Kp",
+        type=float,
+        default=None,
+        help="Override Kp (default: per-concept from grid search)",
     )
     parser.add_argument(
-        "--Ki", type=float, default=0.3,
-        help="Integral gain for convergence plot (higher than experiment default "
-             "to show PI dynamics clearly over 12 sublayers)",
+        "--Ki",
+        type=float,
+        default=None,
+        help="Override Ki (default: per-concept from grid search). "
+        "Use higher values (e.g. 0.3) to show PI dynamics more clearly.",
     )
     parser.add_argument(
-        "--Kd", type=float, default=0.1,
-        help="Derivative gain for convergence plot",
+        "--Kd",
+        type=float,
+        default=None,
+        help="Override Kd (default: per-concept from grid search)",
     )
     parser.add_argument(
-        "--max_I", type=float, default=config_pid.SPATIAL_PID_DEFAULTS["max_I"]
+        "--max_I",
+        type=float,
+        default=None,
     )
     parser.add_argument("--alpha", type=float, default=1.0)
     parser.add_argument(
-        "--n_songs", type=int, default=20,
+        "--n_songs",
+        type=int,
+        default=20,
         help="Songs per contrastive set (more = smoother means)",
     )
     parser.add_argument(
@@ -351,6 +362,14 @@ def main():
 
     device = torch.device(f"cuda:{args.gpu}" if torch.cuda.is_available() else "cpu")
 
+    # Per-concept PID gains (data-driven from grid search)
+    gains = config_pid.get_gains(args.concept)
+    Kp = args.Kp if args.Kp is not None else gains["Kp"]
+    Ki = args.Ki if args.Ki is not None else gains["Ki"]
+    Kd = args.Kd if args.Kd is not None else gains["Kd"]
+    max_I = args.max_I if args.max_I is not None else gains["max_I"]
+    logger.info(f"PID gains: Kp={Kp}, Ki={Ki}, Kd={Kd}, max_I={max_I}")
+
     # Load model
     from pid_steering.pid_steered_generator import load_model
 
@@ -371,36 +390,45 @@ def main():
         )
         logger.info("Loaded contrastive sequences from activation pipeline")
     except Exception as e:
-        logger.info(f"Activation pipeline data not available ({e}), "
-                     f"falling back to find_extreme_songs")
+        logger.info(
+            f"Activation pipeline data not available ({e}), "
+            f"falling back to find_extreme_songs"
+        )
 
     if source_seqs is None or target_seqs is None:
         notes_dir = config_pid.PROJECT_ROOT / "data" / "sod" / "processed" / "notes"
         low_songs, high_songs = find_extreme_songs(
-            notes_dir, encoding, args.concept, n_songs=args.n_songs,
+            notes_dir,
+            encoding,
+            args.concept,
+            n_songs=args.n_songs,
         )
         source_seqs = [load_song_tokens(fp, encoding) for fp, _ in low_songs]
         target_seqs = [load_song_tokens(fp, encoding) for fp, _ in high_songs]
-        logger.info(f"Using {len(source_seqs)} source + {len(target_seqs)} target "
-                     f"sequences from extreme songs")
+        logger.info(
+            f"Using {len(source_seqs)} source + {len(target_seqs)} target "
+            f"sequences from extreme songs"
+        )
 
     # Run analysis
     results = run_error_analysis(
         model,
         source_seqs,
         target_seqs,
-        Kp=args.Kp,
-        Ki=args.Ki,
-        Kd=args.Kd,
-        max_I=args.max_I,
+        Kp=Kp,
+        Ki=Ki,
+        Kd=Kd,
+        max_I=max_I,
         alpha=args.alpha,
         device=device,
     )
 
     # Save results
     args.output_dir.mkdir(parents=True, exist_ok=True)
-    gains_str = f"Kp{args.Kp}_Ki{args.Ki}_Kd{args.Kd}"
-    results_path = args.output_dir / f"error_convergence_{args.concept}_{gains_str}.json"
+    gains_str = f"Kp{Kp}_Ki{Ki}_Kd{Kd}"
+    results_path = (
+        args.output_dir / f"error_convergence_{args.concept}_{gains_str}.json"
+    )
     with open(results_path, "w") as f:
         json.dump(results, f, indent=2)
     logger.info(f"Saved results to {results_path}")
@@ -412,7 +440,7 @@ def main():
     # Print summary
     print("\n" + "=" * 60)
     print(f"Error Convergence Summary — {args.concept}")
-    print(f"Gains: Kp={args.Kp}, Ki={args.Ki}, Kd={args.Kd}, α={args.alpha}")
+    print(f"Gains: Kp={Kp}, Ki={Ki}, Kd={Kd}, α={args.alpha}")
     print("=" * 60)
     print(f"{'Layer':>6} {'P':>10} {'PI':>10} {'PID':>10}")
     print("-" * 40)
