@@ -547,7 +547,9 @@ def main():
             low_subset = [r for r in subset if r["category"] == "low"]
             high_subset = [r for r in subset if r["category"] == "high"]
             low_summary = aggregate_results(low_subset, concept) if low_subset else {}
-            high_summary = aggregate_results(high_subset, concept) if high_subset else {}
+            high_summary = (
+                aggregate_results(high_subset, concept) if high_subset else {}
+            )
 
             print(f"\n{'='*96}")
             print(f"Conditioned PID Results — {concept} | |α|={alpha}")
@@ -561,7 +563,9 @@ def main():
 
             for method in ["baseline", "p_only", "pi", "pid"]:
                 for cat_label, cat_summary in [
-                    ("LOW↑", low_summary), ("HIGH↓", high_summary), ("ALL", summary)
+                    ("LOW↑", low_summary),
+                    ("HIGH↓", high_summary),
+                    ("ALL", summary),
                 ]:
                     if method not in cat_summary:
                         continue
