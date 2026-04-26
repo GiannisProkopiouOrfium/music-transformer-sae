@@ -166,14 +166,14 @@ def main():
     parser.add_argument(
         "--top_n",
         type=int,
-        default=5,
-        help="Number of best songs to convert (per concept)",
+        default=3,
+        help="Number of best songs to convert per scenario (concept × category)",
     )
     parser.add_argument(
-        "--per_concept",
+        "--per_scenario",
         action="store_true",
         default=True,
-        help="Select top_n per concept (default: True)",
+        help="Select top_n per scenario (concept × category) to cover all directions",
     )
     parser.add_argument(
         "--all_methods",
@@ -209,35 +209,60 @@ def main():
         logger.error("No songs with P-only and PID results found")
         return
 
-    # Select top-N per concept
-    concepts = sorted(set(s["concept"] for s in all_scored))
+    # Select top-N per scenario (concept × category) for full coverage
+    scenarios = sorted(set((s["concept"], s["category"]) for s in all_scored))
     selected = []
 
-    for concept in concepts:
-        concept_scored = [s for s in all_scored if s["concept"] == concept]
-        top = concept_scored[: args.top_n]
+    scenario_labels = {
+        ("average_pitch", "low"): "Pitch LOW→HIGH (steer up)",
+        ("average_pitch", "high"): "Pitch HIGH→LOW (steer down)",
+        ("average_duration", "low"): "Duration SHORT→LONG (steer up)",
+        ("average_duration", "high"): "Duration LONG→SHORT (steer down)",
+    }
+
+    for concept, category in scenarios:
+        scenario_scored = [
+            s
+            for s in all_scored
+            if s["concept"] == concept and s["category"] == category
+        ]
+        # For best audio: prioritize low PID degradation + clear effect
+        # Re-sort by: low PID degradation first, then high |PID change|
+        scenario_scored.sort(
+            key=lambda s: (s["pid_degradation"], -abs(s["pid_change"]))
+        )
+        top = scenario_scored[: args.top_n]
         selected.extend(top)
 
-        print(f"\n{'='*80}")
-        print(f"Top {args.top_n} PID advantage — {concept}")
-        print(f"{'='*80}")
+        label = scenario_labels.get((concept, category), f"{concept} / {category}")
+        print(f"\n{'='*90}")
+        print(f"Top {args.top_n} best audio — {label}")
+        print(f"{'='*90}")
         print(
-            f"{'Rank':<5} {'Song':<25} {'Cat':<6} {'α':<6} "
-            f"{'Score':<8} {'ΔDeg':<8} {'ΔChange':<8} "
-            f"{'P Deg':<8} {'PID Deg':<8}"
+            f"{'Rank':<5} {'Song':<25} {'α':<6} "
+            f"{'PID Deg':<9} {'PID Δ':<9} {'P Deg':<9} {'P Δ':<9} "
+            f"{'ΔDeg':<8} {'Score':<8}"
         )
-        print("-" * 80)
+        print("-" * 88)
         for i, s in enumerate(top):
             print(
-                f"{i+1:<5} {s['song_name']:<25} {s['category']:<6} "
-                f"{s['alpha']:<6.1f} {s['score']:<8.3f} "
-                f"{s['degrad_advantage']:<8.3f} "
-                f"{s['change_advantage']:<8.1f} "
-                f"{s['p_degradation']:<8.2f} {s['pid_degradation']:<8.2f}"
+                f"{i+1:<5} {s['song_name']:<25} "
+                f"{s['alpha']:<6.1f} "
+                f"{s['pid_degradation']:<9.2f} "
+                f"{s['pid_change']:+<9.1f} "
+                f"{s['p_degradation']:<9.2f} "
+                f"{s['p_change']:+<9.1f} "
+                f"{s['degrad_advantage']:<8.2f} "
+                f"{s['score']:<8.3f}"
             )
 
     if args.dry_run:
-        print(f"\nDry run — would convert {len(selected)} songs × 4 methods")
+        n_scenarios = len(scenarios)
+        print(
+            f"\nDry run — would convert {len(selected)} songs "
+            f"({args.top_n} × {n_scenarios} scenarios) × 4 methods "
+            f"= {len(selected) * 4} WAVs"
+        )
         return
 
     # Convert selected songs
