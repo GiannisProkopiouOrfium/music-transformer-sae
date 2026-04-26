@@ -187,6 +187,17 @@ def main():
         action="store_true",
         help="Just print rankings without converting",
     )
+    parser.add_argument(
+        "--s3_path",
+        type=str,
+        default=None,
+        help="S3 path to upload WAVs to (e.g. s3://bucket/prefix/). Uploads then deletes local.",
+    )
+    parser.add_argument(
+        "--keep_local",
+        action="store_true",
+        help="Keep local WAVs after S3 upload (default: delete)",
+    )
 
     args = parser.parse_args()
     logging.basicConfig(
@@ -299,6 +310,38 @@ def main():
 
     print(f"\nConverted {converted} WAVs, {failed} failed")
     print(f"Output: {output_dir}")
+
+    # Upload to S3 if requested
+    if args.s3_path and converted > 0:
+        s3_dest = args.s3_path.rstrip("/")
+        print(f"\nUploading to {s3_dest}/ ...")
+        try:
+            result = subprocess.run(
+                [
+                    "aws", "s3", "cp",
+                    str(output_dir),
+                    f"{s3_dest}/",
+                    "--recursive",
+                    "--exclude", "*",
+                    "--include", "*.wav",
+                ],
+                capture_output=True,
+                text=True,
+                timeout=300,
+            )
+            if result.returncode == 0:
+                uploaded = result.stdout.count("upload:")
+                print(f"Uploaded {uploaded} files to S3")
+                if not args.keep_local:
+                    import shutil
+                    shutil.rmtree(output_dir)
+                    print(f"Cleaned up local dir: {output_dir}")
+            else:
+                logger.error(f"S3 upload failed: {result.stderr}")
+                print("Keeping local files due to upload failure")
+        except (FileNotFoundError, subprocess.TimeoutExpired) as e:
+            logger.error(f"S3 upload error: {e}")
+            print("Keeping local files due to upload error")
 
 
 if __name__ == "__main__":
