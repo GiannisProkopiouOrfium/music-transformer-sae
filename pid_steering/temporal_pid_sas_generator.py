@@ -41,9 +41,9 @@ def load_sae_model(checkpoint_path, k, device):
     )
     checkpoint = torch.load(checkpoint_path, map_location=device)
     if isinstance(checkpoint, dict) and "model_state_dict" in checkpoint:
-        sae.load_state_dict(checkpoint["model_state_dict"])
+        sae.load_state_dict(checkpoint["model_state_dict"], strict=False)
     else:
-        sae.load_state_dict(checkpoint)
+        sae.load_state_dict(checkpoint, strict=False)
     sae.to(device)
     sae.eval()
     return sae
