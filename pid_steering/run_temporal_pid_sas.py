@@ -64,12 +64,16 @@ def generate_static_smooth(
     eos = encoding["type_code_map"]["end-of-song"]
 
     handles = []
+    _smooth_hook = None
     if lambda_max > 0 and n_ramp_steps > 0:
         # Register static smooth SAS hooks using the existing infrastructure
         sys.path.insert(
             0, str(pathlib.Path(__file__).parent.parent / "sparse_steering")
         )
-        from smooth_steering_sas import register_smooth_steering_hooks
+        from smooth_steering_sas import (
+            register_smooth_steering_hooks,
+            SmoothSASSteeringHook,
+        )
 
         # Wrap single-layer SAE/vector into the dict format expected
         sae_models = {target_layer: sae_model}
@@ -78,8 +82,9 @@ def generate_static_smooth(
                 sas_vector if isinstance(sas_vector, np.ndarray) else sas_vector.numpy()
             )
         }
-        handles = register_smooth_steering_hooks(
-            model=model,
+
+        # Create hook manually so we can reset between samples
+        _smooth_hook = SmoothSASSteeringHook(
             sae_models=sae_models,
             sas_vectors=sas_vectors_dict,
             concept="static_smooth",
@@ -90,8 +95,23 @@ def generate_static_smooth(
             n_ramp=n_ramp_steps,
         )
 
+        # Register manually on the target layer
+        layers = model.decoder.net.attn_layers.layers
+        layer_module = layers[target_layer]
+        if isinstance(layer_module, torch.nn.ModuleList) and len(layer_module) > 1:
+            target_module = layer_module[1]
+        else:
+            target_module = layer_module
+        handle = target_module.register_forward_hook(
+            lambda mod, inp, out, idx=target_layer: _smooth_hook(mod, inp, out, idx)
+        )
+        handles.append(handle)
+
     try:
         for i in range(n_samples):
+            # Reset the hook's step counter for each sample
+            if _smooth_hook is not None:
+                _smooth_hook.reset()
             start = torch.zeros((1, 1, 6), dtype=torch.long, device=device)
             start[:, 0, 0] = sos
 
@@ -119,7 +139,13 @@ def main():
     parser = argparse.ArgumentParser(
         description="Compare static smooth vs temporal PID for SAS"
     )
-    parser.add_argument("--concept", type=str, default="average_pitch")
+    parser.add_argument(
+        "--concept",
+        type=str,
+        nargs="+",
+        default=["average_pitch"],
+        help="Concept(s) to run. Use 'all' for both pitch and duration.",
+    )
     parser.add_argument("--n_samples", type=int, default=20)
     parser.add_argument("--seq_len", type=int, default=config_pid.MAX_SEQ_LEN)
     parser.add_argument("--target_layer", type=int, default=config_pid.SAS_LAYER)
@@ -150,9 +176,14 @@ def main():
         level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s"
     )
 
+    # Resolve concept list
+    concepts = args.concept
+    if concepts == ["all"]:
+        concepts = ["average_pitch", "average_duration"]
+
     device = torch.device(f"cuda:{args.gpu}" if torch.cuda.is_available() else "cpu")
 
-    # Load model
+    # Load model (shared across concepts)
     model, encoding, _ = load_model(
         config_pid.MODEL_CHECKPOINT,
         config_pid.TRAIN_ARGS_PATH,
@@ -160,13 +191,32 @@ def main():
         device,
     )
 
-    # Load SAE and SAS vector
+    # Load SAE (shared across concepts — same layer)
     k = get_adaptive_k(args.target_layer)
     sae_path = config_pid.SAE_CHECKPOINT_DIR / f"sae_layer_{args.target_layer}_best.pt"
     sae_model = load_sae_model(sae_path, k, device)
 
-    vector_path = config_pid.SAS_VECTORS_DIR / f"{args.concept}_sas_vectors.pt"
-    sas_vector = load_sas_vector(vector_path, layer_idx=args.target_layer)
+    for concept in concepts:
+        logger.info(f"\n{'='*70}")
+        logger.info(f"Running temporal PID SAS comparison for: {concept}")
+        logger.info(f"{'='*70}")
+
+        vector_path = config_pid.SAS_VECTORS_DIR / f"{concept}_sas_vectors.pt"
+        sas_vector = load_sas_vector(vector_path, layer_idx=args.target_layer)
+
+        _run_concept(
+            model=model,
+            encoding=encoding,
+            sae_model=sae_model,
+            sas_vector=sas_vector,
+            concept=concept,
+            args=args,
+            device=device,
+        )
+
+
+def _run_concept(model, encoding, sae_model, sas_vector, concept, args, device):
+    """Run the temporal PID SAS comparison for a single concept."""
 
     results = {}
 
@@ -267,12 +317,12 @@ def main():
 
     # Save results
     args.output_dir.mkdir(parents=True, exist_ok=True)
-    results_path = args.output_dir / f"temporal_comparison_{args.concept}.json"
+    results_path = args.output_dir / f"temporal_comparison_{concept}.json"
     with open(results_path, "w") as f:
         json.dump(results, f, indent=2)
 
     # Save diagnostics for plotting
-    diag_path = args.output_dir / f"pid_diagnostics_{args.concept}.json"
+    diag_path = args.output_dir / f"pid_diagnostics_{concept}.json"
     with open(diag_path, "w") as f:
         json.dump([d for d in pid_diagnostics], f, indent=2, default=float)
 
@@ -287,7 +337,7 @@ def main():
         for i, diag in enumerate(pid_diagnostics[:5]):
             ax1.plot(diag["lambda_trajectory"], alpha=0.7, label=f"Sample {i}")
         ax1.set_ylabel(r"$\lambda_t$ (PID-computed)", fontsize=12)
-        ax1.set_title(f"Temporal PID λ Trajectories — {args.concept}", fontsize=14)
+        ax1.set_title(f"Temporal PID λ Trajectories — {concept}", fontsize=14)
         ax1.legend(fontsize=9)
         ax1.grid(True, alpha=0.3)
 
@@ -304,7 +354,7 @@ def main():
         ax2.grid(True, alpha=0.3)
 
         fig.tight_layout()
-        plot_path = args.output_dir / f"temporal_pid_trajectories_{args.concept}.png"
+        plot_path = args.output_dir / f"temporal_pid_trajectories_{concept}.png"
         fig.savefig(plot_path, dpi=150, bbox_inches="tight")
         plt.close(fig)
         logger.info(f"Saved trajectory plot to {plot_path}")
@@ -313,7 +363,7 @@ def main():
 
     # Print summary
     print("\n" + "=" * 70)
-    print(f"Temporal PID SAS Comparison — {args.concept}")
+    print(f"Temporal PID SAS Comparison — {concept}")
     print("=" * 70)
     print(
         f"{'Method':<18} {'Avg Pitch':<12} {'PC Entropy':<12} "
