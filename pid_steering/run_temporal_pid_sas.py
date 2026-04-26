@@ -17,7 +17,7 @@ import json
 import logging
 import pathlib
 import sys
-from typing import Dict, List
+from typing import Dict, List, Tuple
 
 import numpy as np
 import torch
@@ -51,31 +51,34 @@ def generate_static_smooth(
     n_samples: int,
     seq_len: int,
     device: torch.device,
-) -> List[np.ndarray]:
+    target_feature_indices: np.ndarray = None,
+) -> Tuple[List[np.ndarray], List[List[float]]]:
     """Generate with static cosine smooth steering (existing method).
 
     When lambda_max=0, generates unsteered baseline.
     When lambda_max>0, demonstrates the failure mode: during the ramp,
     features fall below Top-K and are zeroed out.
+
+    Returns:
+        (sequences, feature_trajectories): generated sequences and
+        per-sample feature activation trajectories for comparison plots.
     """
     sequences = []
+    feature_trajectories = []  # per-sample list of activation values per step
 
     sos = encoding["type_code_map"]["start-of-song"]
     eos = encoding["type_code_map"]["end-of-song"]
 
     handles = []
     _smooth_hook = None
+    _activation_log = []  # shared mutable list for the observer
+
     if lambda_max > 0 and n_ramp_steps > 0:
-        # Register static smooth SAS hooks using the existing infrastructure
         sys.path.insert(
             0, str(pathlib.Path(__file__).parent.parent / "sparse_steering")
         )
-        from smooth_steering_sas import (
-            register_smooth_steering_hooks,
-            SmoothSASSteeringHook,
-        )
+        from smooth_steering_sas import SmoothSASSteeringHook
 
-        # Wrap single-layer SAE/vector into the dict format expected
         sae_models = {target_layer: sae_model}
         sas_vectors_dict = {
             target_layer: (
@@ -83,7 +86,6 @@ def generate_static_smooth(
             )
         }
 
-        # Create hook manually so we can reset between samples
         _smooth_hook = SmoothSASSteeringHook(
             sae_models=sae_models,
             sas_vectors=sas_vectors_dict,
@@ -95,23 +97,42 @@ def generate_static_smooth(
             n_ramp=n_ramp_steps,
         )
 
-        # Register manually on the target layer
+        # Observer: measure target feature activation AFTER steering
+        def _observe_hook(module, input, output, layer_idx):
+            """Measure feature activation after the steering hook fires."""
+            if layer_idx != target_layer or target_feature_indices is None:
+                return
+            actual = output[0] if isinstance(output, tuple) else output
+            with torch.no_grad():
+                a_flat = actual.reshape(-1, actual.shape[-1])
+                f_a = sae_model.encode(a_flat)
+                act = f_a[:, target_feature_indices].mean().item()
+                _activation_log.append(act)
+
         layers = model.decoder.net.attn_layers.layers
         layer_module = layers[target_layer]
         if isinstance(layer_module, torch.nn.ModuleList) and len(layer_module) > 1:
             target_module = layer_module[1]
         else:
             target_module = layer_module
-        handle = target_module.register_forward_hook(
+
+        # Register steering hook first, then observer
+        h1 = target_module.register_forward_hook(
             lambda mod, inp, out, idx=target_layer: _smooth_hook(mod, inp, out, idx)
         )
-        handles.append(handle)
+        h2 = target_module.register_forward_hook(
+            lambda mod, inp, out, idx=target_layer: _observe_hook(
+                mod, inp, out, idx
+            )
+        )
+        handles.extend([h1, h2])
 
     try:
         for i in range(n_samples):
-            # Reset the hook's step counter for each sample
             if _smooth_hook is not None:
                 _smooth_hook.reset()
+            _activation_log.clear()
+
             start = torch.zeros((1, 1, 6), dtype=torch.long, device=device)
             start[:, 0, 0] = sos
 
@@ -128,11 +149,12 @@ def generate_static_smooth(
 
             full_seq = torch.cat((start, generated), 1).cpu().numpy()[0]
             sequences.append(full_seq)
+            feature_trajectories.append(list(_activation_log))
     finally:
         for h in handles:
             h.remove()
 
-    return sequences
+    return sequences, feature_trajectories
 
 
 def main():
@@ -273,7 +295,7 @@ def _run_concept(model, encoding, sae_model, sas_vector, concept, args, device):
 
     # 2. Static smooth steering (demonstrates failure mode)
     logger.info("Generating with static smooth SAS (failure demo)...")
-    static_seqs = generate_static_smooth(
+    static_seqs, static_feat_trajs = generate_static_smooth(
         model,
         encoding,
         sae_model,
@@ -284,6 +306,7 @@ def _run_concept(model, encoding, sae_model, sas_vector, concept, args, device):
         n_samples=args.n_samples,
         seq_len=args.seq_len,
         device=device,
+        target_feature_indices=pid_generator.target_feature_indices,
     )
     static_metrics = [compute_generation_metrics(s, encoding) for s in static_seqs]
     static_avg = {}
@@ -295,7 +318,7 @@ def _run_concept(model, encoding, sae_model, sas_vector, concept, args, device):
 
     # 3. Unsteered baseline
     logger.info("Generating unsteered baseline...")
-    baseline_seqs = generate_static_smooth(
+    baseline_seqs, _ = generate_static_smooth(
         model,
         encoding,
         sae_model,
@@ -330,27 +353,44 @@ def _run_concept(model, encoding, sae_model, sas_vector, concept, args, device):
     try:
         import matplotlib.pyplot as plt
 
-        fig, axes = plt.subplots(2, 1, figsize=(10, 8), sharex=True)
+        fig, axes = plt.subplots(2, 1, figsize=(12, 9), sharex=True)
 
         # Plot lambda trajectories for first 5 samples
         ax1 = axes[0]
         for i, diag in enumerate(pid_diagnostics[:5]):
-            ax1.plot(diag["lambda_trajectory"], alpha=0.7, label=f"Sample {i}")
+            ax1.plot(diag["lambda_trajectory"], alpha=0.7, label=f"PID Sample {i}")
         ax1.set_ylabel(r"$\lambda_t$ (PID-computed)", fontsize=12)
         ax1.set_title(f"Temporal PID λ Trajectories — {concept}", fontsize=14)
         ax1.legend(fontsize=9)
         ax1.grid(True, alpha=0.3)
 
-        # Plot feature activation trajectories
+        # Plot feature activation: PID vs Static Smooth comparison
         ax2 = axes[1]
+        # PID feature activations (solid lines)
         for i, diag in enumerate(pid_diagnostics[:5]):
             ax2.plot(
-                diag["feature_activation_trajectory"], alpha=0.7, label=f"Sample {i}"
+                diag["feature_activation_trajectory"],
+                alpha=0.7,
+                label=f"PID Sample {i}",
+                linestyle="-",
             )
+        # Static smooth feature activations (dashed lines)
+        for i, traj in enumerate(static_feat_trajs[:5]):
+            if traj:
+                ax2.plot(
+                    traj,
+                    alpha=0.5,
+                    label=f"Static Sample {i}",
+                    linestyle="--",
+                    color=f"C{i}",
+                )
         ax2.set_xlabel("Generation Step", fontsize=12)
         ax2.set_ylabel("Target Feature Activation", fontsize=12)
-        ax2.set_title("Target Feature Activation Over Time", fontsize=14)
-        ax2.legend(fontsize=9)
+        ax2.set_title(
+            "Target Feature Activation: PID (solid) vs Static Smooth (dashed)",
+            fontsize=14,
+        )
+        ax2.legend(fontsize=8, ncol=2)
         ax2.grid(True, alpha=0.3)
 
         fig.tight_layout()
