@@ -18,6 +18,7 @@ to match the SAS/DM evaluator methodology.
 import argparse
 import json
 import logging
+import os
 import pathlib
 import sys
 from typing import Dict, List, Tuple
@@ -115,17 +116,44 @@ def generate_conditioned_midis(
     return midi_dirs
 
 
+_fmd_metric = None
+
+
+def get_fmd_metric():
+    """Lazily initialize the FMD metric (CLaMP2 model loads once)."""
+    global _fmd_metric
+    if _fmd_metric is None:
+        from frechet_music_distance import FrechetMusicDistance
+
+        _fmd_metric = FrechetMusicDistance(
+            feature_extractor="clamp2",
+            gaussian_estimator="mle",
+            verbose=True,
+        )
+        logger.info("Initialized FrechetMusicDistance (CLaMP2)")
+    return _fmd_metric
+
+
 def compute_fmd(generated_dir: pathlib.Path, reference_dir: pathlib.Path) -> float:
     """Compute FMD between generated and reference MIDI sets."""
-    try:
-        sys.path.insert(
-            0, str(pathlib.Path(__file__).parent.parent / "metrics_evaluation")
-        )
-        from evaluate_fmd import compute_fmd_from_dirs
+    gen_midis = list(generated_dir.glob("*.mid"))
+    ref_midis = list(reference_dir.glob("*.mid"))
 
-        return compute_fmd_from_dirs(str(generated_dir), str(reference_dir))
-    except ImportError:
-        logger.warning("evaluate_fmd not available — returning -1.0")
+    if len(gen_midis) < 2 or len(ref_midis) < 2:
+        logger.warning(
+            f"Too few MIDIs: gen={len(gen_midis)}, ref={len(ref_midis)} — need ≥2 each"
+        )
+        return -1.0
+
+    try:
+        metric = get_fmd_metric()
+        score = metric.score(
+            reference_path=str(reference_dir),
+            test_path=str(generated_dir),
+        )
+        return float(score)
+    except Exception as e:
+        logger.error(f"FMD computation failed: {e}")
         return -1.0
 
 
@@ -184,7 +212,9 @@ def main():
     parser.add_argument(
         "--reference_dir",
         type=pathlib.Path,
-        default=config_pid.PROJECT_ROOT / "data" / "sod",
+        default=None,
+        help="Reference MIDI directory. Auto-detected from existing FMD workspace "
+        "or created from SOD JSONs if not specified.",
     )
     parser.add_argument(
         "--output_dir",
@@ -192,13 +222,71 @@ def main():
         default=config_pid.PID_EXPERIMENTS_DIR / "fmd",
     )
     parser.add_argument("--gpu", type=int, default=0)
+    parser.add_argument(
+        "--skip_generation",
+        action="store_true",
+        help="Skip MIDI generation, reuse existing MIDIs from previous run",
+    )
 
     args = parser.parse_args()
     logging.basicConfig(
         level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s"
     )
 
-    device = torch.device(f"cuda:{args.gpu}" if torch.cuda.is_available() else "cpu")
+    # Set GPU for CLaMP2 embedding model
+    os.environ["CUDA_VISIBLE_DEVICES"] = str(args.gpu)
+
+    device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
+
+    # Resolve reference MIDI directory
+    reference_dir = args.reference_dir
+    if reference_dir is None:
+        # Try existing FMD workspace first
+        existing_ref = (
+            config_pid.PROJECT_ROOT
+            / "exp"
+            / "sod"
+            / "sparse_steering"
+            / "fmd_workspace"
+            / "reference_sod"
+        )
+        if existing_ref.exists() and len(list(existing_ref.glob("*.mid"))) >= 2:
+            reference_dir = existing_ref
+            logger.info(
+                f"Using existing reference: {reference_dir} "
+                f"({len(list(reference_dir.glob('*.mid')))} MIDIs)"
+            )
+        else:
+            # Create reference from SOD JSONs
+            import glob as glob_mod
+            import muspy
+
+            reference_dir = args.output_dir / "reference_sod"
+            reference_dir.mkdir(parents=True, exist_ok=True)
+            json_dir = config_pid.PROJECT_ROOT / "data" / "sod" / "processed" / "json"
+            all_jsons = sorted(
+                glob_mod.glob(str(json_dir / "**" / "*.json"), recursive=True)
+            )
+            logger.info(f"Creating reference from {len(all_jsons)} SOD JSONs")
+            for jp in all_jsons:
+                name = pathlib.Path(jp).stem
+                midi_path = reference_dir / f"{name}.mid"
+                if midi_path.exists():
+                    continue
+                try:
+                    music = muspy.load_json(jp)
+                    music.write(str(midi_path))
+                except Exception:
+                    pass
+            logger.info(
+                f"Reference ready: {len(list(reference_dir.glob('*.mid')))} MIDIs"
+            )
+
+    ref_count = len(list(reference_dir.glob("*.mid")))
+    if ref_count < 2:
+        logger.error(f"Reference dir has only {ref_count} MIDIs — aborting")
+        sys.exit(1)
+    logger.info(f"Reference: {reference_dir} ({ref_count} MIDIs)")
 
     model, encoding, _ = load_model(
         config_pid.MODEL_CHECKPOINT,
@@ -246,33 +334,52 @@ def main():
         for alpha in args.alphas:
             alpha_key = f"alpha_{alpha}"
 
-            # Low songs: steer UP (+α)
-            logger.info(f"\n--- Low {concept}, α=+{alpha} ---")
-            low_midi_dirs = generate_conditioned_midis(
-                generator,
-                variants,
-                encoding,
-                device,
-                low_songs,
-                alpha=alpha,
-                conditioning_beats=args.conditioning_beats,
-                continuation_len=args.continuation_len,
-                output_dir=args.output_dir / concept / f"low_alpha{alpha}",
-            )
+            low_out = args.output_dir / concept / f"low_alpha{alpha}"
+            high_out = args.output_dir / concept / f"high_alpha{alpha}"
 
-            # High songs: steer DOWN (-α)
-            logger.info(f"\n--- High {concept}, α=-{alpha} ---")
-            high_midi_dirs = generate_conditioned_midis(
-                generator,
-                variants,
-                encoding,
-                device,
-                high_songs,
-                alpha=-alpha,
-                conditioning_beats=args.conditioning_beats,
-                continuation_len=args.continuation_len,
-                output_dir=args.output_dir / concept / f"high_alpha{alpha}",
-            )
+            if args.skip_generation:
+                # Reuse existing MIDIs
+                low_midi_dirs = {}
+                high_midi_dirs = {}
+                for method in ["baseline", "p_only", "pi", "pid"]:
+                    ld = low_out / method
+                    hd = high_out / method
+                    if ld.exists() and len(list(ld.glob("*.mid"))) > 0:
+                        low_midi_dirs[method] = ld
+                    if hd.exists() and len(list(hd.glob("*.mid"))) > 0:
+                        high_midi_dirs[method] = hd
+                logger.info(
+                    f"Reusing existing MIDIs: "
+                    f"{len(low_midi_dirs)} low dirs, {len(high_midi_dirs)} high dirs"
+                )
+            else:
+                # Low songs: steer UP (+α)
+                logger.info(f"\n--- Low {concept}, α=+{alpha} ---")
+                low_midi_dirs = generate_conditioned_midis(
+                    generator,
+                    variants,
+                    encoding,
+                    device,
+                    low_songs,
+                    alpha=alpha,
+                    conditioning_beats=args.conditioning_beats,
+                    continuation_len=args.continuation_len,
+                    output_dir=low_out,
+                )
+
+                # High songs: steer DOWN (-α)
+                logger.info(f"\n--- High {concept}, α=-{alpha} ---")
+                high_midi_dirs = generate_conditioned_midis(
+                    generator,
+                    variants,
+                    encoding,
+                    device,
+                    high_songs,
+                    alpha=-alpha,
+                    conditioning_beats=args.conditioning_beats,
+                    continuation_len=args.continuation_len,
+                    output_dir=high_out,
+                )
 
             # Compute FMD for each method (pool low+high MIDIs)
             fmd_results = {}
@@ -294,7 +401,7 @@ def main():
                                 shutil.copy2(midi_file, dst)
                             n_files += 1
 
-                fmd = compute_fmd(combined_dir, args.reference_dir)
+                fmd = compute_fmd(combined_dir, reference_dir)
                 fmd_results[method] = {"fmd": fmd, "n_files": n_files}
                 logger.info(f"  {method}: FMD={fmd:.4f} ({n_files} files)")
 
