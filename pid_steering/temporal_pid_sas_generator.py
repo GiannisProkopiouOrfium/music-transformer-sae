@@ -49,12 +49,32 @@ def load_sae_model(checkpoint_path, k, device):
     return sae
 
 
-def load_sas_vector(path):
-    """Load a pre-computed SAS steering vector."""
-    data = np.load(path, allow_pickle=True)
-    if isinstance(data, np.ndarray):
-        return data
-    return data.item()
+def load_sas_vector(path, layer_idx=None):
+    """Load a pre-computed SAS steering vector.
+
+    Supports two formats:
+    - .npy file: single numpy array
+    - .pt file: dict {layer_idx: array/tensor} (from compute_sas_vectors.py)
+    """
+    path = str(path)
+    if path.endswith(".pt"):
+        import torch
+
+        data = torch.load(path, map_location="cpu", weights_only=False)
+        if isinstance(data, dict):
+            if layer_idx is not None and layer_idx in data:
+                vec = data[layer_idx]
+            else:
+                # Default to highest available layer
+                layer_idx = max(data.keys())
+                vec = data[layer_idx]
+            return vec.numpy() if hasattr(vec, "numpy") else vec
+        return data.numpy() if hasattr(data, "numpy") else data
+    else:
+        data = np.load(path, allow_pickle=True)
+        if isinstance(data, np.ndarray):
+            return data
+        return data.item()
 
 
 def get_target_feature_indices(sas_vector, top_n=32):
@@ -288,11 +308,9 @@ def main():
     sae_path = config_pid.SAE_CHECKPOINT_DIR / f"sae_layer_{args.target_layer}_best.pt"
     sae_model = load_sae_model(sae_path, k, device)
 
-    # Load SAS vector
-    vector_path = (
-        config_pid.SAS_VECTORS_DIR / f"{args.concept}_layer_{args.target_layer}.npy"
-    )
-    sas_vector = load_sas_vector(vector_path)
+    # Load SAS vector (format: {concept}_sas_vectors.pt with dict keyed by layer)
+    vector_path = config_pid.SAS_VECTORS_DIR / f"{args.concept}_sas_vectors.pt"
+    sas_vector = load_sas_vector(vector_path, layer_idx=args.target_layer)
 
     # Create generator
     generator = TemporalPIDSASGenerator(

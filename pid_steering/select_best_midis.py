@@ -318,12 +318,16 @@ def main():
         try:
             result = subprocess.run(
                 [
-                    "aws", "s3", "cp",
+                    "aws",
+                    "s3",
+                    "cp",
                     str(output_dir),
                     f"{s3_dest}/",
                     "--recursive",
-                    "--exclude", "*",
-                    "--include", "*.wav",
+                    "--exclude",
+                    "*",
+                    "--include",
+                    "*.wav",
                 ],
                 capture_output=True,
                 text=True,
@@ -334,6 +338,7 @@ def main():
                 print(f"Uploaded {uploaded} files to S3")
                 if not args.keep_local:
                     import shutil
+
                     shutil.rmtree(output_dir)
                     print(f"Cleaned up local dir: {output_dir}")
             else:

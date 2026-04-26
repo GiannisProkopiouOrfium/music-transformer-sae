@@ -54,37 +54,63 @@ def generate_static_smooth(
 ) -> List[np.ndarray]:
     """Generate with static cosine smooth steering (existing method).
 
-    This demonstrates the failure mode: during the ramp, features
-    fall below Top-K and are zeroed out.
+    When lambda_max=0, generates unsteered baseline.
+    When lambda_max>0, demonstrates the failure mode: during the ramp,
+    features fall below Top-K and are zeroed out.
     """
-    sys.path.insert(0, str(pathlib.Path(__file__).parent.parent / "sparse_steering"))
-    from smooth_steering_sas import register_smooth_steering_hooks
-
-    # Load SAS vectors in the format expected by smooth_steering_sas
-    # This is a simplified version — actual implementation would use
-    # the full SAS vector loading infrastructure
     sequences = []
 
     sos = encoding["type_code_map"]["start-of-song"]
     eos = encoding["type_code_map"]["end-of-song"]
 
-    for i in range(n_samples):
-        start = torch.zeros((1, 1, 6), dtype=torch.long, device=device)
-        start[:, 0, 0] = sos
+    handles = []
+    if lambda_max > 0 and n_ramp_steps > 0:
+        # Register static smooth SAS hooks using the existing infrastructure
+        sys.path.insert(
+            0, str(pathlib.Path(__file__).parent.parent / "sparse_steering")
+        )
+        from smooth_steering_sas import register_smooth_steering_hooks
 
-        with torch.no_grad():
-            generated = model.generate(
-                start,
-                seq_len,
-                eos_token=eos,
-                temperature=config_pid.TEMPERATURE,
-                filter_logits_fn="top_k",
-                filter_thres=config_pid.FILTER_THRESHOLD,
-                monotonicity_dim=("type", "beat"),
+        # Wrap single-layer SAE/vector into the dict format expected
+        sae_models = {target_layer: sae_model}
+        sas_vectors_dict = {
+            target_layer: (
+                sas_vector if isinstance(sas_vector, np.ndarray) else sas_vector.numpy()
             )
+        }
+        handles = register_smooth_steering_hooks(
+            model=model,
+            sae_models=sae_models,
+            sas_vectors=sas_vectors_dict,
+            concept="static_smooth",
+            steering_strength=lambda_max,
+            layers_to_steer=[target_layer],
+            mode="ramp_up",
+            schedule="cosine",
+            n_ramp=n_ramp_steps,
+        )
 
-        full_seq = torch.cat((start, generated), 1).cpu().numpy()[0]
-        sequences.append(full_seq)
+    try:
+        for i in range(n_samples):
+            start = torch.zeros((1, 1, 6), dtype=torch.long, device=device)
+            start[:, 0, 0] = sos
+
+            with torch.no_grad():
+                generated = model.generate(
+                    start,
+                    seq_len,
+                    eos_token=eos,
+                    temperature=config_pid.TEMPERATURE,
+                    filter_logits_fn="top_k",
+                    filter_thres=config_pid.FILTER_THRESHOLD,
+                    monotonicity_dim=("type", "beat"),
+                )
+
+            full_seq = torch.cat((start, generated), 1).cpu().numpy()[0]
+            sequences.append(full_seq)
+    finally:
+        for h in handles:
+            h.remove()
 
     return sequences
 
@@ -139,10 +165,8 @@ def main():
     sae_path = config_pid.SAE_CHECKPOINT_DIR / f"sae_layer_{args.target_layer}_best.pt"
     sae_model = load_sae_model(sae_path, k, device)
 
-    vector_path = (
-        config_pid.SAS_VECTORS_DIR / f"{args.concept}_layer_{args.target_layer}.npy"
-    )
-    sas_vector = load_sas_vector(vector_path)
+    vector_path = config_pid.SAS_VECTORS_DIR / f"{args.concept}_sas_vectors.pt"
+    sas_vector = load_sas_vector(vector_path, layer_idx=args.target_layer)
 
     results = {}
 
@@ -197,7 +221,29 @@ def main():
         ),
     }
 
-    # 2. Unsteered baseline
+    # 2. Static smooth steering (demonstrates failure mode)
+    logger.info("Generating with static smooth SAS (failure demo)...")
+    static_seqs = generate_static_smooth(
+        model,
+        encoding,
+        sae_model,
+        sas_vector,
+        args.target_layer,
+        lambda_max=args.lambda_max,
+        n_ramp_steps=args.n_ramp_steps,
+        n_samples=args.n_samples,
+        seq_len=args.seq_len,
+        device=device,
+    )
+    static_metrics = [compute_generation_metrics(s, encoding) for s in static_seqs]
+    static_avg = {}
+    for key in static_metrics[0]:
+        values = [m[key] for m in static_metrics]
+        static_avg[f"{key}_mean"] = float(np.nanmean(values))
+        static_avg[f"{key}_std"] = float(np.nanstd(values))
+    results["static_smooth"] = {"metrics": static_avg}
+
+    # 3. Unsteered baseline
     logger.info("Generating unsteered baseline...")
     baseline_seqs = generate_static_smooth(
         model,
