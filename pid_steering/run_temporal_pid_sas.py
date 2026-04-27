@@ -121,9 +121,7 @@ def generate_static_smooth(
             lambda mod, inp, out, idx=target_layer: _smooth_hook(mod, inp, out, idx)
         )
         h2 = target_module.register_forward_hook(
-            lambda mod, inp, out, idx=target_layer: _observe_hook(
-                mod, inp, out, idx
-            )
+            lambda mod, inp, out, idx=target_layer: _observe_hook(mod, inp, out, idx)
         )
         handles.extend([h1, h2])
 
@@ -192,6 +190,13 @@ def main():
         default=config_pid.PID_EXPERIMENTS_DIR / "temporal_sas_comparison",
     )
     parser.add_argument("--gpu", type=int, default=0)
+    parser.add_argument(
+        "--direction",
+        type=str,
+        choices=["positive", "negative"],
+        default="positive",
+        help="Steering direction. 'negative' negates the SAS vector.",
+    )
 
     args = parser.parse_args()
     logging.basicConfig(
@@ -225,6 +230,10 @@ def main():
 
         vector_path = config_pid.SAS_VECTORS_DIR / f"{concept}_sas_vectors.pt"
         sas_vector = load_sas_vector(vector_path, layer_idx=args.target_layer)
+
+        if args.direction == "negative":
+            sas_vector = -sas_vector
+            logger.info("Using NEGATED SAS vector (steer DOWN)")
 
         _run_concept(
             model=model,

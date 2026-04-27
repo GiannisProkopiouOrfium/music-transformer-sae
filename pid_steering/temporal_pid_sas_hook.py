@@ -64,6 +64,7 @@ class TemporalPIDSASHook:
         lambda_max: float = 5.0,
         beat_mode: bool = False,
         n_ramp_beats: int = 32,
+        skip_conditioning: bool = False,
     ):
         """Initialize the temporal PID SAS hook.
 
@@ -78,6 +79,8 @@ class TemporalPIDSASHook:
             lambda_min, lambda_max: Output clamp for the PID multiplier.
             beat_mode: If True, advance PID clock per musical beat (not token).
             n_ramp_beats: Number of beats for the desired ramp envelope.
+            skip_conditioning: If True, skip the first multi-token forward
+                pass (conditioning prefix). Activated by conditioned generation.
         """
         self.sae_model = sae_model
         self.sas_vector = torch.from_numpy(sas_vector).float()
@@ -93,6 +96,10 @@ class TemporalPIDSASHook:
             lambda_min=lambda_min,
             lambda_max=lambda_max,
         )
+
+        # Conditioning skip
+        self._skip_conditioning = skip_conditioning
+        self._conditioning_skipped = False
 
         # Beat-mode tracking
         self.beat_mode = beat_mode
@@ -123,6 +130,7 @@ class TemporalPIDSASHook:
         self.lambda_trajectory = []
         self.error_trajectory = []
         self.feature_activation_trajectory = []
+        self._conditioning_skipped = False
 
     def _compute_target_envelope(self) -> float:
         """Compute the desired target magnitude based on ramp progress.
@@ -156,11 +164,16 @@ class TemporalPIDSASHook:
 
         self._initialize_device(actual_output)
 
+        # Skip the conditioning prefix pass (multi-token)
+        batch_size, seq_len, d_model = actual_output.shape
+        if self._skip_conditioning and not self._conditioning_skipped and seq_len > 1:
+            self._conditioning_skipped = True
+            return output  # pass through unmodified
+
         sae = self.sae_model
         v_sas = self.sas_vector  # (sparse_dim,)
 
         a_l = actual_output  # (batch, seq, 512)
-        batch_size, seq_len, d_model = a_l.shape
         a_flat = a_l.reshape(-1, d_model)  # (batch*seq, 512)
 
         # Beat tracking (check if beat changed in the last generated token)

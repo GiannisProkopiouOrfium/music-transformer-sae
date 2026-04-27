@@ -253,6 +253,77 @@ class TemporalPIDSASGenerator:
 
         return sequences, diagnostics_list
 
+    def generate_conditioned(
+        self,
+        conditioning_prefix: torch.Tensor,
+        continuation_len: int = 512,
+        target_magnitude: float = 1.0,
+        Kp: float = 1.0,
+        Ki: float = 0.2,
+        Kd: float = 0.1,
+        max_I: float = 10.0,
+        lambda_min: float = 0.0,
+        lambda_max: float = 5.0,
+        n_ramp_beats: int = 32,
+        device: torch.device = None,
+    ) -> Tuple[np.ndarray, Dict]:
+        """Generate a single conditioned sample with temporal PID SAS.
+
+        The conditioning prefix is processed WITHOUT steering. The PID hook
+        activates only for the continuation tokens.
+
+        Args:
+            conditioning_prefix: Tensor (1, cond_len, 6) — first N beats.
+            continuation_len: Number of tokens to generate after prefix.
+            Other args: PID controller parameters.
+
+        Returns:
+            (full_sequence, diagnostics) — token array and PID diagnostics.
+        """
+        if device is None:
+            device = next(self.model.parameters()).device
+
+        eos = self.encoding["type_code_map"]["end-of-song"]
+        conditioning_prefix = conditioning_prefix.to(device)
+
+        pid_hook = TemporalPIDSASHook(
+            sae_model=self.sae_model,
+            sas_vector=self.sas_vector,
+            target_feature_indices=self.target_feature_indices,
+            target_magnitude=target_magnitude,
+            Kp=Kp,
+            Ki=Ki,
+            Kd=Kd,
+            max_I=max_I,
+            lambda_min=lambda_min,
+            lambda_max=lambda_max,
+            n_ramp_beats=n_ramp_beats,
+            skip_conditioning=True,
+        )
+        pid_hook.reset()
+
+        target_module = self._get_target_module(self.target_layer)
+        handle = target_module.register_forward_hook(
+            lambda mod, inp, out, hook=pid_hook: hook(mod, inp, out, self.target_layer)
+        )
+
+        try:
+            with torch.no_grad():
+                generated = self.model.generate(
+                    conditioning_prefix,
+                    continuation_len,
+                    eos_token=eos,
+                    temperature=config_pid.TEMPERATURE,
+                    filter_logits_fn="top_k",
+                    filter_thres=config_pid.FILTER_THRESHOLD,
+                    monotonicity_dim=("type", "beat"),
+                )
+            full_seq = torch.cat((conditioning_prefix, generated), 1).cpu().numpy()[0]
+        finally:
+            handle.remove()
+
+        return full_seq, pid_hook.get_diagnostics()
+
 
 def main():
     parser = argparse.ArgumentParser(
