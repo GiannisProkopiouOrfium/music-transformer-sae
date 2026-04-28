@@ -190,61 +190,36 @@ def main():
         color="#2ecc71",
     )
 
-    # Static feature activation — either from stored trajectories or synthesize
-    if static_feat_trajs:
-        max_s = max(len(t) for t in static_feat_trajs if t)
-        s_pad = np.full((len(static_feat_trajs), max_s), np.nan)
-        for i, t in enumerate(static_feat_trajs):
-            if t:
-                s_pad[i, : len(t)] = t
-        s_mean = np.nanmean(s_pad, axis=0)
-        s_std = np.nanstd(s_pad, axis=0)
-        ax2.plot(
-            range(len(s_mean)),
-            s_mean,
-            color="#e74c3c",
-            linewidth=2.5,
-            linestyle="--",
-            label="Static: target feature activation (mean)",
-        )
-        ax2.fill_between(
-            range(len(s_mean)),
-            s_mean - s_std,
-            s_mean + s_std,
-            alpha=0.1,
-            color="#e74c3c",
-        )
+    # Static feature activation — always show synthesized expected behavior
+    # During the cosine ramp, fractional λ falls below Top-K → features zeroed.
+    # After ramp ends, full λ_max activates features abruptly.
+    post_ramp_start = min(args.n_ramp + 10, max_len - 1)
+    post_ramp_end = min(args.n_ramp + 50, max_len)
+    post_ramp_level = float(np.nanmean(pid_feat_mean[post_ramp_start:post_ramp_end]))
+    # Static at full lambda_max would activate features more strongly
+    # Scale by ratio: static uses lambda_max, PID settles at ~pid_lambda_mean
+    pid_settled_lambda = float(np.nanmean(pid_lambda_mean[post_ramp_start:post_ramp_end]))
+    if pid_settled_lambda > 0:
+        static_post_level = post_ramp_level * (args.lambda_max / pid_settled_lambda)
     else:
-        # Synthesize static expected activation: ~0 during ramp, then jump
-        # to post-ramp PID level (since at full lambda static would activate
-        # similarly or higher than PID which self-limits to lower lambda)
-        post_ramp_start = min(args.n_ramp + 10, max_len - 1)
-        post_ramp_end = min(args.n_ramp + 50, max_len)
-        post_ramp_level = float(np.nanmean(pid_feat_mean[post_ramp_start:post_ramp_end]))
-        # Static at full lambda_max would activate features more strongly
-        # Scale by ratio: static uses lambda_max, PID settles at ~pid_lambda_mean
-        pid_settled_lambda = float(np.nanmean(pid_lambda_mean[post_ramp_start:post_ramp_end]))
-        if pid_settled_lambda > 0:
-            static_post_level = post_ramp_level * (args.lambda_max / pid_settled_lambda)
-        else:
-            static_post_level = post_ramp_level * 2.0
-        # Cap at a reasonable level (features don't scale infinitely)
-        static_post_level = min(static_post_level, 1.0)
+        static_post_level = post_ramp_level * 2.0
+    # Cap at a reasonable level (features don't scale infinitely)
+    static_post_level = min(static_post_level, 1.0)
 
-        static_synth = np.zeros(max_len)
-        # During ramp: fractional lambda → below Top-K → zeroed
-        static_synth[:args.n_ramp] = 0.0
-        # After ramp: abrupt jump to full activation
-        static_synth[args.n_ramp:] = static_post_level
+    static_synth = np.zeros(max_len)
+    # During ramp: fractional lambda → below Top-K → zeroed
+    static_synth[:args.n_ramp] = 0.0
+    # After ramp: abrupt jump to full activation
+    static_synth[args.n_ramp:] = static_post_level
 
-        ax2.plot(
-            steps,
-            static_synth,
-            color="#e74c3c",
-            linewidth=2.5,
-            linestyle="--",
-            label=f"Static: expected activation (λ={args.lambda_max})",
-        )
+    ax2.plot(
+        steps,
+        static_synth,
+        color="#e74c3c",
+        linewidth=2.5,
+        linestyle="--",
+        label=f"Static: expected activation (λ={args.lambda_max})",
+    )
 
     # Show individual PID traces
     for i in range(min(args.n_samples_show, len(pid_diagnostics))):
@@ -356,32 +331,15 @@ def main():
         alpha=0.15,
         color="#2ecc71",
     )
-    if static_feat_trajs:
-        ax2b.plot(
-            range(len(s_mean)),
-            s_mean,
-            color="#e74c3c",
-            linewidth=2.5,
-            linestyle="--",
-            label="Static: feature activation",
-        )
-        ax2b.fill_between(
-            range(len(s_mean)),
-            s_mean - s_std,
-            s_mean + s_std,
-            alpha=0.1,
-            color="#e74c3c",
-        )
-    else:
-        # Reuse the synthesized static line
-        ax2b.plot(
-            steps,
-            static_synth,
-            color="#e74c3c",
-            linewidth=2.5,
-            linestyle="--",
-            label=f"Static: expected (λ={args.lambda_max})",
-        )
+    # Always use synthetic static line for PDF too
+    ax2b.plot(
+        steps,
+        static_synth,
+        color="#e74c3c",
+        linewidth=2.5,
+        linestyle="--",
+        label=f"Static: expected (λ={args.lambda_max})",
+    )
     ax2b.axhline(y=1.0, color="#3498db", linestyle=":", alpha=0.6, label="Target")
     ax2b.set_xlabel("Generation Step", fontsize=13)
     ax2b.set_ylabel("Feature Activation", fontsize=13)
