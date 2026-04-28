@@ -246,14 +246,16 @@ def save(fig, path, output_dir):
 def plot_error_convergence(output_dir):
     fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(14, 5), sharey=True)
 
+    styles = {"P": ("o-", 2.5, 7), "PI": ("s--", 2.0, 6), "PID": ("^:", 2.0, 6)}
     for name, data in ERROR_CONV_PITCH.items():
+        fmt, lw, ms = styles[name]
         ax1.plot(
             LAYERS,
             data,
-            "o-",
+            fmt,
             color=COLORS.get(name, COLORS["PID"]),
-            linewidth=2,
-            markersize=5,
+            linewidth=lw,
+            markersize=ms,
             label=name,
         )
     ax1.axhline(y=0, color="black", linewidth=0.5, linestyle="--", alpha=0.3)
@@ -275,13 +277,14 @@ def plot_error_convergence(output_dir):
     )
 
     for name, data in ERROR_CONV_DUR.items():
+        fmt, lw, ms = styles[name]
         ax2.plot(
             LAYERS,
             data,
-            "o-",
+            fmt,
             color=COLORS.get(name, COLORS["PID"]),
-            linewidth=2,
-            markersize=5,
+            linewidth=lw,
+            markersize=ms,
             label=name,
         )
     ax2.axhline(y=0, color="black", linewidth=0.5, linestyle="--", alpha=0.3)
