@@ -282,6 +282,7 @@ def _run_concept(model, encoding, sae_model, sas_vector, concept, args, device):
 
     results["temporal_pid"] = {
         "metrics": pid_avg,
+        "per_sample_metrics": pid_metrics,  # per-sample for CI computation
         "avg_lambda": float(
             np.mean(
                 [
@@ -323,7 +324,10 @@ def _run_concept(model, encoding, sae_model, sas_vector, concept, args, device):
         values = [m[key] for m in static_metrics]
         static_avg[f"{key}_mean"] = float(np.nanmean(values))
         static_avg[f"{key}_std"] = float(np.nanstd(values))
-    results["static_smooth"] = {"metrics": static_avg}
+    results["static_smooth"] = {
+        "metrics": static_avg,
+        "per_sample_metrics": static_metrics,
+    }
 
     # 3. Unsteered baseline
     logger.info("Generating unsteered baseline...")
@@ -345,7 +349,10 @@ def _run_concept(model, encoding, sae_model, sas_vector, concept, args, device):
         values = [m[key] for m in baseline_metrics]
         baseline_avg[f"{key}_mean"] = float(np.nanmean(values))
         baseline_avg[f"{key}_std"] = float(np.nanstd(values))
-    results["baseline"] = {"metrics": baseline_avg}
+    results["baseline"] = {
+        "metrics": baseline_avg,
+        "per_sample_metrics": baseline_metrics,
+    }
 
     # Save results
     args.output_dir.mkdir(parents=True, exist_ok=True)
