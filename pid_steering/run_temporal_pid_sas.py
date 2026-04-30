@@ -356,12 +356,15 @@ def _run_concept(model, encoding, sae_model, sas_vector, concept, args, device):
 
     # Save results
     args.output_dir.mkdir(parents=True, exist_ok=True)
-    results_path = args.output_dir / f"temporal_comparison_{concept}.json"
+    direction_tag = getattr(args, "direction", "positive")
+    results_path = (
+        args.output_dir / f"temporal_comparison_{concept}_{direction_tag}.json"
+    )
     with open(results_path, "w") as f:
         json.dump(results, f, indent=2)
 
     # Save diagnostics for plotting
-    diag_path = args.output_dir / f"pid_diagnostics_{concept}.json"
+    diag_path = args.output_dir / f"pid_diagnostics_{concept}_{direction_tag}.json"
     with open(diag_path, "w") as f:
         json.dump([d for d in pid_diagnostics], f, indent=2, default=float)
 
@@ -410,7 +413,9 @@ def _run_concept(model, encoding, sae_model, sas_vector, concept, args, device):
         ax2.grid(True, alpha=0.3)
 
         fig.tight_layout()
-        plot_path = args.output_dir / f"temporal_pid_trajectories_{concept}.png"
+        plot_path = (
+            args.output_dir / f"temporal_pid_trajectories_{concept}_{direction_tag}.png"
+        )
         fig.savefig(plot_path, dpi=150, bbox_inches="tight")
         plt.close(fig)
         logger.info(f"Saved trajectory plot to {plot_path}")
@@ -422,15 +427,16 @@ def _run_concept(model, encoding, sae_model, sas_vector, concept, args, device):
     print(f"Temporal PID SAS Comparison — {concept}")
     print("=" * 70)
     print(
-        f"{'Method':<18} {'Avg Pitch':<12} {'PC Entropy':<12} "
+        f"{'Method':<18} {'Avg Pitch':<12} {'Avg Dur':<12} {'PC Entropy':<12} "
         f"{'Scale Cons':<12} {'Groove Cons':<12}"
     )
-    print("-" * 65)
+    print("-" * 78)
     for method, data in results.items():
         m = data["metrics"]
         print(
             f"{method:<18} "
             f"{m.get('average_pitch_mean', 0):<12.2f} "
+            f"{m.get('average_duration_mean', 0):<12.2f} "
             f"{m.get('pitch_class_entropy_mean', 0):<12.3f} "
             f"{m.get('scale_consistency_mean', 0):<12.1f} "
             f"{m.get('groove_consistency_mean', 0):<12.1f}"

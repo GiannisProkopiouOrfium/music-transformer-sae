@@ -162,18 +162,39 @@ def main():
     )
     parser.add_argument("--mode", choices=["ci", "smoothness", "all"], default="all")
     parser.add_argument("--concept", type=str, default="average_pitch")
+    parser.add_argument(
+        "--direction",
+        type=str,
+        default=None,
+        help="Direction suffix (positive/negative). If omitted, tries both old and new naming.",
+    )
 
     args = parser.parse_args()
     logging.basicConfig(level=logging.INFO)
 
     if args.mode in ("ci", "all"):
-        results_path = args.results_dir / f"temporal_comparison_{args.concept}.json"
+        # Try direction-specific filename first, fall back to old naming
+        results_path = None
+        if args.direction:
+            results_path = (
+                args.results_dir
+                / f"temporal_comparison_{args.concept}_{args.direction}.json"
+            )
+        if results_path is None or not results_path.exists():
+            results_path = args.results_dir / f"temporal_comparison_{args.concept}.json"
+        if not results_path.exists() and args.direction:
+            results_path = (
+                args.results_dir
+                / f"temporal_comparison_{args.concept}_{args.direction}.json"
+            )
+
         if results_path.exists():
+            print(f"\n--- CIs from {results_path.name} ---")
             with open(results_path) as f:
                 results = json.load(f)
             print_ci_table(results)
         else:
-            logger.warning(f"No results file at {results_path}")
+            logger.warning(f"No results file found for {args.concept}")
 
         # Also check threshold baseline results
         tb_path = args.results_dir / f"threshold_baselines_{args.concept}_positive.json"

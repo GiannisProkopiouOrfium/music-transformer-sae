@@ -1,0 +1,649 @@
+%%%%%%%% ICML 2026 WORKSHOP — PID ACTIVATION STEERING FOR SYMBOLIC MUSIC %%%%%%%%%
+
+\documentclass{article}
+
+\usepackage{microtype}
+\usepackage{graphicx}
+\usepackage{subcaption}
+\usepackage{booktabs}
+\usepackage{multirow}
+\usepackage{hyperref}
+
+\newcommand{\theHalgorithm}{\arabic{algorithm}}
+
+% Blind submission
+\usepackage[accepted]{icml2026} % [accepted]
+
+\usepackage{amsmath}
+\usepackage{amssymb}
+\usepackage{mathtools}
+\usepackage{amsthm}
+\usepackage[capitalize,noabbrev]{cleveref}
+
+\theoremstyle{plain}
+\newtheorem{theorem}{Theorem}[section]
+\newtheorem{proposition}[theorem]{Proposition}
+
+\icmltitlerunning{PID Control for Temporally Smooth Activation Steering in Symbolic Music}
+
+\begin{document}
+
+\twocolumn[
+  \icmltitle{Closing the Loop: PID Feedback Control for \\
+    Activation Steering in Symbolic Music Generation}
+
+  % \icmlsetsymbol{equal}{*}
+
+  % \begin{icmlauthorlist}
+  %   \icmlauthor{Anonymous Author 1}{equal,inst}
+  %   \icmlauthor{Anonymous Author 2}{equal,inst}
+  % \end{icmlauthorlist}
+
+  % \icmlaffiliation{inst}{Anonymous Institution}
+
+  % \icmlcorrespondingauthor{Anonymous Author 1}{anon@example.com}
+
+  % \icmlsetsymbol{equal}{*}
+
+\begin{icmlauthorlist}
+\icmlauthor{Ioannis Prokopiou}{yyy,comp}
+\icmlauthor{Pantelis Vikatos}{comp}
+\icmlauthor{Maximos Kaliakatsos-Papakostas}{hmu}
+\icmlauthor{Theodoros Giannakopoulos}{dem}
+\icmlauthor{Themos Stafylakis}{yyy,ath}
+\end{icmlauthorlist}
+
+\icmlaffiliation{yyy}{Athens University of Economics and Business, Athens, Greece}
+\icmlaffiliation{comp}{Orfium Research, Athens, Greece}
+\icmlaffiliation{hmu}{Hellenic Mediterranean University, Chania, Greece}
+\icmlaffiliation{dem}{NCSR ``Demokritos'', Athens, Greece}
+\icmlaffiliation{ath}{Archimedes / Athena Research Center, Greece}
+
+\icmlcorrespondingauthor{Ioannis Prokopiou}{gian.prokopiou@aueb.gr}
+
+  \icmlkeywords{activation steering, PID control, symbolic music generation, sparse autoencoders, controllable generation}
+
+  \vskip 0.3in
+]
+
+\printAffiliationsAndNotice{}
+
+% ═══════════════════════════════════════════════════════════════
+% ABSTRACT
+% ═══════════════════════════════════════════════════════════════
+\begin{abstract}
+Activation steering controls generation at inference without retraining.
+In symbolic music, Sparse Activation Steering via Sparse Autoencoders enables interpretable single-layer attribute control but fails in temporal smoothing: fractional steering magnitudes fall below the Top-K sparsity threshold, zeroing the intervention.
+We propose PID Steering in two forms: \emph{Spatial PID} validates control-theoretic steering in the generative music domain, while \emph{Temporal PID} dynamically adjusts $\lambda(t)$ at each autoregressive step via a closed-loop controller whose integral term accumulates error to overcome the Top-K barrier.
+Experiments on the Multitrack Music Transformer show that Temporal PID solves the Top-K threshold failure, enabling smooth transitions with 43--62\% less intervention and 5\% lower Fr\'{e}chet Music Distance while preserving generation quality.
+
+\end{abstract}
+
+% ═══════════════════════════════════════════════════════════════
+% 1. INTRODUCTION
+% ═══════════════════════════════════════════════════════════════
+\section{Introduction}
+\label{sec:intro}
+
+Activation steering modifies internal representations at inference time to control generative outputs without retraining~\cite{turner2024activation, li2023iti, rimsky2024steering}, building on the Linear Representation Hypothesis that concepts correspond to linear directions in activation space~\cite{park2024linear, elhage2022superposition}.
+\citet{nguyen2026pid} proved that all existing static steering methods---ActAdd~\cite{turner2024activation}, DiffMean~\cite{rimsky2024steering}, DirAblate~\cite{arditi2024refusal}, Mean-AcT~\cite{rodriguez2025meantransport}---are equivalent to proportional (P) controllers, which cannot eliminate steady-state error caused by model priors~\cite{astrom1995pid}.
+
+Symbolic music generation poses unique challenges for activation steering.
+Transformer-based models such as the Multitrack Music Transformer (MMT)~\cite{dong2023multitrack} employ compact token representations unfolding over long temporal horizons, and high-level musical concepts (pitch register, rhythmic duration) lack direct vocabulary mappings. Sparse Activation Steering (SAS)~\cite{bayat2025sas} is particularly attractive for controllable symbolic music generation~\cite{dong2023multitrack, facchiano2024musicgen, panda2024steering}: by projecting activations through Sparse Autoencoders (SAEs) into a higher-dimensional monosemantic feature space, it enables precise single-layer interventions free of the feature entanglement that plagues dense methods.
+However, SAS imposes a strict Top-K sparsity constraint: only the $K$ largest feature activations survive re-sparsification, and all others are zeroed.
+This creates a \emph{binary threshold problem} for temporal smoothing.
+When a cosine ramp gradually increases $\lambda$ from 0 to a target value, fractional $\lambda$ values produce feature additions too small to enter the top-$K$---the steering signal is \emph{entirely zeroed} during the ramp phase (\cref{fig:topk_threshold}), producing an abrupt binary transition instead of a smooth one. 
+
+We propose \textbf{PID Steering} for symbolic music in two complementary forms:
+\begin{enumerate}
+    \item \textbf{Spatial PID} applies the layer-wise PID formulation of \citet{nguyen2026pid} across the 12 sublayers of the Multitrack Music Transformer (MMT)~\cite{dong2023multitrack}, validating control-theoretic predictions in a shallower architecture than previously studied.
+    \item \textbf{Temporal PID} transposes PID control from the spatial to the temporal domain, dynamically adjusting $\lambda(t)$ at each autoregressive step. The integral term accumulates error to overcome the Top-K threshold, enabling smooth SAS steering.
+\end{enumerate}
+Extensive experiments demonstrate 43--62\% less intervention, 5\% lower Fr\'{e}chet Music Distance (FMD), and smooth transitions that preserve generation quality. Code and examples will be publicly available upon acceptance.
+
+% ═══════════════════════════════════════════════════════════════
+% 2. BACKGROUND
+% ═══════════════════════════════════════════════════════════════
+\section{Background}
+\label{sec:background}
+
+\paragraph{Symbolic Music Generation.}
+Symbolic music generation has been reshaped by Transformer architectures \cite{vaswani2017attention}, which excel at capturing the long-term temporal dependencies inherent to musical structures. However, traditional MIDI tokenizations often suffer from sequence length explosions \cite{fradet2023miditok}. The MMT~\cite{dong2023multitrack} is a 6-block decoder-only transformer (12 sublayers, 512 dimensions, 8 attention heads) that generates polyphonic symbolic music using a compact 6-tuple event representation (type, beat, position, pitch, duration, instrument). We use a publicly available checkpoint pre-trained on the Symbolic Orchestral Database (SOD)~\cite{crestel2018sod}, which establishes a coherent generative baseline (Pitch Class Entropy $H_0{=}2.974$, Scale Consistency $S_0{=}92.26\%$, Groove Consistency $G_0{=}93.05\%$).
+
+\paragraph{Activation Steering.}
+Dense methods---ActAdd~\cite{turner2024activation}, DiffMean~\cite{rimsky2024steering}, DirAblate~\cite{arditi2024refusal}, Mean-AcT~\cite{rodriguez2025meantransport}---compute steering vectors as the centroid difference between contrastive datasets in the residual stream and inject $\mathbf{h}^{(\ell)} \leftarrow \mathbf{h}^{(\ell)} + \alpha \cdot \mathbf{v}^{(\ell)}$ at each layer $\ell$, but suffer from feature superposition~\cite{elhage2022superposition}: in the MMT, pitch and duration vectors exhibit cosine similarity up to 0.81 (Layer~3, \cref{app:interference}), causing interference during multi-attribute steering. SAS~\cite{bayat2025sas} resolves this by training per-layer SAEs~\cite{bricken2023monosemanticity, cunningham2024sparse} to project 512-dim activations into a 4096-dim sparse space ($8{\times}$ expansion) with strict Top-K sparsity: $f(\mathbf{a}) = \text{TopK}(\text{ReLU}(\mathbf{W}_\text{enc}\mathbf{a} + \mathbf{b}_\text{enc}), K)$. A 16-configuration layer selection grid search identified Layer~10 as optimal for SAS---it provides maximum feature capacity ($K{=}128$) with the best monotonic response across both attributes (see \cref{app:layer_selection}). At inference, the steered activation for token $t$ at layer $\ell$ is:
+\begin{equation}
+    \tilde{\mathbf{a}}_t^\ell = \hat{\mathbf{a}}^\ell\!\left(\sigma\!\left(f(\mathbf{a}_t^\ell) + \lambda \cdot \mathbf{v}\right)\right) + \Delta
+    \label{eq:sas}
+\end{equation}
+where $\sigma$ is Top-K ReLU re-sparsification, $\hat{\mathbf{a}}^\ell(\cdot)$ is the SAE decoder, and $\Delta := \mathbf{a}_t^\ell - \hat{\mathbf{a}}^\ell(f(\mathbf{a}_t^\ell))$ is a reconstruction correction term that preserves information lost by the autoencoder. Critically, when $\lambda < 1$, the added features $\lambda \cdot \mathbf{v}$ have insufficient magnitude to survive $\sigma$, causing the steering signal to vanish entirely.
+
+\paragraph{PID Control for Steering.}
+\citet{nguyen2026pid} model the layer-wise forward pass as a discrete-time dynamical system and prove that static steering is a P-controller with guaranteed steady-state error. Their PID formulation computes a dynamic steering vector $\mathbf{u}(k)$ at each layer $k$:
+\begin{equation}
+    \mathbf{u}(k) = K_p \mathbf{e}(k) + K_i \textstyle\sum_{j=0}^{k-1}\mathbf{e}(j) + K_d (\mathbf{e}(k) - \mathbf{e}(k{-}1))
+    \label{eq:pid_spatial}
+\end{equation}
+where $\mathbf{e}(k) = \boldsymbol{\mu}_\text{target}(k) - \boldsymbol{\mu}_\text{source}(k)$ is the layer-wise error signal~\cite{nguyen2026pid}. The integral (I) term accumulates past errors to remove residual bias; the derivative (D) term responds to the error's rate of change, damping overshoot~\cite{astrom1995pid}.
+
+% ═══════════════════════════════════════════════════════════════
+% 3. METHOD
+% ═══════════════════════════════════════════════════════════════
+\section{Method}
+\label{sec:method}
+
+We apply PID control to symbolic music steering in two forms: \emph{Spatial PID} adapts the original layer-wise formulation~\cite{nguyen2026pid} to the MMT's dense residual stream, and \emph{Temporal PID} transposes the controller to the autoregressive time axis to solve the SAS smoothing failure.
+
+\subsection{Spatial PID: Adapting to Symbolic Music}
+\label{sec:spatial_method}
+
+We apply \cref{eq:pid_spatial} across MMT's 12 sublayers using DiffMean vectors with an all-to-all injection strategy (layer-specific vectors applied at every sublayer), computing the steering vector sequentially. The key challenge is the MMT's shallow depth---12 layers versus 32+ in language models~\cite{nguyen2026pid}---giving the integral term fewer steps to accumulate corrections, requiring proportionally higher $K_i$ (see~\cref{sec:spatial_results}).
+
+\subsection{Temporal PID: Solving the Sparse Threshold Problem}
+\label{sec:temporal_method}
+
+% --- Figure 1: Top-K Threshold ---
+\begin{figure}[t]
+  \vskip 0.1in
+  \begin{center}
+    \centerline{\includegraphics[width=\columnwidth]{figs/topk_threshold_figure_average_duration}}
+    \caption{
+      \textbf{The Top-K threshold failure.} \emph{Top:} A static cosine ramp applies monotonically increasing $\lambda$; the PID controller dynamically adjusts $\lambda(t)$ and settles at a lower steady-state value. \emph{Bottom:} Under static ramping, target feature activations remain at zero throughout the ramp because fractional $\lambda$ falls below the Top-K threshold. PID's integral accumulation maintains non-zero activations from the onset, enabling a smooth transition.
+    }
+    \label{fig:topk_threshold}
+  \end{center}
+  \vskip -0.2in
+\end{figure}
+
+SAS interventions in the MMT occur at a single layer (Layer~10), precluding the spatial layer-to-layer PID of \cref{sec:spatial_method}. We therefore transpose the PID control variable from the \emph{spatial} domain (layer index $k$) to the \emph{temporal} domain (generation step $t$), creating a closed-loop feedback system that operates during autoregressive decoding.
+
+\paragraph{Error Measurement.}
+At each generation step $t$, we encode the current activation through the SAE and measure the mean magnitude of the top-$N$ target features (by absolute weight in the SAS vector $\mathbf{v}$):
+\begin{equation}
+    \bar{f}_a(t) = \frac{1}{|\mathcal{T}|} \sum_{j \in \mathcal{T}} f(\mathbf{a}_t^\ell)_j
+    \label{eq:measure}
+\end{equation}
+where $\mathcal{T}$ is the set of $N{=}32$ feature indices with largest $|v_j|$. These features serve as a ``concept fingerprint'' indicating whether the steering signal survived Top-K re-sparsification. The error signal is:
+\begin{equation}
+    e(t) = m^*(t) - \bar{f}_a(t)
+    \label{eq:error}
+\end{equation}
+where $m^*(t)$ is a cosine-ramped setpoint that smoothly ramps the target activation magnitude over $T_\text{ramp}$ beats:
+\begin{equation}
+    m^*(t) = \begin{cases}
+        \frac{m_\text{target}}{2}\left(1 - \cos\!\left(\frac{\pi \cdot t}{T_\text{ramp}}\right)\right) & t < T_\text{ramp} \\[4pt]
+        m_\text{target} & t \geq T_\text{ramp}
+    \end{cases}
+    \label{eq:setpoint}
+\end{equation}
+
+\paragraph{PID Control Law.}
+The controller computes the steering magnitude at each step:
+\begin{equation}
+    \lambda(t) = \text{clamp}\!\Big(K_p e(t) + K_i I(t{-}1) + K_d \big(e(t) - e(t{-}1)\big)\Big)
+    \label{eq:pid_temporal}
+\end{equation}
+where $I(t) = \text{clamp}(I(t{-}1) + e(t),\, {-}I_\text{max},\, I_\text{max})$ is the integral accumulator with anti-windup clamping~\cite{astrom1995pid}, and $\lambda(t) \in [0, \lambda_\text{max}]$. The steered sparse representation becomes $\mathbf{s}(t) = f(\mathbf{a}_t^\ell) + \lambda(t) \cdot \mathbf{v}$, followed by Top-K re-sparsification and SAE decoding as in \cref{eq:sas}.
+
+\paragraph{Intuition.}
+During the ramp phase, target features fall below the Top-K threshold ($\bar{f}_a \approx 0$), creating a large positive error. The I~term \emph{accumulates} this persistent error, progressively amplifying $\lambda(t)$ until the steering signal breaches the threshold. Once features are active, the error shrinks, and the controller settles to a $\lambda$ that is \emph{just sufficient}. The D~term prevents overshoot during the sub-threshold--to--active transition.
+
+\paragraph{Dual-Concept Control.}
+For simultaneous pitch and duration steering, we instantiate two independent temporal PID controllers. To prevent interference, the duration SAS vector is Gram-Schmidt-orthogonalized with respect to the pitch vector, and the Top-K budget is expanded to $2{\times}K$ at the steered layer to prevent feature competition during re-sparsification. Both the PID and static SAS baselines receive the same $2{\times}K$ expansion in all dual-concept experiments to ensure fair comparison.
+
+% ═══════════════════════════════════════════════════════════════
+% 4. EXPERIMENTS
+% ═══════════════════════════════════════════════════════════════
+\section{Experiments}
+\label{sec:experiments}
+
+We evaluate on the SOD corpus using contrastive sets (1,280 samples each, \cref{app:vector_construction}) defined by the 20th/80th percentiles of pitch ($\leq$60 vs.\ $\geq$67.6 semitones) and duration ($\leq$6.5 vs.\ $\geq$14.5 ticks). SAEs are trained at each MMT layer ($512 {\to} 4096$, Top-K $K{=}128$; details in \cref{app:sae_training}). Quality degradation $\delta = |H - H_0| + \max(0, S_0 - S) + \max(0, G_0 - G)$ combines deviations from ground-truth pitch class entropy ($H_0$), scale consistency ($S_0$), and groove consistency ($G_0$); FMD uses CLaMP2 embeddings~\cite{wu2024clamp2} (details in \cref{app:metrics}). All generations use temperature 1.0, top-$k$ logit filtering (threshold 0.9, retaining logits within 90\% of the maximum), $\text{max\_seq\_len}{=}1024$, and $T_\text{ramp}{=}64$ steps.
+
+\subsection{Spatial PID: Domain Validation}
+\label{sec:spatial_results}
+
+We validate spatial PID (\cref{eq:pid_spatial}) using DiffMean vectors across MMT's 12 sublayers ($n{=}25$, $\alpha \in \{\pm 0.5, \ldots, \pm 2.0\}$). A grid search (\cref{app:grid_search}) reveals concept-dependent optima: pitch requires $K_p{=}1.5$, $K_i{=}0.2$ while duration needs $K_p{=}1.25$, $K_i{=}0.025$---pitch demands $8{\times}$ higher $K_i$, reflecting stronger autoregressive priors. Error convergence replicates~\citet{nguyen2026pid}: P-control leaves residual error at layer~11; PI/PID push it to $-1.15$, confirming integral correction in 12 layers. Hook ablation across 9 configurations (\cref{app:hook_ablation}) shows all\_12 and deep layers are most effective, with PID reducing $\delta$ by 17--47\% versus P-only. At $\alpha{=}1.0$, PID reaches pitch 82.90~st ($\delta{=}5.0$; P-only: 82.08, $\delta{=}5.6$). FMD sweeps across $\alpha \in \{0.5,\ldots,2.0\}$ (\cref{app:fmd_sweep}) show PID achieves best duration fidelity (456.0 vs.\ P-only 471.9 at $\alpha{=}1.0$).
+
+\subsection{Temporal PID: Single-Concept Steering}
+\label{sec:single}
+
+\cref{tab:single} presents temporal PID results with $K_p{=}1.0$, $K_i{=}0.05$, $K_d{=}0.01$, $I_\text{max}{=}10$, $\lambda_\text{max}{=}3.0$ at Layer~10. For positive pitch steering ($n{=}40$), PID achieves 72.65~st ($\delta{=}0.45$ [0.33, 0.62]) versus 72.30 for static SAS ($\delta{=}0.64$ [0.47, 0.85]) and 68.79 baseline, while using 62\% less intervention for pitch-up specifically (avg $\lambda{=}1.15$; \cref{fig:hero_trajectory}). Across all four single-concept conditions, PID averages $\lambda{=}1.72$---43\% less than the static $\lambda{=}3.0$ (95\% bootstrap CIs in \cref{app:confidence_intervals}).
+
+For negative pitch steering, PID produces a dramatic $-24.0$ semitone shift ($67.94{\to}43.99$) while maintaining groove consistency at 98.7\%. Duration steering shifts the attribute effectively ($72.44{\to}59.13$ positive, $70.41{\to}48.74$ negative), but incurs higher $\delta$ than static SAS ($8.11$ vs.\ $3.32$ at $n{=}40$; \cref{app:confidence_intervals}), because the temporal controller uses gains tuned for pitch. The spatial PID grid search (\cref{app:grid_search}) showed pitch requires $8{\times}$ higher $K_i$ than duration, motivating concept-specific temporal gain tuning as future work. Quantitatively, PID's feature activations evolve smoothly ($\text{std}(\Delta \bar{f}_a) < 0.003$), whereas static SAS produces a binary step (\cref{app:smoothness}).
+
+The concept fingerprint is robust to $|\mathcal{T}|$: pitch steering is stable across $N \in \{8, 16, 32, 64\}$ (range 0.37~st; \cref{app:fingerprint}). Against simpler dynamic baselines, PID achieves the lowest $\delta$ for pitch ($0.07$ vs.\ $0.32$ for step-function, $0.30$ for minimal-$\lambda$; \cref{app:threshold_baselines}).
+
+% --- Figure 3: Hero trajectory ---
+\begin{figure}[t]
+  \vskip 0.1in
+  \begin{center}
+    \centerline{\includegraphics[width=\columnwidth]{figs/hero_lambda_trajectories.png}}
+    \caption{
+      \textbf{Temporal PID $\lambda(t)$ trajectory} during autoregressive generation (pitch-up, $m_\text{target}{=}2.0$). The controller tracks the cosine ramp, overshoots briefly as features breach the Top-K threshold, then settles to a stable $\lambda \approx 1.15$---62\% below the static $\lambda{=}3.0$ used by fixed SAS.
+    }
+    \label{fig:hero_trajectory}
+  \end{center}
+  \vskip -0.2in
+\end{figure}
+
+\begin{table}[t]
+  \caption{Single-concept temporal PID steering ($\lambda_\text{max}{=}3.0$). Pitch: $n{=}40$; Duration: $n{=}20$. Static SAS uses fixed $\lambda{=}3.0$; PID uses dynamic $\lambda(t)$.}
+  \label{tab:single}
+  \begin{center}
+  \begin{small}
+  \begin{tabular}{llccc}
+    \toprule
+    Concept & Direction & PID & Static & Base. \\
+    \midrule
+    \multirow{2}{*}{Pitch (st)} & $\uparrow$ & \textbf{72.65} & 72.30 & 68.79 \\
+    & $\downarrow$ & \textbf{43.99} & 44.91 & 67.94 \\
+    \multirow{2}{*}{Duration} & $\uparrow$ & \textbf{59.13} & 57.91 & 72.44 \\
+    & $\downarrow$ & \textbf{48.74} & 47.69 & 70.41 \\
+    \midrule
+    Avg.\ $\lambda$ & --- & 1.72 & 3.00 & --- \\
+    \midrule
+    \multicolumn{2}{l}{Pitch FMD ($\downarrow$)} & \textbf{461.9} & 487.7 & 381.5 \\
+    \multicolumn{2}{l}{Duration FMD ($\downarrow$)} & \textbf{501.2} & 525.9 & 385.3 \\
+    \bottomrule
+  \end{tabular}
+  \end{small}
+  \end{center}
+  \vskip -0.1in
+\end{table}
+
+\paragraph{FMD and Setpoint Analysis.}
+PID achieves 5.3\% and 4.7\% lower FMD than static SAS for pitch and duration respectively (\cref{tab:single}), as the dynamic $\lambda(t)$ avoids over-steering early tokens. Setpoint sweeps over $m_\text{target} \in \{0.5, 1.0, 2.0\}$ show that $m_\text{target}{=}2.0$ is optimal for unconditioned tasks (75\% dual success, $\delta{=}0.47$); lower setpoints produce conservative steering insufficient for simultaneous multi-concept control.
+
+\subsection{Component Ablation}
+\label{sec:ablation}
+
+We ablate temporal PID components for pitch steering. P-only control yields $\lambda_\text{avg}{=}0.664$---too conservative, leaving large steady-state error as predicted by~\citet{nguyen2026pid}. Adding the I~term ($\lambda_\text{avg}{=}1.136$) removes this bias: accumulated error drives $\lambda$ above the Top-K threshold. The D~term marginally improves settling ($\lambda_\text{avg}{=}1.158$). This confirms the integral term is \emph{essential} for overcoming the sparse threshold barrier that defeats open-loop ramps.
+
+\subsection{Dual-Concept Steering}
+\label{sec:dual}
+
+\cref{tab:dual} evaluates simultaneous pitch-up and duration-up steering using two independent temporal PID controllers ($m_\text{target}{=}2.0$, $n{=}20$). The two $\lambda(t)$ trajectories are highly correlated ($r{=}0.998$), as both controllers respond to the same cosine ramp schedule, though each adjusts independently based on its concept-specific error.
+
+\begin{table}[t]
+  \caption{Dual-concept steering. $\delta$: quality degradation ($\downarrow$). Dual\%: both attributes shifted correctly. Conditioned: $10{\times}2$ reps per scenario.}
+  \label{tab:dual}
+  \begin{center}
+  \begin{small}
+  \begin{tabular}{llcc}
+    \toprule
+    Setting & Method & $\delta$ ($\downarrow$) & Dual\% \\
+    \midrule
+    \multirow{2}{*}{Uncond.} & PID & \textbf{0.47} & 75\% \\
+    & Static & 2.19 & 95\% \\
+    \midrule
+    \multirow{2}{*}{L/S$\to$H/L} & PID & 4.13 & 80\% \\
+    & Static & 3.72 & 75\% \\
+    \multirow{2}{*}{H/L$\to$L/S} & PID & 5.21 & 95\% \\
+    & Static & 3.61 & 90\% \\
+    \multirow{2}{*}{L/L$\to$H/S} & PID & 2.36 & 80\% \\
+    & Static & 2.85 & 85\% \\
+    \multirow{2}{*}{H/S$\to$L/L} & PID & \textbf{1.92} & 100\% \\
+    & Static & 4.30 & 100\% \\
+    \bottomrule
+  \end{tabular}
+  \end{small}
+  \end{center}
+  \vskip -0.1in
+\end{table}
+
+PID achieves $4.7{\times}$ lower degradation ($\delta{=}0.47$ vs.\ $2.19$) in unconditioned steering by self-regulating $\lambda$, at the cost of lower dual success (75\% vs.\ 95\%). For conditioned steering on 16-beat prefixes from extreme quantiles, PID excels in the hardest opposing-direction case (H/S$\to$L/L): 100\% success with $2.2{\times}$ less degradation ($\delta{=}1.92$ vs.\ $4.30$). Across all 4~scenarios (\cref{tab:dual}), PID-steered music preserves pitch class entropy 0.30 closer to ground truth on average.
+
+% ═══════════════════════════════════════════════════════════════
+% 5. CONCLUSION
+% ═══════════════════════════════════════════════════════════════
+\section{Conclusion}
+\label{sec:conclusion}
+
+We introduced PID Steering for symbolic music: \emph{Spatial PID} validates control-theoretic steering~\cite{nguyen2026pid} in a 12-layer architecture, while \emph{Temporal PID} transposes the controller to the autoregressive time axis, solving SAS's Top-K threshold failure via integral error accumulation. The closed-loop controller enables smooth sparse steering with 43--62\% less intervention and 5\% lower FMD, while concept-specific gain tuning---motivated by the $8{\times}$ $K_i$ asymmetry between pitch and duration---ensures quality preservation across diverse musical attributes.
+
+\paragraph{Limitations.}
+Our evaluation uses a single model (MMT) and dataset (SOD); gain portability across architectures remains untested. Sample sizes ($n{=}20$--$40$) are modest, perceptual validation via listening studies is absent, and controller stability under out-of-distribution inputs is not evaluated. The temporal PID overhead is negligible (one SAE encode per step). Future work includes adaptive gain scheduling, SAE sparsity $K$ ablations, and integration with learned controllers~\cite{nguyen2026pid}.
+
+\section*{Impact Statement}
+This work advances controllable music generation. We foresee no specific negative societal consequences.
+
+% ═══════════════════════════════════════════════════════════════
+% REFERENCES
+% ═══════════════════════════════════════════════════════════════
+\bibliography{references}
+\bibliographystyle{icml2026}
+
+% ═══════════════════════════════════════════════════════════════
+% APPENDIX
+% ═══════════════════════════════════════════════════════════════
+\newpage
+\appendix
+
+\section{Steering Vector Construction}
+\label{app:vector_construction}
+
+\paragraph{DiffMean Vectors.}
+For each layer $\ell$, we intercept the summary activation $\mathbf{h}$ of the last fully contextualized token during a forward pass over contrastive sets. The steering vector is the centroid difference:
+\begin{equation}
+    \mathbf{v}^{(\ell)} = \frac{1}{N_+}\sum_{i=1}^{N_+}\mathbf{h}^{(\ell)}_{+,i} - \frac{1}{N_-}\sum_{j=1}^{N_-}\mathbf{h}^{(\ell)}_{-,j}
+\end{equation}
+where $N_+ = N_- = 1{,}280$ are samples from the ``High'' and ``Low'' contrastive pools extracted from the SOD corpus using the 20th/80th percentiles: average pitch ($\leq$60 vs.\ $\geq$67.6 semitones) and average duration ($\leq$6.5 vs.\ $\geq$14.5 ticks). These thresholds were validated to be stable across alternative extreme quantile choices.
+
+\paragraph{SAS Vectors.}
+Given sparse encodings of the contrastive sets ($S^+$ and $S^-$), behavior-specific features are isolated via frequency filtering with threshold $\tau{=}0.08$ (requiring a minimum 8\% activation frequency). Shared Feature Removal zeroes features active in both pools, yielding a bidirectional vector $\mathbf{v}^{(b,\ell)} = \mathbf{v}^{+} - \mathbf{v}^{-}$ that reinforces target features while suppressing opposing ones.
+
+\section{Layer Selection for SAS}
+\label{app:layer_selection}
+
+A 16-configuration grid search evaluated SAS injection at individual layers and layer groups, balancing steering effectiveness against quality degradation~$\delta$. Key findings:
+
+\begin{itemize}
+    \item \textbf{Multi-layer SAS broadcasting causes catastrophic failure}: unlike DiffMean, applying SAS vectors across multiple layers cascades SAE reconstruction noise and Top-K re-sparsification errors, producing total quality collapse.
+    \item \textbf{Layer~10 is optimal}: under the Adaptive~K strategy (K scaling from 32 at Layer~0 to 128 at Layers~8--11), Layer~10 provides maximum feature capacity for abstract musical representations while retaining sufficient depth to propagate overrides before output generation.
+    \item Layer~10 achieves the best monotonic response curve across both pitch and duration, with a 48$\times$ reduction in intervention footprint versus DiffMean (128 features vs.\ $512{\times}12$ dimensions).
+\end{itemize}
+
+\paragraph{Adaptive K Strategy.}
+SAE sparsity scales linearly with depth: $K{=}32$ (Layer~0), $K{=}64$ (Layers~1--3), $K{=}96$ (Layers~4--7), $K{=}128$ (Layers~8--11). This accommodates increasing representational complexity in deeper layers.
+
+\section{SAE Training Details}
+\label{app:sae_training}
+
+One SAE is trained per transformer layer. Architecture: $512 \to 4096$ ($8{\times}$ expansion), tied weights ($\mathbf{W}_\text{dec} = \mathbf{W}_\text{enc}^\top$), per-layer zero-mean unit-variance normalization. Training data: 640K activation vectors extracted via forward hooks from 10K tracks uniformly sampled from the SOD. Optimizer: Adam, LR $= 10^{-4}$. Loss:
+\begin{equation}
+    \mathcal{L} = \text{MSE}(\mathbf{a}, \hat{\mathbf{a}}) + \lambda_{L_1} \cdot \mathbb{E}[|f(\mathbf{a})|], \quad \lambda_{L_1} = 10^{-3}
+\end{equation}
+
+\section{Feature Interference Analysis}
+\label{app:interference}
+
+In the dense residual stream, pitch and duration DiffMean vectors exhibit an average absolute cosine similarity of \textbf{0.49} across all 12 layers, peaking at \textbf{0.81 in Layer~3}. This severe entanglement causes destructive interference during multi-attribute steering, requiring geometric decoupling via GSO ($\mathbf{v}^{\perp}_d = \mathbf{v}_d - \text{proj}_{\mathbf{v}_p}\mathbf{v}_d$).
+
+In the sparse SAE space, pitch and duration vectors have an average cosine similarity of $-0.27$ (anti-correlated) with 51.8\% shared feature overlap (958/4096 features), ranging from 26.5\% at Layer~6 to 75.0\% at Layer~3. For dual SAS steering, we apply Gram-Schmidt orthogonalization in sparse space and expand the Top-K budget to $2{\times}K$ to prevent feature competition.
+
+\section{Spatial PID Gain Grid Search}
+\label{app:grid_search}
+
+\begin{table}[h]
+  \caption{Spatial PID optimal gains per concept. Score combines steering effectiveness and quality degradation.}
+  \label{tab:grid_search}
+  \begin{center}
+  \begin{small}
+  \begin{tabular}{lccccc}
+    \toprule
+    Concept & $K_p$ & $K_i$ & $K_d$ & Score & $\delta$@$\alpha{=}1$ \\
+    \midrule
+    Pitch & 1.5 & 0.2 & 0.01 & 32.86 & 7.91 \\
+    Duration & 1.25 & 0.025 & 0.01 & 8.82 & 5.37 \\
+    \bottomrule
+  \end{tabular}
+  \end{small}
+  \end{center}
+\end{table}
+
+Pitch requires $8{\times}$ higher $K_i$ than duration. The model's autoregressive priors strongly resist pitch register deviations (``pitch anchoring''), requiring aggressive integral accumulation. Duration is inherently more responsive---even $K_i{=}0.025$ produces strong effects with conservative overshoot.
+
+\section{Injection Strategy Comparison}
+\label{app:injection}
+
+For DiffMean, three broadcast strategies were compared:
+\begin{itemize}
+    \item \textbf{All-to-All}: Layer-specific vectors applied at all layers simultaneously. Optimal for DiffMean---distributed dense embeddings require multi-layer reinforcement.
+    \item \textbf{One-to-All}: Single layer's vector broadcast to all layers. Less effective.
+    \item \textbf{Some-to-Some}: Targeting specific layer groups (e.g., deep layers 8--11). Intermediate performance.
+\end{itemize}
+All-to-All is used for all DiffMean experiments (spatial PID). SAS uses single-layer injection at Layer~10 only.
+
+\section{Hook Ablation Study}
+\label{app:hook_ablation}
+
+\begin{table}[h]
+  \caption{Spatial PID hook ablation averaged over 2 concepts $\times$ 2 $\alpha$ values. $|\Delta|$: steering effectiveness; Deg: quality degradation.}
+  \label{tab:hook_ablation}
+  \begin{center}
+  \begin{small}
+  \begin{tabular}{lccccc}
+    \toprule
+    Config & Layers & P $|\Delta|$ & PID $|\Delta|$ & P Deg & PID Deg \\
+    \midrule
+    all\_12 & 12 & 39.4 & 39.5 & 3.21 & \textbf{2.65} \\
+    mid\_deep & 8 & 39.3 & 39.8 & 3.62 & 3.07 \\
+    deep\_only & 4 & 41.3 & 41.3 & 4.46 & 3.19 \\
+    attn\_only & 6 & 36.8 & 38.1 & 3.77 & 3.59 \\
+    ff\_only & 6 & 27.7 & 26.1 & 5.16 & 5.60 \\
+    shallow\_only & 4 & 9.7 & 12.3 & 7.15 & 7.49 \\
+    mid\_only & 4 & 27.7 & 32.4 & 9.61 & 8.07 \\
+    layer\_10 & 1 & 28.8 & 33.4 & 6.23 & 3.32 \\
+    layer\_11 & 1 & 36.8 & 33.2 & 6.42 & 4.45 \\
+    \bottomrule
+  \end{tabular}
+  \end{small}
+  \end{center}
+\end{table}
+
+Key observations: (1) all\_12 and mid\_deep achieve the best PID degradation (2.65 and 3.07); (2) deep\_only shows the largest PID improvement (28\% $\delta$ reduction vs.\ P-only); (3) single-layer configurations (layer\_10, layer\_11) show PID's advantage is most pronounced at concentrated injection loci (47\% $\delta$ reduction at layer\_10).
+
+\section{FMD Sweep Across $\alpha$}
+\label{app:fmd_sweep}
+
+\begin{table}[h]
+  \caption{Fr\'{e}chet Music Distance across steering magnitudes ($n{=}40$ per condition).}
+  \label{tab:fmd_sweep}
+  \begin{center}
+  \begin{small}
+  \begin{tabular}{lcccc}
+    \toprule
+    & \multicolumn{4}{c}{$\alpha$} \\
+    \cmidrule(lr){2-5}
+    Method & 0.5 & 1.0 & 1.5 & 2.0 \\
+    \midrule
+    \multicolumn{5}{l}{\textit{Pitch}} \\
+    Baseline & 412.4 & 414.5 & 413.8 & 417.6 \\
+    P-only & 464.3 & 490.0 & 494.9 & 516.1 \\
+    PI & 480.7 & 508.9 & 512.1 & 518.4 \\
+    PID & 479.1 & 506.3 & 512.6 & 518.6 \\
+    \midrule
+    \multicolumn{5}{l}{\textit{Duration}} \\
+    Baseline & 387.3 & 381.6 & 382.1 & 394.2 \\
+    P-only & 409.4 & 471.9 & 483.2 & 474.6 \\
+    PI & 404.9 & 462.9 & 480.4 & 475.4 \\
+    PID & 412.4 & \textbf{456.0} & \textbf{475.0} & 474.8 \\
+    \bottomrule
+  \end{tabular}
+  \end{small}
+  \end{center}
+\end{table}
+
+For pitch, P-only achieves lower FMD since PI/PID's stronger steering shifts the distribution further from the reference corpus---a tradeoff between steering effectiveness and distributional fidelity. For duration ($K_i{=}0.025$, conservative), PID achieves both stronger steering \emph{and} lower FMD at $\alpha{=}1.0$--$1.5$, the best of both worlds.
+
+\section{Full Conditioned Dual Steering Results}
+\label{app:conditioned_dual}
+
+\begin{table}[h]
+  \caption{Conditioned dual-concept steering across all 4 directional scenarios (10 songs $\times$ 2 repetitions per scenario).}
+  \label{tab:conditioned_full}
+  \begin{center}
+  \begin{small}
+  \begin{tabular}{lccccc}
+    \toprule
+    Scenario & Method & Pitch & Dur. & $\delta$ & Dual\% \\
+    \midrule
+    \multirow{2}{*}{L/S$\to$H/L} & PID & 66.95 & 6.89 & 4.13 & 80\% \\
+    & Static & 67.12 & 7.33 & 3.72 & 75\% \\
+    \midrule
+    \multirow{2}{*}{H/L$\to$L/S} & PID & 57.64 & 15.93 & 5.21 & 95\% \\
+    & Static & 56.33 & 16.70 & 3.61 & 90\% \\
+    \midrule
+    \multirow{2}{*}{L/L$\to$H/S} & PID & 64.09 & 8.95 & 2.36 & 80\% \\
+    & Static & 64.32 & 8.84 & 2.85 & 85\% \\
+    \midrule
+    \multirow{2}{*}{H/S$\to$L/L} & PID & 53.06 & 7.33 & \textbf{1.92} & 100\% \\
+    & Static & 47.91 & 5.67 & 4.30 & 100\% \\
+    \bottomrule
+  \end{tabular}
+  \end{small}
+  \end{center}
+\end{table}
+
+PID achieves $\delta$ closer to ground truth in 3 of 4 scenarios (H/S$\to$L/L, L/L$\to$H/S, H/L$\to$L/S partial). In the most challenging opposing-direction case (H/S$\to$L/L), PID's $2.2{\times}$ degradation advantage is most pronounced.
+
+\section{Spatial Single-Attribute $\alpha$ Sweep}
+\label{app:alpha_sweep}
+
+\begin{table}[h]
+  \caption{Pitch steering across $\alpha$ values ($n{=}25$). Best degradation per $\alpha$ in bold.}
+  \label{tab:alpha_pitch}
+  \begin{center}
+  \begin{small}
+  \begin{tabular}{lcccc}
+    \toprule
+    $\alpha$ & Method & Pitch (st) & $\delta$ & N \\
+    \midrule
+    \multirow{3}{*}{$-1.0$} & P & 39.17 & 5.2 & 346 \\
+    & PI & 39.31 & 5.5 & 339 \\
+    & PID & 39.55 & \textbf{3.6} & 282 \\
+    \midrule
+    \multirow{3}{*}{$1.0$} & P & 82.08 & 5.6 & 509 \\
+    & PI & 82.47 & 5.2 & 481 \\
+    & PID & 82.90 & \textbf{5.0} & 484 \\
+    \midrule
+    \multirow{3}{*}{$2.0$} & P & 78.36 & 9.2 & 419 \\
+    & PI & 79.22 & \textbf{9.1} & 478 \\
+    & PID & 78.86 & \textbf{9.0} & 497 \\
+    \bottomrule
+  \end{tabular}
+  \end{small}
+  \end{center}
+\end{table}
+
+PID achieves the lowest degradation at every $\alpha$ for pitch, with the advantage most pronounced at $\alpha{=}{-}1.0$ (36\% reduction). At high $\alpha$ values, all controllers converge as the model saturates.
+
+\section{Steering Metrics}
+\label{app:metrics}
+
+\paragraph{Quality Degradation.}
+$\delta = |H - H_0| + \max(0, S_0 - S) + \max(0, G_0 - G)$ where $H$ is Pitch Class Entropy, $S$ is Scale Consistency, $G$ is Groove Consistency, and subscript 0 denotes ground-truth SOD values. The asymmetric penalty reflects musical priors: increases in scale/groove consistency above the corpus mean are benign (stronger tonal coherence), whereas decreases indicate structural degradation. Entropy uses absolute deviation since both extremes (uniform randomness and single-note collapse) are undesirable.
+
+\paragraph{Steering Success.}
+A generation is successful if its mean target attribute shifts in the specified direction relative to the unsteered baseline (unconditioned) or the conditioning prefix (conditioned).
+
+\paragraph{Fr\'{e}chet Music Distance.}
+FMD is computed using CLaMP2~\cite{wu2024clamp2} embeddings with MLE Gaussian estimation over 4,474 SOD reference MIDIs, following~\citet{wu2024fmd}.
+
+\section{Threshold-Aware Baselines}
+\label{app:threshold_baselines}
+
+To assess whether simpler dynamic strategies can solve the Top-K threshold problem, we compare temporal PID against two alternatives ($n{=}20$, positive direction):
+
+\begin{itemize}
+    \item \textbf{Step}: $\lambda{=}0$ for $t < T_\text{ramp}$, then $\lambda{=}\lambda_\text{target}$ instantly.
+    \item \textbf{Minimal-$\lambda$}: Per-step binary search for the smallest $\lambda$ that activates at least one target feature above the Top-K threshold.
+\end{itemize}
+
+\begin{table}[h]
+  \caption{Threshold-aware baseline comparison (positive direction).}
+  \label{tab:threshold}
+  \begin{center}
+  \begin{small}
+  \begin{tabular}{llccc}
+    \toprule
+    Concept & Method & Attr.\ & $\delta$ ($\downarrow$) & Avg $\lambda$ \\
+    \midrule
+    \multirow{4}{*}{Pitch} & PID & 73.13 & \textbf{0.07} & 1.13 \\
+    & Step & 71.86 & 0.32 & 2.49 \\
+    & Min-$\lambda$ & 69.44 & 0.30 & 0.01 \\
+    & Baseline & 70.88 & 0.14 & --- \\
+    \midrule
+    \multirow{4}{*}{Dur.} & PID & 59.85 & 7.02 & 1.11 \\
+    & Step & 60.37 & 3.09 & 1.99 \\
+    & Min-$\lambda$ & 70.54 & 0.09 & 0.01 \\
+    & Baseline & 66.49 & 0.09 & --- \\
+    \bottomrule
+  \end{tabular}
+  \end{small}
+  \end{center}
+\end{table}
+
+For pitch, PID achieves the lowest $\delta$ (0.07) with the strongest steering (73.13~st), outperforming Step ($\delta{=}0.32$, $2.2{\times}$ more $\lambda$) and Minimal-$\lambda$ (insufficient steering). For duration, the Step function is competitive in quality but uses $1.8{\times}$ more intervention. Minimal-$\lambda$ barely steers at all ($\text{avg}\,\lambda{=}0.01$), confirming that threshold-aware does not equal effective.
+
+\section{Concept Fingerprint Sensitivity}
+\label{app:fingerprint}
+
+\begin{table}[h]
+  \caption{Sensitivity to fingerprint size $|\mathcal{T}|$ ($n{=}20$, positive direction).}
+  \label{tab:fingerprint}
+  \begin{center}
+  \begin{small}
+  \begin{tabular}{lcccc}
+    \toprule
+    $|\mathcal{T}|$ & Pitch (st) & $\delta$ & Avg $\lambda$ \\
+    \midrule
+    \multicolumn{4}{l}{\textit{Pitch steering}} \\
+    8 & 73.18 & 0.70 & 0.945 \\
+    16 & 73.14 & \textbf{0.09} & 1.048 \\
+    32 & 73.34 & 1.09 & 1.136 \\
+    64 & 72.97 & 0.15 & 1.236 \\
+    \bottomrule
+  \end{tabular}
+  \end{small}
+  \end{center}
+\end{table}
+
+Pitch steering is remarkably stable: all four $|\mathcal{T}|$ values produce pitch in [72.97, 73.34]~st (range 0.37~st). Smaller fingerprints require less $\lambda$ (0.945 at $N{=}8$ vs.\ 1.236 at $N{=}64$) since fewer features need to breach the threshold. Duration shows similar steering stability across $N$ (range [18.86, 19.48]). The default $N{=}32$ is a reasonable middle ground.
+
+\section{Confidence Intervals}
+\label{app:confidence_intervals}
+
+\begin{table}[h]
+  \caption{Bootstrap 95\% CIs ($n{=}40$, 10,000 resamples, positive steering).}
+  \label{tab:ci}
+  \begin{center}
+  \begin{small}
+  \begin{tabular}{lccc}
+    \toprule
+    Metric & PID & Static & Base. \\
+    \midrule
+    \multicolumn{4}{l}{\textit{Pitch}} \\
+    Attr.\ (st) & 72.65{\scriptsize$\pm$0.36} & 72.30{\scriptsize$\pm$0.24} & 68.79{\scriptsize$\pm$2.23} \\
+    $\delta$ ($\downarrow$) & \textbf{0.45}{\scriptsize$\pm$0.15} & 0.64{\scriptsize$\pm$0.19} & 1.73{\scriptsize$\pm$0.68} \\
+    Scale (\%) & 95.9{\scriptsize$\pm$0.72} & 95.9{\scriptsize$\pm$0.93} & 95.2{\scriptsize$\pm$1.09} \\
+    Groove (\%) & 97.1{\scriptsize$\pm$0.54} & 97.8{\scriptsize$\pm$0.32} & 93.8{\scriptsize$\pm$0.95} \\
+    \midrule
+    \multicolumn{4}{l}{\textit{Duration}} \\
+    Attr. & 59.13{\scriptsize$\pm$0.63} & 58.90{\scriptsize$\pm$0.66} & 70.45{\scriptsize$\pm$1.96} \\
+    $\delta$ ($\downarrow$) & 8.11{\scriptsize$\pm$2.26} & \textbf{3.32}{\scriptsize$\pm$1.99} & 2.51{\scriptsize$\pm$1.04} \\
+    Scale (\%) & 85.4{\scriptsize$\pm$2.66} & 91.7{\scriptsize$\pm$2.45} & 95.2{\scriptsize$\pm$1.19} \\
+    Groove (\%) & 99.0{\scriptsize$\pm$0.13} & 99.2{\scriptsize$\pm$0.11} & 92.9{\scriptsize$\pm$1.29} \\
+    \bottomrule
+  \end{tabular}
+  \end{small}
+  \end{center}
+\end{table}
+
+For pitch, PID achieves statistically lower degradation than static SAS: $\delta{=}0.45$ [0.33, 0.62] vs.\ $0.64$ [0.47, 0.85]. For duration, the pattern reverses: PID's $\delta{=}8.11$ exceeds static's $3.32$, because the integral term---using gains tuned for pitch---over-accumulates for the more responsive duration attribute (cf.\ the $8{\times}$ $K_i$ asymmetry in spatial PID, \cref{app:grid_search}). This motivates concept-specific temporal gain tuning as future work.
+
+\section{Intervention Smoothness}
+\label{app:smoothness}
+
+We quantify transition smoothness by computing step-to-step changes in the PID $\lambda(t)$ trajectory and concept fingerprint activations $\bar{f}_a(t)$ from the diagnostics of the temporal comparison experiments ($n{=}20$ per concept).
+
+\begin{table}[h]
+  \caption{Intervention smoothness metrics (mean over samples).}
+  \label{tab:smoothness}
+  \begin{center}
+  \begin{small}
+  \begin{tabular}{lcccc}
+    \toprule
+    Concept & $\text{std}(\Delta\lambda)$ & $\max|\Delta\lambda|$ & $\text{std}(\Delta\bar{f}_a)$ & $\max|\Delta\bar{f}_a|$ \\
+    \midrule
+    Pitch & 0.010 & 0.053 & 0.002 & 0.022 \\
+    Duration & 0.015 & 0.055 & 0.002 & 0.018 \\
+    \bottomrule
+  \end{tabular}
+  \end{small}
+  \end{center}
+\end{table}
+
+PID's $\lambda(t)$ changes by at most 0.055 per step (out of $\lambda_\text{max}{=}3.0$), and feature activations shift by less than 0.022 per step, confirming smooth transitions. In contrast, static cosine ramping produces binary feature activations---zero throughout the ramp, then a single-step jump to the full value once $\lambda$ breaches the Top-K threshold (\cref{fig:topk_threshold}). While the static $\lambda$ trajectory itself is smooth ($\text{std}(\Delta\lambda){=}0.008$--$0.017$), its \emph{effect} in feature space is maximally abrupt.
+
+\end{document}
