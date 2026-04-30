@@ -22,11 +22,11 @@ import json
 import pathlib
 
 import matplotlib
+
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 import matplotlib.ticker as ticker
 import numpy as np
-
 
 # ---------- Style ----------
 COLORS = {
@@ -38,16 +38,18 @@ COLORS = {
     "activation": "#FF9800",
     "setpoint": "#E91E63",
 }
-plt.rcParams.update({
-    "font.size": 10,
-    "axes.titlesize": 11,
-    "axes.labelsize": 10,
-    "legend.fontsize": 9,
-    "figure.dpi": 150,
-    "savefig.dpi": 300,
-    "savefig.bbox": "tight",
-    "font.family": "serif",
-})
+plt.rcParams.update(
+    {
+        "font.size": 10,
+        "axes.titlesize": 11,
+        "axes.labelsize": 10,
+        "legend.fontsize": 9,
+        "figure.dpi": 150,
+        "savefig.dpi": 300,
+        "savefig.bbox": "tight",
+        "font.family": "serif",
+    }
+)
 
 
 def load_diagnostics(path: pathlib.Path):
@@ -55,8 +57,13 @@ def load_diagnostics(path: pathlib.Path):
         return json.load(f)
 
 
-def plot_single_concept_lambda(diag_list, concept: str, static_lambda: float,
-                               output_dir: pathlib.Path, n_show: int = 5):
+def plot_single_concept_lambda(
+    diag_list,
+    concept: str,
+    static_lambda: float,
+    output_dir: pathlib.Path,
+    n_show: int = 5,
+):
     """Hero figure: PID staircase λ(t) vs static flat line."""
     fig, axes = plt.subplots(1, 2, figsize=(10, 3.5), sharey=True)
 
@@ -69,11 +76,15 @@ def plot_single_concept_lambda(diag_list, concept: str, static_lambda: float,
         steps = np.arange(len(traj))
         alpha = 0.4 if i > 0 else 0.9
         lw = 1.8 if i == 0 else 1.0
-        ax.plot(steps, traj, color=COLORS["pid_lambda"], alpha=alpha, lw=lw,
-                label="PID $\\lambda(t)$" if i == 0 else None)
+        ax.plot(
+            steps,
+            traj,
+            color=COLORS["pid_lambda"],
+            alpha=alpha,
+            lw=lw,
+            label="PID $\\lambda(t)$" if i == 0 else None,
+        )
 
-    ax.axhline(static_lambda, color=COLORS["static_lambda"], ls="--", lw=2,
-               label=f"Static $\\lambda={static_lambda}$")
     ax.set_xlabel("Generation Step $t$")
     ax.set_ylabel("Steering Strength $\\lambda$")
     ax.set_title(f"{concept_label}: Individual Trajectories")
@@ -87,17 +98,27 @@ def plot_single_concept_lambda(diag_list, concept: str, static_lambda: float,
     padded = np.full((len(diag_list), max_len), np.nan)
     for i, d in enumerate(diag_list):
         t = d["lambda_trajectory"]
-        padded[i, :len(t)] = t
+        padded[i, : len(t)] = t
 
     mean_traj = np.nanmean(padded, axis=0)
     std_traj = np.nanstd(padded, axis=0)
     steps = np.arange(max_len)
 
-    ax.plot(steps, mean_traj, color=COLORS["pid_lambda"], lw=2, label="PID mean $\\lambda(t)$")
-    ax.fill_between(steps, mean_traj - std_traj, mean_traj + std_traj,
-                     color=COLORS["pid_lambda"], alpha=0.15, label="$\\pm 1\\sigma$")
-    ax.axhline(static_lambda, color=COLORS["static_lambda"], ls="--", lw=2,
-               label=f"Static $\\lambda={static_lambda}$")
+    ax.plot(
+        steps,
+        mean_traj,
+        color=COLORS["pid_lambda"],
+        lw=2,
+        label="PID mean $\\lambda(t)$",
+    )
+    ax.fill_between(
+        steps,
+        mean_traj - std_traj,
+        mean_traj + std_traj,
+        color=COLORS["pid_lambda"],
+        alpha=0.15,
+        label="$\\pm 1\\sigma$",
+    )
     ax.set_xlabel("Generation Step $t$")
     ax.set_title(f"{concept_label}: Mean $\\pm$ Std (n={len(diag_list)})")
     ax.legend(loc="lower right")
@@ -124,15 +145,16 @@ def plot_error_convergence(diag_list, concept: str, output_dir: pathlib.Path):
     padded = np.full((len(diag_list), max_len), np.nan)
     for i, d in enumerate(diag_list):
         t = d["error_trajectory"]
-        padded[i, :len(t)] = t
+        padded[i, : len(t)] = t
 
     mean_err = np.nanmean(padded, axis=0)
     std_err = np.nanstd(padded, axis=0)
     steps = np.arange(max_len)
 
     ax.plot(steps, mean_err, color=COLORS["error"], lw=2, label="Mean error $e(t)$")
-    ax.fill_between(steps, mean_err - std_err, mean_err + std_err,
-                     color=COLORS["error"], alpha=0.15)
+    ax.fill_between(
+        steps, mean_err - std_err, mean_err + std_err, color=COLORS["error"], alpha=0.15
+    )
     ax.axhline(0, color="gray", ls=":", lw=1)
     ax.set_xlabel("Generation Step $t$")
     ax.set_ylabel("Error $e(t) = r_{\\mathrm{set}} - \\bar{a}(t)$")
@@ -148,8 +170,9 @@ def plot_error_convergence(diag_list, concept: str, output_dir: pathlib.Path):
     print(f"  Saved: {out}")
 
 
-def plot_activation_vs_setpoint(diag_list, concept: str, setpoint: float,
-                                output_dir: pathlib.Path):
+def plot_activation_vs_setpoint(
+    diag_list, concept: str, setpoint: float, output_dir: pathlib.Path
+):
     """Feature activation trajectory vs setpoint — shows PID tracking."""
     fig, ax = plt.subplots(figsize=(5, 3.5))
 
@@ -159,17 +182,33 @@ def plot_activation_vs_setpoint(diag_list, concept: str, setpoint: float,
     padded = np.full((len(diag_list), max_len), np.nan)
     for i, d in enumerate(diag_list):
         t = d["feature_activation_trajectory"]
-        padded[i, :len(t)] = t
+        padded[i, : len(t)] = t
 
     mean_act = np.nanmean(padded, axis=0)
     std_act = np.nanstd(padded, axis=0)
     steps = np.arange(max_len)
 
-    ax.plot(steps, mean_act, color=COLORS["activation"], lw=2, label="Mean activation $\\bar{a}(t)$")
-    ax.fill_between(steps, mean_act - std_act, mean_act + std_act,
-                     color=COLORS["activation"], alpha=0.15)
-    ax.axhline(setpoint, color=COLORS["setpoint"], ls="--", lw=2,
-               label=f"Setpoint $r_{{set}}={setpoint}$")
+    ax.plot(
+        steps,
+        mean_act,
+        color=COLORS["activation"],
+        lw=2,
+        label="Mean activation $\\bar{a}(t)$",
+    )
+    ax.fill_between(
+        steps,
+        mean_act - std_act,
+        mean_act + std_act,
+        color=COLORS["activation"],
+        alpha=0.15,
+    )
+    ax.axhline(
+        setpoint,
+        color=COLORS["setpoint"],
+        ls="--",
+        lw=2,
+        label=f"Setpoint $r_{{set}}={setpoint}$",
+    )
     ax.set_xlabel("Generation Step $t$")
     ax.set_ylabel("Mean Target Feature Activation")
     ax.set_title(f"{concept_label}: Activation Tracking")
@@ -184,10 +223,13 @@ def plot_activation_vs_setpoint(diag_list, concept: str, setpoint: float,
     print(f"  Saved: {out}")
 
 
-def plot_dual_lambda_trajectories(diag_list, output_dir: pathlib.Path,
-                                  static_pitch: float = 0.75,
-                                  static_dur: float = 0.75,
-                                  n_show: int = 3):
+def plot_dual_lambda_trajectories(
+    diag_list,
+    output_dir: pathlib.Path,
+    static_pitch: float = 0.75,
+    static_dur: float = 0.75,
+    n_show: int = 3,
+):
     """Dual PID: both λ_pitch(t) and λ_dur(t) on the same axes."""
     fig, axes = plt.subplots(1, 2, figsize=(10, 3.5))
 
@@ -199,11 +241,23 @@ def plot_dual_lambda_trajectories(diag_list, output_dir: pathlib.Path,
         steps = np.arange(len(p_traj))
         alpha = 0.8 if i == 0 else 0.35
         lw = 1.8 if i == 0 else 1.0
-        ax.plot(steps, p_traj, color=COLORS["pitch_lambda"], alpha=alpha, lw=lw,
-                label="$\\lambda_{\\mathrm{pitch}}(t)$" if i == 0 else None)
-        ax.plot(steps, d_traj, color=COLORS["duration_lambda"], alpha=alpha, lw=lw,
-                ls="-",
-                label="$\\lambda_{\\mathrm{dur}}(t)$" if i == 0 else None)
+        ax.plot(
+            steps,
+            p_traj,
+            color=COLORS["pitch_lambda"],
+            alpha=alpha,
+            lw=lw,
+            label="$\\lambda_{\\mathrm{pitch}}(t)$" if i == 0 else None,
+        )
+        ax.plot(
+            steps,
+            d_traj,
+            color=COLORS["duration_lambda"],
+            alpha=alpha,
+            lw=lw,
+            ls="-",
+            label="$\\lambda_{\\mathrm{dur}}(t)$" if i == 0 else None,
+        )
 
     ax.axhline(static_pitch, color=COLORS["pitch_lambda"], ls=":", lw=1.5, alpha=0.5)
     ax.axhline(static_dur, color=COLORS["duration_lambda"], ls=":", lw=1.5, alpha=0.5)
@@ -219,23 +273,43 @@ def plot_dual_lambda_trajectories(diag_list, output_dir: pathlib.Path,
     max_len = max(len(d["pitch_lambda_trajectory"]) for d in diag_list)
 
     for concept_key, color, label in [
-        ("pitch_lambda_trajectory", COLORS["pitch_lambda"], "$\\lambda_{\\mathrm{pitch}}$"),
-        ("duration_lambda_trajectory", COLORS["duration_lambda"], "$\\lambda_{\\mathrm{dur}}$"),
+        (
+            "pitch_lambda_trajectory",
+            COLORS["pitch_lambda"],
+            "$\\lambda_{\\mathrm{pitch}}$",
+        ),
+        (
+            "duration_lambda_trajectory",
+            COLORS["duration_lambda"],
+            "$\\lambda_{\\mathrm{dur}}$",
+        ),
     ]:
         padded = np.full((len(diag_list), max_len), np.nan)
         for i, d in enumerate(diag_list):
             t = d[concept_key]
-            padded[i, :len(t)] = t
+            padded[i, : len(t)] = t
         mean_t = np.nanmean(padded, axis=0)
         std_t = np.nanstd(padded, axis=0)
         steps = np.arange(max_len)
         ax.plot(steps, mean_t, color=color, lw=2, label=f"PID {label}")
         ax.fill_between(steps, mean_t - std_t, mean_t + std_t, color=color, alpha=0.12)
 
-    ax.axhline(static_pitch, color=COLORS["pitch_lambda"], ls=":", lw=1.5, alpha=0.5,
-               label=f"Static $\\lambda_p={static_pitch}$")
-    ax.axhline(static_dur, color=COLORS["duration_lambda"], ls=":", lw=1.5, alpha=0.5,
-               label=f"Static $\\lambda_d={static_dur}$")
+    ax.axhline(
+        static_pitch,
+        color=COLORS["pitch_lambda"],
+        ls=":",
+        lw=1.5,
+        alpha=0.5,
+        label=f"Static $\\lambda_p={static_pitch}$",
+    )
+    ax.axhline(
+        static_dur,
+        color=COLORS["duration_lambda"],
+        ls=":",
+        lw=1.5,
+        alpha=0.5,
+        label=f"Static $\\lambda_d={static_dur}$",
+    )
     ax.set_xlabel("Generation Step $t$")
     ax.set_title(f"Dual PID: Mean $\\pm$ Std (n={len(diag_list)})")
     ax.legend(loc="lower right", ncol=2, fontsize=8)
@@ -250,8 +324,9 @@ def plot_dual_lambda_trajectories(diag_list, output_dir: pathlib.Path,
     print(f"  Saved: {out}")
 
 
-def plot_combined_hero_figure(diag_pitch, diag_dur, static_lambda: float,
-                              output_dir: pathlib.Path):
+def plot_combined_hero_figure(
+    diag_pitch, diag_dur, static_lambda: float, output_dir: pathlib.Path
+):
     """Combined 2-panel hero figure for the paper: pitch + duration λ(t)."""
     fig, axes = plt.subplots(1, 2, figsize=(10, 3.5), sharey=True)
 
@@ -263,18 +338,34 @@ def plot_combined_hero_figure(diag_pitch, diag_dur, static_lambda: float,
         padded = np.full((len(diag_list), max_len), np.nan)
         for i, d in enumerate(diag_list):
             t = d["lambda_trajectory"]
-            padded[i, :len(t)] = t
+            padded[i, : len(t)] = t
 
         mean_traj = np.nanmean(padded, axis=0)
         std_traj = np.nanstd(padded, axis=0)
         steps = np.arange(max_len)
 
-        ax.plot(steps, mean_traj, color=COLORS["pid_lambda"], lw=2,
-                label="PID $\\lambda(t)$")
-        ax.fill_between(steps, mean_traj - std_traj, mean_traj + std_traj,
-                         color=COLORS["pid_lambda"], alpha=0.15, label="$\\pm 1\\sigma$")
-        ax.axhline(static_lambda, color=COLORS["static_lambda"], ls="--", lw=2,
-                   label=f"Static $\\lambda={static_lambda}$")
+        ax.plot(
+            steps,
+            mean_traj,
+            color=COLORS["pid_lambda"],
+            lw=2,
+            label="PID $\\lambda(t)$",
+        )
+        ax.fill_between(
+            steps,
+            mean_traj - std_traj,
+            mean_traj + std_traj,
+            color=COLORS["pid_lambda"],
+            alpha=0.15,
+            label="$\\pm 1\\sigma$",
+        )
+        ax.axhline(
+            static_lambda,
+            color=COLORS["static_lambda"],
+            ls="--",
+            lw=2,
+            label=f"Static $\\lambda={static_lambda}$",
+        )
         ax.set_xlabel("Generation Step $t$")
         ax.set_title(concept_label)
         ax.legend(loc="lower right")
@@ -292,16 +383,35 @@ def plot_combined_hero_figure(diag_pitch, diag_dur, static_lambda: float,
 
 def main():
     parser = argparse.ArgumentParser(description="Plot PID λ(t) trajectories")
-    parser.add_argument("--mode", choices=["single", "dual", "both"], default="both",
-                        help="Which plots to generate")
-    parser.add_argument("--diagnostics_dir", type=pathlib.Path,
-                        default=pathlib.Path("exp/sod/pid_steering/experiments/temporal_sas_comparison"))
-    parser.add_argument("--dual_diagnostics_dir", type=pathlib.Path,
-                        default=pathlib.Path("exp/sod/pid_steering/experiments/dual_temporal_pid"))
-    parser.add_argument("--output_dir", type=pathlib.Path,
-                        default=pathlib.Path("exp/sod/pid_steering/plots/lambda_trajectories"))
-    parser.add_argument("--static_lambda", type=float, default=3.0,
-                        help="Static λ for comparison line (single-concept)")
+    parser.add_argument(
+        "--mode",
+        choices=["single", "dual", "both"],
+        default="both",
+        help="Which plots to generate",
+    )
+    parser.add_argument(
+        "--diagnostics_dir",
+        type=pathlib.Path,
+        default=pathlib.Path(
+            "exp/sod/pid_steering/experiments/temporal_sas_comparison"
+        ),
+    )
+    parser.add_argument(
+        "--dual_diagnostics_dir",
+        type=pathlib.Path,
+        default=pathlib.Path("exp/sod/pid_steering/experiments/dual_temporal_pid"),
+    )
+    parser.add_argument(
+        "--output_dir",
+        type=pathlib.Path,
+        default=pathlib.Path("exp/sod/pid_steering/plots/lambda_trajectories"),
+    )
+    parser.add_argument(
+        "--static_lambda",
+        type=float,
+        default=3.0,
+        help="Static λ for comparison line (single-concept)",
+    )
     parser.add_argument("--static_lambda_pitch", type=float, default=0.75)
     parser.add_argument("--static_lambda_dur", type=float, default=0.75)
     parser.add_argument("--setpoint", type=float, default=1.0)
@@ -318,12 +428,18 @@ def main():
                 continue
 
             diag_list = load_diagnostics(diag_path)
-            print(f"  {concept}: {len(diag_list)} samples, "
-                  f"avg steps={np.mean([d['n_steps'] for d in diag_list]):.0f}")
+            print(
+                f"  {concept}: {len(diag_list)} samples, "
+                f"avg steps={np.mean([d['n_steps'] for d in diag_list]):.0f}"
+            )
 
-            plot_single_concept_lambda(diag_list, concept, args.static_lambda, args.output_dir)
+            plot_single_concept_lambda(
+                diag_list, concept, args.static_lambda, args.output_dir
+            )
             plot_error_convergence(diag_list, concept, args.output_dir)
-            plot_activation_vs_setpoint(diag_list, concept, args.setpoint, args.output_dir)
+            plot_activation_vs_setpoint(
+                diag_list, concept, args.setpoint, args.output_dir
+            )
 
         # Hero figure: both concepts side by side
         pitch_path = args.diagnostics_dir / "pid_diagnostics_average_pitch.json"
@@ -340,7 +456,10 @@ def main():
     if args.mode in ("dual", "both"):
         print("\n=== Dual-Concept λ(t) Trajectories ===")
         # Try unconditioned first
-        for fname in ["dual_pid_diagnostics.json", "unconditioned/dual_pid_diagnostics.json"]:
+        for fname in [
+            "dual_pid_diagnostics.json",
+            "unconditioned/dual_pid_diagnostics.json",
+        ]:
             dual_path = args.dual_diagnostics_dir / fname
             if dual_path.exists():
                 diag_list = load_diagnostics(dual_path)
@@ -356,11 +475,15 @@ def main():
                         r = np.corrcoef(p[:min_len], dur[:min_len])[0, 1]
                         correlations.append(r)
                 if correlations:
-                    print(f"  λ_pitch ↔ λ_dur correlation: r={np.mean(correlations):.3f} ± {np.std(correlations):.3f}")
+                    print(
+                        f"  λ_pitch ↔ λ_dur correlation: r={np.mean(correlations):.3f} ± {np.std(correlations):.3f}"
+                    )
 
                 plot_dual_lambda_trajectories(
-                    diag_list, args.output_dir,
-                    args.static_lambda_pitch, args.static_lambda_dur,
+                    diag_list,
+                    args.output_dir,
+                    args.static_lambda_pitch,
+                    args.static_lambda_dur,
                 )
                 break
         else:

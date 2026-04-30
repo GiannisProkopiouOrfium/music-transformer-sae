@@ -220,7 +220,6 @@ GAIN_SEARCH = {
 # STYLE
 # ══════════════════════════════════════════════════════════════════════
 COLORS = {
-    "P": "#3498db",
     "P-only": "#3498db",
     "PI": "#e67e22",
     "PID": "#2ecc71",
@@ -246,16 +245,14 @@ def save(fig, path, output_dir):
 def plot_error_convergence(output_dir):
     fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(14, 5), sharey=True)
 
-    styles = {"P": ("o-", 2.5, 7), "PI": ("s--", 2.0, 6), "PID": ("^:", 2.0, 6)}
     for name, data in ERROR_CONV_PITCH.items():
-        fmt, lw, ms = styles[name]
         ax1.plot(
             LAYERS,
             data,
-            fmt,
+            "o-",
             color=COLORS.get(name, COLORS["PID"]),
-            linewidth=lw,
-            markersize=ms,
+            linewidth=2,
+            markersize=5,
             label=name,
         )
     ax1.axhline(y=0, color="black", linewidth=0.5, linestyle="--", alpha=0.3)
@@ -277,14 +274,13 @@ def plot_error_convergence(output_dir):
     )
 
     for name, data in ERROR_CONV_DUR.items():
-        fmt, lw, ms = styles[name]
         ax2.plot(
             LAYERS,
             data,
-            fmt,
+            "o-",
             color=COLORS.get(name, COLORS["PID"]),
-            linewidth=lw,
-            markersize=ms,
+            linewidth=2,
+            markersize=5,
             label=name,
         )
     ax2.axhline(y=0, color="black", linewidth=0.5, linestyle="--", alpha=0.3)
@@ -368,7 +364,7 @@ def plot_hook_ablation(output_dir):
 # FIGURE 3: Temporal Ablation λ
 # ══════════════════════════════════════════════════════════════════════
 def plot_temporal_ablation(output_dir):
-    fig, ax = plt.subplots(figsize=(7, 5))
+    fig, ax = plt.subplots(figsize=(5, 3.5))
     names = list(TEMPORAL_ABLATION.keys())
     values = list(TEMPORAL_ABLATION.values())
     colors = [COLORS["P-only"], COLORS["PI"], COLORS["PID"]]
@@ -377,60 +373,29 @@ def plot_temporal_ablation(output_dir):
         names,
         values,
         color=colors,
-        width=0.6,
-        alpha=0.85,
+        width=0.55,
+        alpha=0.9,
         edgecolor="white",
-        linewidth=1.5,
+        linewidth=1.2,
     )
 
-    # Add value labels
+    # Add value labels above bars
     for bar, val in zip(bars, values):
         ax.text(
             bar.get_x() + bar.get_width() / 2,
             bar.get_height() + 0.02,
-            f"λ={val:.3f}",
+            f"{val:.3f}",
             ha="center",
-            fontsize=12,
+            fontsize=10,
             fontweight="bold",
         )
 
-    # Add static reference line
-    ax.axhline(
-        y=3.0,
-        color=COLORS["Static SAS"],
-        linewidth=2,
-        linestyle="--",
-        label="Static SAS λ=3.0 (fixed)",
-        alpha=0.7,
-    )
-
-    ax.set_ylabel("Average λ(t)", fontsize=13)
-    ax.set_title(
-        "Temporal PID Component Ablation — Average Steering Strength",
-        fontsize=13,
-        fontweight="bold",
-    )
-    ax.legend(fontsize=11)
-    ax.grid(True, alpha=0.2, axis="y")
-    ax.set_ylim(0, 3.5)
-
-    # Annotation
-    ax.annotate(
-        "P-only: steady-state\nerror (too conservative)",
-        xy=(0, 0.664),
-        xytext=(0.6, 1.8),
-        fontsize=9,
-        arrowprops=dict(arrowstyle="->", color=COLORS["P-only"]),
-        color=COLORS["P-only"],
-    )
-    ax.annotate(
-        "I term removes bias\nD term damps overshoot",
-        xy=(2, 1.158),
-        xytext=(1.5, 2.2),
-        fontsize=9,
-        color=COLORS["PID"],
-        bbox=dict(boxstyle="round,pad=0.3", facecolor="#d5f5e3", alpha=0.8),
-    )
+    ax.set_ylabel("Average $\\lambda(t)$", fontsize=11)
+    ax.set_xlabel("Controller Configuration", fontsize=11)
+    ax.grid(True, alpha=0.15, axis="y")
+    ax.set_ylim(0, 1.5)
+    ax.spines["top"].set_visible(False)
+    ax.spines["right"].set_visible(False)
 
     fig.tight_layout()
     save(fig, "temporal_ablation_lambda", output_dir)
