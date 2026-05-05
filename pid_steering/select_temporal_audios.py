@@ -52,9 +52,19 @@ def midi_to_wav(
         return False
     try:
         result = subprocess.run(
-            ["fluidsynth", "-ni", soundfont, str(midi_path),
-             "-F", str(wav_path), "-r", "44100"],
-            capture_output=True, text=True, timeout=60,
+            [
+                "fluidsynth",
+                "-ni",
+                soundfont,
+                str(midi_path),
+                "-F",
+                str(wav_path),
+                "-r",
+                "44100",
+            ],
+            capture_output=True,
+            text=True,
+            timeout=60,
         )
         return result.returncode == 0
     except (FileNotFoundError, subprocess.TimeoutExpired):
@@ -69,6 +79,7 @@ def score_midis(midi_dir: pathlib.Path, encoding: Dict, concept: str) -> List[Di
     for midi_path in sorted(midi_dir.glob("*.mid")):
         try:
             import muspy
+
             music = muspy.read(str(midi_path))
             if music is None or not music.tracks:
                 continue
@@ -81,6 +92,7 @@ def score_midis(midi_dir: pathlib.Path, encoding: Dict, concept: str) -> List[Di
             # Fallback: read MIDI directly with muspy for basic metrics
             try:
                 import muspy
+
                 music = muspy.read(str(midi_path))
                 if music is None:
                     continue
@@ -93,7 +105,9 @@ def score_midis(midi_dir: pathlib.Path, encoding: Dict, concept: str) -> List[Di
                     "average_pitch": float(np.mean(pitches)),
                     "pitch_class_entropy": float(muspy.pitch_class_entropy(music)),
                     "scale_consistency": float(muspy.scale_consistency(music) * 100),
-                    "groove_consistency": float(muspy.groove_consistency(music, 24) * 100),
+                    "groove_consistency": float(
+                        muspy.groove_consistency(music, 24) * 100
+                    ),
                     "average_duration": float(np.mean(durations)),
                 }
             except Exception as e:
@@ -101,21 +115,29 @@ def score_midis(midi_dir: pathlib.Path, encoding: Dict, concept: str) -> List[Di
                 continue
 
         # Compute degradation from ground truth
-        entropy_dev = abs(metrics.get("pitch_class_entropy", 0) - gt["pitch_class_entropy"])
-        scale_loss = max(0, gt["scale_consistency"] - metrics.get("scale_consistency", 0))
-        groove_loss = max(0, gt["groove_consistency"] - metrics.get("groove_consistency", 0))
+        entropy_dev = abs(
+            metrics.get("pitch_class_entropy", 0) - gt["pitch_class_entropy"]
+        )
+        scale_loss = max(
+            0, gt["scale_consistency"] - metrics.get("scale_consistency", 0)
+        )
+        groove_loss = max(
+            0, gt["groove_consistency"] - metrics.get("groove_consistency", 0)
+        )
         degradation = entropy_dev + scale_loss + groove_loss
 
         # Steering effect: deviation from baseline average
         attr_key = concept.replace("average_", "average_")
         attr_value = metrics.get(attr_key, 0)
 
-        scored.append({
-            "midi_path": midi_path,
-            "metrics": metrics,
-            "degradation": degradation,
-            "attribute_value": attr_value,
-        })
+        scored.append(
+            {
+                "midi_path": midi_path,
+                "metrics": metrics,
+                "degradation": degradation,
+                "attribute_value": attr_value,
+            }
+        )
 
     # Sort by low degradation (best quality first)
     scored.sort(key=lambda x: x["degradation"])
@@ -127,12 +149,15 @@ def main():
         description="Select best temporal PID SAS MIDIs and convert to WAV"
     )
     parser.add_argument(
-        "--midis_dir", type=pathlib.Path,
+        "--midis_dir",
+        type=pathlib.Path,
         default=config_pid.PID_EXPERIMENTS_DIR / "temporal_fmd",
     )
     parser.add_argument("--top_n", type=int, default=5)
     parser.add_argument(
-        "--output_dir", type=pathlib.Path, default=None,
+        "--output_dir",
+        type=pathlib.Path,
+        default=None,
         help="WAV output dir (default: AUDIO EVAL/SAS PID AUDIOS)",
     )
     parser.add_argument("--soundfont", type=str, default=None)
@@ -173,12 +198,14 @@ def main():
                 logger.warning(f"  No valid MIDIs")
                 continue
 
-            top = scored[:args.top_n]
+            top = scored[: args.top_n]
 
             print(f"\n{'='*70}")
             print(f"Top {args.top_n} — {concept} / {method}")
             print(f"{'='*70}")
-            print(f"{'Rank':<5} {'File':<20} {'Attr':<10} {'Degrad':<10} {'Entropy':<10} {'Scale%':<8}")
+            print(
+                f"{'Rank':<5} {'File':<20} {'Attr':<10} {'Degrad':<10} {'Entropy':<10} {'Scale%':<8}"
+            )
             print("-" * 65)
             for i, s in enumerate(top):
                 m = s["metrics"]
@@ -216,15 +243,28 @@ def main():
         print(f"\nUploading to {s3_dest}/ ...")
         try:
             result = subprocess.run(
-                ["aws", "s3", "cp", str(output_dir), f"{s3_dest}/",
-                 "--recursive", "--exclude", "*", "--include", "*.wav"],
-                capture_output=True, text=True, timeout=300,
+                [
+                    "aws",
+                    "s3",
+                    "cp",
+                    str(output_dir),
+                    f"{s3_dest}/",
+                    "--recursive",
+                    "--exclude",
+                    "*",
+                    "--include",
+                    "*.wav",
+                ],
+                capture_output=True,
+                text=True,
+                timeout=300,
             )
             if result.returncode == 0:
                 uploaded = result.stdout.count("upload:")
                 print(f"Uploaded {uploaded} files to S3")
                 if not args.keep_local:
                     import shutil
+
                     shutil.rmtree(output_dir)
                     print(f"Cleaned up local dir: {output_dir}")
             else:

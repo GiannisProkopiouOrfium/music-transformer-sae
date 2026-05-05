@@ -198,7 +198,9 @@ def main():
     post_ramp_level = float(np.nanmean(pid_feat_mean[post_ramp_start:post_ramp_end]))
     # Static at full lambda_max would activate features more strongly
     # Scale by ratio: static uses lambda_max, PID settles at ~pid_lambda_mean
-    pid_settled_lambda = float(np.nanmean(pid_lambda_mean[post_ramp_start:post_ramp_end]))
+    pid_settled_lambda = float(
+        np.nanmean(pid_lambda_mean[post_ramp_start:post_ramp_end])
+    )
     if pid_settled_lambda > 0:
         static_post_level = post_ramp_level * (args.lambda_max / pid_settled_lambda)
     else:
@@ -208,9 +210,9 @@ def main():
 
     static_synth = np.zeros(max_len)
     # During ramp: fractional lambda → below Top-K → zeroed
-    static_synth[:args.n_ramp] = 0.0
+    static_synth[: args.n_ramp] = 0.0
     # After ramp: abrupt jump to full activation
-    static_synth[args.n_ramp:] = static_post_level
+    static_synth[args.n_ramp :] = static_post_level
 
     ax2.plot(
         steps,

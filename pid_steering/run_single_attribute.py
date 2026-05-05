@@ -101,9 +101,9 @@ def compute_generation_metrics(sequence: np.ndarray, encoding=None) -> Dict[str,
         else:
             music = None
         if music is not None and any(len(t.notes) > 0 for t in music.tracks):
-            groove_consistency = muspy.groove_consistency(
-                music, 4 * music.resolution
-            ) * 100
+            groove_consistency = (
+                muspy.groove_consistency(music, 4 * music.resolution) * 100
+            )
     except Exception:
         # Fallback: note-density regularity (not the canonical metric)
         unique_beats = np.unique(beats)
@@ -303,8 +303,10 @@ def main():
     # Print baseline first
     if "baseline" in all_results:
         b = all_results["baseline"]
-        gc_baseline = b.get('groove_consistency_mean', float('nan'))
-        gc_baseline_str = f"{gc_baseline:.1f}%" if not math.isnan(gc_baseline) else "N/A"
+        gc_baseline = b.get("groove_consistency_mean", float("nan"))
+        gc_baseline_str = (
+            f"{gc_baseline:.1f}%" if not math.isnan(gc_baseline) else "N/A"
+        )
         print(f"\n--- Unconditioned Baseline ---")
         print(
             f"  Avg Pitch: {b.get('average_pitch_mean', 0):.2f} ± {b.get('average_pitch_std', 0):.2f}  |  "
@@ -352,12 +354,17 @@ def main():
                     # Include groove if available (not NaN)
                     gc_val = m.get("groove_consistency_mean", float("nan"))
                     if not math.isnan(gc_val):
-                        gc_dev = abs(gc_val - gt["groove_consistency"]) / gt["groove_consistency"]
+                        gc_dev = (
+                            abs(gc_val - gt["groove_consistency"])
+                            / gt["groove_consistency"]
+                        )
                         deviations.append(gc_dev)
 
                     degradation = sum(deviations) / len(deviations) * 100
 
-                    gc_str = f"{gc_val:<10.1f}" if not math.isnan(gc_val) else f"{'N/A':<10}"
+                    gc_str = (
+                        f"{gc_val:<10.1f}" if not math.isnan(gc_val) else f"{'N/A':<10}"
+                    )
 
                     print(
                         f"{method:<10} {alpha_str:<8} "
