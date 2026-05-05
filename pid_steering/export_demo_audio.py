@@ -294,58 +294,104 @@ def convert_single_concept(
 ):
     """Convert top-N single-concept samples per scenario to WAV."""
     ranked = rank_single_concept_samples(results_dir)
-    if not ranked:
-        logger.warning("No single-concept results found to rank")
+    if ranked:
+        # Use ranking-based conversion
+        scenarios = {}
+        for r in ranked:
+            key = (r["concept"], r["direction"])
+            scenarios.setdefault(key, []).append(r)
+
+        converted = 0
+        print(f"\n{'='*90}")
+        print("SINGLE-CONCEPT SAMPLE RANKING")
+        print(f"{'='*90}")
+
+        for (concept, direction), samples in sorted(scenarios.items()):
+            samples.sort(key=lambda x: (x["pid_delta"], -x["score"]))
+            top = samples[:top_n]
+
+            print(f"\n  {concept} / {direction} — top {min(top_n, len(samples))}")
+            print(
+                f"  {'Rank':<5} {'Sample':<20} {'PID δ':<8} {'Static δ':<10} "
+                f"{'PID attr':<10} {'Change':<8} {'Score':<8}"
+            )
+            print(f"  {'-'*75}")
+
+            for rank, s in enumerate(top, 1):
+                print(
+                    f"  {rank:<5} {s['sample_id']:<20} {s['pid_delta']:<8.2f} "
+                    f"{s['static_delta']:<10.2f} {s['pid_attr']:<10.2f} "
+                    f"{s['pid_change']:<8.2f} {s['score']:<8.3f}"
+                )
+
+                base_dir = pathlib.Path(s["results_dir"])
+                for method in ["temporal_pid", "static_smooth", "baseline"]:
+                    midi_path = (
+                        base_dir / concept / direction / method / f"{s['sample_id']}.mid"
+                    )
+                    if not midi_path.exists():
+                        continue
+                    out_wav = (
+                        wav_dir
+                        / "single"
+                        / concept
+                        / direction
+                        / f"{s['sample_id']}_{method}.wav"
+                    )
+                    if midi_to_wav(midi_path, out_wav, soundfont):
+                        converted += 1
+
+        print(f"\n  Converted {converted} WAVs → {wav_dir / 'single'}")
         return
 
-    # Group by concept × direction
-    scenarios = {}
-    for r in ranked:
-        key = (r["concept"], r["direction"])
-        scenarios.setdefault(key, []).append(r)
-
+    # Fallback: JSON has only aggregated stats (no per-sample data).
+    # Discover MIDIs directly from the directory structure:
+    #   results_dir/<concept>/<direction>/<method>/<sample>.mid
+    logger.info("No per-sample JSON data — discovering MIDIs from directory structure")
     converted = 0
     print(f"\n{'='*90}")
-    print("SINGLE-CONCEPT SAMPLE RANKING")
+    print("SINGLE-CONCEPT SAMPLES (from directory)")
     print(f"{'='*90}")
 
-    for (concept, direction), samples in sorted(scenarios.items()):
-        # Sort this scenario: lowest PID δ, then highest score
-        samples.sort(key=lambda x: (x["pid_delta"], -x["score"]))
-        top = samples[:top_n]
+    for concept_dir in sorted(results_dir.iterdir()):
+        if not concept_dir.is_dir() or concept_dir.name.startswith("."):
+            continue
+        concept = concept_dir.name
+        if concept not in ("pitch", "duration"):
+            continue
 
-        print(f"\n  {concept} / {direction} — top {min(top_n, len(samples))}")
-        print(
-            f"  {'Rank':<5} {'Sample':<20} {'PID δ':<8} {'Static δ':<10} "
-            f"{'PID attr':<10} {'Change':<8} {'Score':<8}"
-        )
-        print(f"  {'-'*75}")
+        for direction_dir in sorted(concept_dir.iterdir()):
+            if not direction_dir.is_dir():
+                continue
+            direction = direction_dir.name
+            count = 0
 
-        for rank, s in enumerate(top, 1):
-            print(
-                f"  {rank:<5} {s['sample_id']:<20} {s['pid_delta']:<8.2f} "
-                f"{s['static_delta']:<10.2f} {s['pid_attr']:<10.2f} "
-                f"{s['pid_change']:<8.2f} {s['score']:<8.3f}"
-            )
-
-            # Convert all 3 methods for this sample
-            base_dir = pathlib.Path(s["results_dir"])
+            # Collect unique sample IDs across methods
+            sample_ids = set()
             for method in ["temporal_pid", "static_smooth", "baseline"]:
-                midi_path = (
-                    base_dir / concept / direction / method / f"{s['sample_id']}.mid"
-                )
-                if not midi_path.exists():
-                    logger.debug(f"  MIDI not found: {midi_path}")
-                    continue
-                out_wav = (
-                    wav_dir
-                    / "single"
-                    / concept
-                    / direction
-                    / f"{s['sample_id']}_{method}.wav"
-                )
-                if midi_to_wav(midi_path, out_wav, soundfont):
-                    converted += 1
+                method_dir = direction_dir / method
+                if method_dir.exists():
+                    for mid in method_dir.glob("*.mid"):
+                        sample_ids.add(mid.stem)
+
+            # Take first top_n sample IDs (sorted)
+            for sample_id in sorted(sample_ids)[:top_n]:
+                for method in ["temporal_pid", "static_smooth", "baseline"]:
+                    midi_path = direction_dir / method / f"{sample_id}.mid"
+                    if not midi_path.exists():
+                        continue
+                    out_wav = (
+                        wav_dir
+                        / "single"
+                        / concept
+                        / direction
+                        / f"{sample_id}_{method}.wav"
+                    )
+                    if midi_to_wav(midi_path, out_wav, soundfont):
+                        converted += 1
+                        count += 1
+
+            print(f"  {concept} / {direction}: {count} WAVs")
 
     print(f"\n  Converted {converted} WAVs → {wav_dir / 'single'}")
 
@@ -401,7 +447,7 @@ def convert_all_midis(
         convert_single_concept(single_dir, wav_dir, soundfont, top_n)
     else:
         # Try results_dir directly (may already be the single dir)
-        if list(results_dir.glob("**/conditioned_temporal_sas_results.json")):
+        if list(results_dir.glob("**/conditioned_temporal_results.json")):
             convert_single_concept(results_dir, wav_dir, soundfont, top_n)
 
     # Dual concept
