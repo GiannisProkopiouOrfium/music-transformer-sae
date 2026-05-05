@@ -559,9 +559,11 @@ Examples:
         "    scp -r ec2-user@<ip>:~/mmt/AUDIO\\ EVAL/PID\\ AUDIOS/ './AUDIO EVAL/PID AUDIOS/'"
     )
     print("\n  Or sync MIDIs too:")
-    print(
-        f"    scp -r ec2-user@<ip>:~/mmt/{args.results_dir.relative_to(config_pid.PROJECT_ROOT)}/ ./{args.results_dir.relative_to(config_pid.PROJECT_ROOT)}/"
-    )
+    try:
+        rel = args.results_dir.resolve().relative_to(config_pid.PROJECT_ROOT.resolve())
+    except ValueError:
+        rel = args.results_dir
+    print(f"    scp -r ec2-user@<ip>:~/mmt/{rel}/ ./{rel}/")
 
 
 if __name__ == "__main__":
