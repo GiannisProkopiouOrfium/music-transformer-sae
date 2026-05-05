@@ -172,7 +172,7 @@ def rank_single_concept_samples(results_dir: pathlib.Path) -> List[Dict]:
     ranked = []
 
     # Look for the results JSON
-    for json_path in results_dir.glob("**/conditioned_temporal_sas_results.json"):
+    for json_path in results_dir.glob("**/conditioned_temporal_results.json"):
         with open(json_path) as f:
             data = json.load(f)
 
