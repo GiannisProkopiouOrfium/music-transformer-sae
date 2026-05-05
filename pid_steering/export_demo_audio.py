@@ -477,6 +477,13 @@ Examples:
         help="Output directory for WAVs",
     )
     parser.add_argument("--soundfont", type=str, default=None)
+    parser.add_argument(
+        "--s3-upload",
+        type=str,
+        default=None,
+        metavar="S3_URI",
+        help="Upload WAVs to S3 after conversion (e.g. s3://bucket/path/)",
+    )
 
     args = parser.parse_args()
     logging.basicConfig(
@@ -512,7 +519,31 @@ Examples:
         logger.info("Skipping WAV conversion (no soundfont). MIDIs are in:")
         logger.info(f"  {args.results_dir}")
 
-    # ─── Summary ──────────────────────────────────────────────────────────
+    # ─── S3 Upload ────────────────────────────────────────────────────
+    if args.s3_upload and args.wav_dir.exists():
+        s3_dest = args.s3_upload.rstrip("/") + "/"
+        logger.info(f"=== Uploading WAVs to {s3_dest} ===")
+        s3_cmd = [
+            "aws",
+            "s3",
+            "sync",
+            str(args.wav_dir),
+            s3_dest,
+            "--exclude",
+            "*",
+            "--include",
+            "*.wav",
+        ]
+        logger.info(f"  {' '.join(s3_cmd)}")
+        s3_result = subprocess.run(s3_cmd, capture_output=True, text=True)
+        if s3_result.returncode == 0:
+            logger.info(f"  Uploaded to {s3_dest}")
+            if s3_result.stdout.strip():
+                print(s3_result.stdout)
+        else:
+            logger.error(f"  S3 upload failed: {s3_result.stderr}")
+
+    # ─── Summary ──────────────────────────────────────────────────────
     n_midis = len(list(args.results_dir.rglob("*.mid")))
     n_wavs = len(list(args.wav_dir.rglob("*.wav"))) if args.wav_dir.exists() else 0
 
@@ -521,6 +552,8 @@ Examples:
     print(f"{'='*60}")
     print(f"  MIDIs:  {n_midis} files in {args.results_dir}")
     print(f"  WAVs:   {n_wavs} files in {args.wav_dir}")
+    if args.s3_upload:
+        print(f"  S3:     {args.s3_upload}")
     print("\n  To copy WAVs locally:")
     print(
         "    scp -r ec2-user@<ip>:~/mmt/AUDIO\\ EVAL/PID\\ AUDIOS/ './AUDIO EVAL/PID AUDIOS/'"
