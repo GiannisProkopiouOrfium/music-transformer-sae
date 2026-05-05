@@ -357,7 +357,10 @@ def convert_single_concept(
         if not concept_dir.is_dir() or concept_dir.name.startswith("."):
             continue
         concept = concept_dir.name
-        if concept not in ("pitch", "duration"):
+        # Accept both naming conventions
+        if concept not in (
+            "pitch", "duration", "average_pitch", "average_duration"
+        ):
             continue
 
         for direction_dir in sorted(concept_dir.iterdir()):
