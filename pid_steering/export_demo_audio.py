@@ -105,7 +105,8 @@ def midi_to_wav(
 
 
 def run_single_concept_generation(
-    output_dir: pathlib.Path, gpu: int, n_songs: int, n_per_song: int
+    output_dir: pathlib.Path, gpu: int, n_songs: int, n_per_song: int,
+    skip_existing: bool = False, song_offset: int = 0,
 ):
     """Run conditioned temporal PID for all single-concept directions."""
     cmd = [
@@ -122,6 +123,10 @@ def run_single_concept_generation(
         "--gpu",
         str(gpu),
     ]
+    if skip_existing:
+        cmd.append("--skip_existing")
+    if song_offset > 0:
+        cmd.extend(["--song_offset", str(song_offset)])
     logger.info(f"Running single-concept generation: {' '.join(cmd)}")
     result = subprocess.run(cmd, cwd=str(config_pid.PROJECT_ROOT))
     if result.returncode != 0:
@@ -131,7 +136,8 @@ def run_single_concept_generation(
 
 
 def run_dual_concept_generation(
-    output_dir: pathlib.Path, gpu: int, n_songs: int, n_per_song: int
+    output_dir: pathlib.Path, gpu: int, n_songs: int, n_per_song: int,
+    skip_existing: bool = False, song_offset: int = 0,
 ):
     """Run dual temporal PID for conditioned scenarios."""
     cmd = [
@@ -148,6 +154,10 @@ def run_dual_concept_generation(
         "--gpu",
         str(gpu),
     ]
+    if skip_existing:
+        cmd.append("--skip_existing")
+    if song_offset > 0:
+        cmd.extend(["--song_offset", str(song_offset)])
     logger.info(f"Running dual-concept generation: {' '.join(cmd)}")
     result = subprocess.run(cmd, cwd=str(config_pid.PROJECT_ROOT))
     if result.returncode != 0:
@@ -532,8 +542,22 @@ Examples:
         default=None,
         metavar="S3_URI",
         help="Upload WAVs to S3 after conversion (e.g. s3://bucket/path/)",
+    )    parser.add_argument(
+        \"--skip_existing\",
+        action=\"store_true\",
+        help=\"Skip generation for samples whose MIDIs already exist\",
     )
-
+    parser.add_argument(
+        \"--song_offset\",
+        type=int,
+        default=0,
+        help=\"Skip first N conditioning songs (to generate new batches)\",
+    )
+    parser.add_argument(
+        \"--cleanup_after_upload\",
+        action=\"store_true\",
+        help=\"Delete local WAVs after successful S3 upload to save disk space\",
+    )
     args = parser.parse_args()
     logging.basicConfig(
         level=logging.INFO,
@@ -551,13 +575,15 @@ Examples:
     if args.mode in ("single", "all"):
         logger.info("=== Generating single-concept conditioned samples ===")
         run_single_concept_generation(
-            args.results_dir, args.gpu, args.n_songs, args.n_per_song
+            args.results_dir, args.gpu, args.n_songs, args.n_per_song,
+            skip_existing=args.skip_existing, song_offset=args.song_offset,
         )
 
     if args.mode in ("dual", "all"):
         logger.info("=== Generating dual-concept conditioned samples ===")
         run_dual_concept_generation(
-            args.results_dir, args.gpu, args.n_songs, args.n_per_song
+            args.results_dir, args.gpu, args.n_songs, args.n_per_song,
+            skip_existing=args.skip_existing, song_offset=args.song_offset,
         )
 
     # ─── Conversion ───────────────────────────────────────────────────────
@@ -589,6 +615,12 @@ Examples:
             logger.info(f"  Uploaded to {s3_dest}")
             if s3_result.stdout.strip():
                 print(s3_result.stdout)
+            # Cleanup local WAVs after successful upload
+            if args.cleanup_after_upload:
+                import shutil
+                wav_count = len(list(args.wav_dir.rglob("*.wav")))
+                shutil.rmtree(args.wav_dir)
+                logger.info(f"  Cleaned up {wav_count} local WAVs from {args.wav_dir}")
         else:
             logger.error(f"  S3 upload failed: {s3_result.stderr}")
 

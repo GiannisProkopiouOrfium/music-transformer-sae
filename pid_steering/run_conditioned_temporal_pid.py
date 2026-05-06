@@ -176,6 +176,17 @@ def main():
     )
     parser.add_argument("--gpu", type=int, default=0)
     parser.add_argument("--skip_wav", action="store_true")
+    parser.add_argument(
+        "--skip_existing",
+        action="store_true",
+        help="Skip generation if MIDI already exists on disk",
+    )
+    parser.add_argument(
+        "--song_offset",
+        type=int,
+        default=0,
+        help="Skip first N songs in each extreme group (to generate new ones)",
+    )
 
     args = parser.parse_args()
     logging.basicConfig(
@@ -214,9 +225,14 @@ def main():
             notes_dir,
             encoding,
             concept,
-            n_songs=args.n_songs,
+            n_songs=args.n_songs + args.song_offset,
             conditioning_beats=args.conditioning_beats,
         )
+        # Apply song offset to skip already-generated songs
+        if args.song_offset > 0:
+            low_songs = low_songs[args.song_offset:]
+            high_songs = high_songs[args.song_offset:]
+            logger.info(f"Song offset={args.song_offset}: using songs {args.song_offset}-{args.song_offset + len(low_songs) - 1}")
 
         # Two directions:
         # 1. low songs → steer UP (positive vector)
@@ -245,11 +261,20 @@ def main():
             method_diagnostics = []
 
             for song_idx, (filepath, init_val) in enumerate(songs):
+                song_stem = filepath.stem  # SOD piece name
+                abs_idx = song_idx + args.song_offset
                 tokens = load_song_tokens(filepath, encoding)
                 cond = extract_conditioning_prefix(tokens, args.conditioning_beats)
 
                 for rep in range(args.n_per_song):
-                    sample_id = f"song{song_idx}_rep{rep}"
+                    sample_id = f"song{abs_idx}_{song_stem}_rep{rep}"
+
+                    # Check skip_existing
+                    if args.skip_existing:
+                        pid_path = args.output_dir / concept / dir_name / "temporal_pid" / f"{sample_id}.mid"
+                        if pid_path.exists():
+                            logger.info(f"  Skipping {sample_id} (already exists)")
+                            continue
 
                     # 1. Temporal PID
                     seq, diag = pid_gen.generate_conditioned(

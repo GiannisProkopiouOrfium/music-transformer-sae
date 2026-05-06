@@ -268,6 +268,17 @@ def main():
     parser.add_argument("--output_dir", type=pathlib.Path,
                         default=config_pid.PID_EXPERIMENTS_DIR / "dual_temporal_pid")
     parser.add_argument("--gpu", type=int, default=0)
+    parser.add_argument(
+        "--skip_existing",
+        action="store_true",
+        help="Skip generation if MIDI already exists on disk",
+    )
+    parser.add_argument(
+        "--song_offset",
+        type=int,
+        default=0,
+        help="Skip first N songs in each extreme group (to generate new ones)",
+    )
     args = parser.parse_args()
 
     logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s")
@@ -458,12 +469,19 @@ def _run_conditioned(model, encoding, sae_model, pitch_sas, duration_sas,
     logger.info("Finding extreme songs...")
     pitch_low, pitch_high = find_extreme_songs(
         notes_dir, encoding, "average_pitch",
-        n_songs=args.n_songs, conditioning_beats=args.conditioning_beats,
+        n_songs=args.n_songs + args.song_offset, conditioning_beats=args.conditioning_beats,
     )
     dur_low, dur_high = find_extreme_songs(
         notes_dir, encoding, "average_duration",
-        n_songs=args.n_songs, conditioning_beats=args.conditioning_beats,
+        n_songs=args.n_songs + args.song_offset, conditioning_beats=args.conditioning_beats,
     )
+    # Apply song offset to skip already-generated songs
+    if args.song_offset > 0:
+        pitch_low = pitch_low[args.song_offset:]
+        pitch_high = pitch_high[args.song_offset:]
+        dur_low = dur_low[args.song_offset:]
+        dur_high = dur_high[args.song_offset:]
+        logger.info(f"Song offset={args.song_offset}: skipping first {args.song_offset} songs per group")
 
     # 4 scenarios matching ISMIR paper Table 4
     scenarios = [
@@ -511,6 +529,7 @@ def _run_conditioned(model, encoding, sae_model, pitch_sas, duration_sas,
         if dm_pitch_vecs:
             method_seqs["diffmean"] = []
         pid_diags = []
+        sample_ids = []
 
         directed_pitch = pitch_sas * scenario["pitch_sign"]
         directed_dur = duration_sas * scenario["dur_sign"]
@@ -518,10 +537,21 @@ def _run_conditioned(model, encoding, sae_model, pitch_sas, duration_sas,
         for song_idx in range(n_use):
             # Use pitch song for conditioning (could also interleave)
             filepath, _ = scenario["pitch_songs"][song_idx]
+            song_stem = filepath.stem  # SOD piece name
+            abs_idx = song_idx + args.song_offset
             tokens = load_song_tokens(filepath, encoding)
             cond = extract_conditioning_prefix(tokens, args.conditioning_beats)
 
-            for _ in range(args.n_per_song):
+            for rep_idx in range(args.n_per_song):
+                sample_id = f"song{abs_idx}_{song_stem}_rep{rep_idx}"
+
+                # Check skip_existing
+                if args.skip_existing:
+                    pid_path = args.output_dir / "conditioned" / name / "dual_pid" / f"{sample_id}.mid"
+                    if pid_path.exists():
+                        logger.info(f"  Skipping {sample_id} (already exists)")
+                        continue
+
                 # 1. Dual PID
                 hook = DualTemporalPIDSASHook(
                     sae_model=sae_model,
@@ -562,6 +592,7 @@ def _run_conditioned(model, encoding, sae_model, pitch_sas, duration_sas,
                 # 4. Baseline
                 seq_b = generate_baseline(model, encoding, cond, args.continuation_len, device)
                 method_seqs["baseline"].append(seq_b)
+                sample_ids.append(sample_id)
 
             if (song_idx + 1) % 5 == 0:
                 logger.info(f"  Processed {song_idx+1}/{n_use} songs")
@@ -596,10 +627,11 @@ def _run_conditioned(model, encoding, sae_model, pitch_sas, duration_sas,
             midi_dir = args.output_dir / "conditioned" / name / method
             midi_dir.mkdir(parents=True, exist_ok=True)
             for i, seq in enumerate(seqs):
+                sid = sample_ids[i] if i < len(sample_ids) else f"sample_{i:03d}"
                 try:
                     music = representation.decode(seq, encoding)
                     if music:
-                        music.write(str(midi_dir / f"sample_{i:03d}.mid"))
+                        music.write(str(midi_dir / f"{sid}.mid"))
                 except Exception:
                     pass
 
