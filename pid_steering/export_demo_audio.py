@@ -542,21 +542,22 @@ Examples:
         default=None,
         metavar="S3_URI",
         help="Upload WAVs to S3 after conversion (e.g. s3://bucket/path/)",
-    )    parser.add_argument(
-        \"--skip_existing\",
-        action=\"store_true\",
-        help=\"Skip generation for samples whose MIDIs already exist\",
     )
     parser.add_argument(
-        \"--song_offset\",
+        "--skip_existing",
+        action="store_true",
+        help="Skip generation for samples whose MIDIs already exist",
+    )
+    parser.add_argument(
+        "--song_offset",
         type=int,
         default=0,
-        help=\"Skip first N conditioning songs (to generate new batches)\",
+        help="Skip first N conditioning songs (to generate new batches)",
     )
     parser.add_argument(
-        \"--cleanup_after_upload\",
-        action=\"store_true\",
-        help=\"Delete local WAVs after successful S3 upload to save disk space\",
+        "--cleanup_after_upload",
+        action="store_true",
+        help="Delete local WAVs after successful S3 upload to save disk space",
     )
     args = parser.parse_args()
     logging.basicConfig(
