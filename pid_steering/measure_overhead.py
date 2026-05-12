@@ -36,14 +36,17 @@ logger = logging.getLogger(__name__)
 
 
 def time_generation(gen_fn, n_samples):
-    """Time per-sample generation."""
+    """Time per-sample generation, returning (times, token_counts)."""
     times = []
+    token_counts = []
     for i in range(n_samples):
         t0 = time.perf_counter()
-        gen_fn()
+        seqs, _ = gen_fn()
         t1 = time.perf_counter()
         times.append(t1 - t0)
-    return times
+        # seqs is a list with 1 element; count actual tokens generated
+        token_counts.append(len(seqs[0]) - 1)  # subtract SOS token
+    return times, token_counts
 
 
 def main():
@@ -109,7 +112,7 @@ def main():
 
     # --- Baseline (lambda=0) ---
     logger.info(f"Timing baseline ({args.n_samples} samples)...")
-    baseline_times = time_generation(
+    baseline_times, baseline_lens = time_generation(
         lambda: generate_static_smooth(
             model,
             encoding,
@@ -127,7 +130,7 @@ def main():
 
     # --- Static SAS (fixed lambda) ---
     logger.info(f"Timing static SAS ({args.n_samples} samples)...")
-    static_times = time_generation(
+    static_times, static_lens = time_generation(
         lambda: generate_static_smooth(
             model,
             encoding,
@@ -145,7 +148,7 @@ def main():
 
     # --- Temporal PID ---
     logger.info(f"Timing temporal PID ({args.n_samples} samples)...")
-    pid_times = time_generation(
+    pid_times, pid_lens = time_generation(
         lambda: pid_gen.generate_with_temporal_pid(
             n_samples=1,
             seq_len=args.seq_len,
@@ -160,42 +163,59 @@ def main():
     baseline_arr = np.array(baseline_times)
     static_arr = np.array(static_times)
     pid_arr = np.array(pid_times)
+    baseline_len_arr = np.array(baseline_lens)
+    static_len_arr = np.array(static_lens)
+    pid_len_arr = np.array(pid_lens)
 
-    # Per-token times (approximate: seq_len tokens per sample)
-    baseline_per_tok = baseline_arr / args.seq_len * 1000  # ms
-    static_per_tok = static_arr / args.seq_len * 1000
-    pid_per_tok = pid_arr / args.seq_len * 1000
+    # Per-token times using ACTUAL token counts
+    baseline_per_tok = baseline_arr / baseline_len_arr * 1000  # ms
+    static_per_tok = static_arr / static_len_arr * 1000
+    pid_per_tok = pid_arr / pid_len_arr * 1000
 
+    # Overhead: compare per-token times (apples-to-apples)
     overhead_static = (
-        (static_arr.mean() - baseline_arr.mean()) / baseline_arr.mean() * 100
+        (static_per_tok.mean() - baseline_per_tok.mean())
+        / baseline_per_tok.mean() * 100
     )
-    overhead_pid = (pid_arr.mean() - baseline_arr.mean()) / baseline_arr.mean() * 100
+    overhead_pid = (
+        (pid_per_tok.mean() - baseline_per_tok.mean())
+        / baseline_per_tok.mean() * 100
+    )
     overhead_pid_vs_static = (
-        (pid_arr.mean() - static_arr.mean()) / static_arr.mean() * 100
+        (pid_per_tok.mean() - static_per_tok.mean())
+        / static_per_tok.mean() * 100
     )
 
-    print(f"\n{'='*60}")
-    print(f"Overhead Measurement (n={args.n_samples}, seq_len={args.seq_len})")
-    print(f"{'='*60}")
-    print(f"{'Method':<20} {'Total (s)':<16} {'Per-token (ms)':<16}")
-    print(f"{'-'*52}")
+    print(f"\n{'='*70}")
+    print(f"Overhead Measurement (n={args.n_samples}, max_seq_len={args.seq_len})")
+    print(f"{'='*70}")
     print(
-        f"{'Baseline':<20} {baseline_arr.mean():.3f}±{baseline_arr.std():.3f}"
-        f"    {baseline_per_tok.mean():.3f}±{baseline_per_tok.std():.3f}"
+        f"{'Method':<20} {'Total (s)':<16} {'Tokens':<14} {'Per-token (ms)':<16}"
+    )
+    print(f"{'-'*66}")
+    print(
+        f"{'Baseline':<20} "
+        f"{baseline_arr.mean():.3f}±{baseline_arr.std():.3f}  "
+        f"{baseline_len_arr.mean():.0f}±{baseline_len_arr.std():.0f}    "
+        f"{baseline_per_tok.mean():.3f}±{baseline_per_tok.std():.3f}"
     )
     print(
-        f"{'Static SAS':<20} {static_arr.mean():.3f}±{static_arr.std():.3f}"
-        f"    {static_per_tok.mean():.3f}±{static_per_tok.std():.3f}"
+        f"{'Static SAS':<20} "
+        f"{static_arr.mean():.3f}±{static_arr.std():.3f}  "
+        f"{static_len_arr.mean():.0f}±{static_len_arr.std():.0f}    "
+        f"{static_per_tok.mean():.3f}±{static_per_tok.std():.3f}"
     )
     print(
-        f"{'Temporal PID':<20} {pid_arr.mean():.3f}±{pid_arr.std():.3f}"
-        f"    {pid_per_tok.mean():.3f}±{pid_per_tok.std():.3f}"
+        f"{'Temporal PID':<20} "
+        f"{pid_arr.mean():.3f}±{pid_arr.std():.3f}  "
+        f"{pid_len_arr.mean():.0f}±{pid_len_arr.std():.0f}    "
+        f"{pid_per_tok.mean():.3f}±{pid_per_tok.std():.3f}"
     )
-    print(f"\nOverhead vs baseline:")
-    print(f"  Static SAS: {overhead_static:+.1f}%")
-    print(f"  Temporal PID: {overhead_pid:+.1f}%")
+    print(f"\nOverhead (per-token, apples-to-apples):")
+    print(f"  Static SAS vs Baseline: {overhead_static:+.1f}%")
+    print(f"  Temporal PID vs Baseline: {overhead_pid:+.1f}%")
     print(f"  PID vs Static (controller cost only): {overhead_pid_vs_static:+.1f}%")
-    print(f"{'='*60}")
+    print(f"{'='*70}")
 
 
 if __name__ == "__main__":
