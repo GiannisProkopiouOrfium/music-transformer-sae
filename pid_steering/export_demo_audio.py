@@ -105,8 +105,12 @@ def midi_to_wav(
 
 
 def run_single_concept_generation(
-    output_dir: pathlib.Path, gpu: int, n_songs: int, n_per_song: int,
-    skip_existing: bool = False, song_offset: int = 0,
+    output_dir: pathlib.Path,
+    gpu: int,
+    n_songs: int,
+    n_per_song: int,
+    skip_existing: bool = False,
+    song_offset: int = 0,
 ):
     """Run conditioned temporal PID for all single-concept directions."""
     cmd = [
@@ -136,8 +140,12 @@ def run_single_concept_generation(
 
 
 def run_dual_concept_generation(
-    output_dir: pathlib.Path, gpu: int, n_songs: int, n_per_song: int,
-    skip_existing: bool = False, song_offset: int = 0,
+    output_dir: pathlib.Path,
+    gpu: int,
+    n_songs: int,
+    n_per_song: int,
+    skip_existing: bool = False,
+    song_offset: int = 0,
 ):
     """Run dual temporal PID for conditioned scenarios."""
     cmd = [
@@ -337,7 +345,11 @@ def convert_single_concept(
                 base_dir = pathlib.Path(s["results_dir"])
                 for method in ["temporal_pid", "static_smooth", "baseline"]:
                     midi_path = (
-                        base_dir / concept / direction / method / f"{s['sample_id']}.mid"
+                        base_dir
+                        / concept
+                        / direction
+                        / method
+                        / f"{s['sample_id']}.mid"
                     )
                     if not midi_path.exists():
                         continue
@@ -368,9 +380,7 @@ def convert_single_concept(
             continue
         concept = concept_dir.name
         # Accept both naming conventions
-        if concept not in (
-            "pitch", "duration", "average_pitch", "average_duration"
-        ):
+        if concept not in ("pitch", "duration", "average_pitch", "average_duration"):
             continue
 
         for direction_dir in sorted(concept_dir.iterdir()):
@@ -576,15 +586,23 @@ Examples:
     if args.mode in ("single", "all"):
         logger.info("=== Generating single-concept conditioned samples ===")
         run_single_concept_generation(
-            args.results_dir, args.gpu, args.n_songs, args.n_per_song,
-            skip_existing=args.skip_existing, song_offset=args.song_offset,
+            args.results_dir,
+            args.gpu,
+            args.n_songs,
+            args.n_per_song,
+            skip_existing=args.skip_existing,
+            song_offset=args.song_offset,
         )
 
     if args.mode in ("dual", "all"):
         logger.info("=== Generating dual-concept conditioned samples ===")
         run_dual_concept_generation(
-            args.results_dir, args.gpu, args.n_songs, args.n_per_song,
-            skip_existing=args.skip_existing, song_offset=args.song_offset,
+            args.results_dir,
+            args.gpu,
+            args.n_songs,
+            args.n_per_song,
+            skip_existing=args.skip_existing,
+            song_offset=args.song_offset,
         )
 
     # ─── Conversion ───────────────────────────────────────────────────────
@@ -619,6 +637,7 @@ Examples:
             # Cleanup local WAVs after successful upload
             if args.cleanup_after_upload:
                 import shutil
+
                 wav_count = len(list(args.wav_dir.rglob("*.wav")))
                 shutil.rmtree(args.wav_dir)
                 logger.info(f"  Cleaned up {wav_count} local WAVs from {args.wav_dir}")

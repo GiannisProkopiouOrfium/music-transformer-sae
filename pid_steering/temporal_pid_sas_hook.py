@@ -65,6 +65,7 @@ class TemporalPIDSASHook:
         beat_mode: bool = False,
         n_ramp_beats: int = 32,
         skip_conditioning: bool = False,
+        update_interval: int = 1,
     ):
         """Initialize the temporal PID SAS hook.
 
@@ -81,6 +82,9 @@ class TemporalPIDSASHook:
             n_ramp_beats: Number of beats for the desired ramp envelope.
             skip_conditioning: If True, skip the first multi-token forward
                 pass (conditioning prefix). Activated by conditioned generation.
+            update_interval: PID update frequency in steps. 1 = every token
+                (default). >1 = piecewise-constant λ, holding the value fixed
+                between updates. Useful for reducing within-sequence λ variation.
         """
         self.sae_model = sae_model
         self.sas_vector = torch.from_numpy(sas_vector).float()
@@ -100,6 +104,10 @@ class TemporalPIDSASHook:
         # Conditioning skip
         self._skip_conditioning = skip_conditioning
         self._conditioning_skipped = False
+
+        # Piecewise-constant λ
+        self.update_interval = max(1, update_interval)
+        self._last_lambda = 0.0
 
         # Beat-mode tracking
         self.beat_mode = beat_mode
@@ -127,6 +135,7 @@ class TemporalPIDSASHook:
         self.pid.reset()
         self._last_beat_value = None
         self._beat_count = 0
+        self._last_lambda = 0.0
         self.lambda_trajectory = []
         self.error_trajectory = []
         self.feature_activation_trajectory = []
@@ -206,8 +215,13 @@ class TemporalPIDSASHook:
         self.error_trajectory.append(error)
         self.feature_activation_trajectory.append(actual_magnitude)
 
-        # PID computes dynamic lambda
-        lambda_t = self.pid.compute(error)
+        # PID computes dynamic lambda (with optional piecewise-constant hold)
+        current_step = len(self.lambda_trajectory)
+        if self.update_interval <= 1 or current_step % self.update_interval == 0:
+            lambda_t = self.pid.compute(error)
+            self._last_lambda = lambda_t
+        else:
+            lambda_t = self._last_lambda
         self.lambda_trajectory.append(lambda_t)
 
         # Step 4: Apply steering with PID-computed lambda

@@ -230,9 +230,11 @@ def main():
         )
         # Apply song offset to skip already-generated songs
         if args.song_offset > 0:
-            low_songs = low_songs[args.song_offset:]
-            high_songs = high_songs[args.song_offset:]
-            logger.info(f"Song offset={args.song_offset}: using songs {args.song_offset}-{args.song_offset + len(low_songs) - 1}")
+            low_songs = low_songs[args.song_offset :]
+            high_songs = high_songs[args.song_offset :]
+            logger.info(
+                f"Song offset={args.song_offset}: using songs {args.song_offset}-{args.song_offset + len(low_songs) - 1}"
+            )
 
         # Two directions:
         # 1. low songs → steer UP (positive vector)
@@ -271,7 +273,13 @@ def main():
 
                     # Check skip_existing
                     if args.skip_existing:
-                        pid_path = args.output_dir / concept / dir_name / "temporal_pid" / f"{sample_id}.mid"
+                        pid_path = (
+                            args.output_dir
+                            / concept
+                            / dir_name
+                            / "temporal_pid"
+                            / f"{sample_id}.mid"
+                        )
                         if pid_path.exists():
                             logger.info(f"  Skipping {sample_id} (already exists)")
                             continue
