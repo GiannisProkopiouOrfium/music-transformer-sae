@@ -175,23 +175,20 @@ def main():
     # Overhead: compare per-token times (apples-to-apples)
     overhead_static = (
         (static_per_tok.mean() - baseline_per_tok.mean())
-        / baseline_per_tok.mean() * 100
+        / baseline_per_tok.mean()
+        * 100
     )
     overhead_pid = (
-        (pid_per_tok.mean() - baseline_per_tok.mean())
-        / baseline_per_tok.mean() * 100
+        (pid_per_tok.mean() - baseline_per_tok.mean()) / baseline_per_tok.mean() * 100
     )
     overhead_pid_vs_static = (
-        (pid_per_tok.mean() - static_per_tok.mean())
-        / static_per_tok.mean() * 100
+        (pid_per_tok.mean() - static_per_tok.mean()) / static_per_tok.mean() * 100
     )
 
     print(f"\n{'='*70}")
     print(f"Overhead Measurement (n={args.n_samples}, max_seq_len={args.seq_len})")
     print(f"{'='*70}")
-    print(
-        f"{'Method':<20} {'Total (s)':<16} {'Tokens':<14} {'Per-token (ms)':<16}"
-    )
+    print(f"{'Method':<20} {'Total (s)':<16} {'Tokens':<14} {'Per-token (ms)':<16}")
     print(f"{'-'*66}")
     print(
         f"{'Baseline':<20} "

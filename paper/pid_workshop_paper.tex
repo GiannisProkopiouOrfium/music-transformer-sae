@@ -315,18 +315,26 @@ P-only control yields $\lambda_\text{avg}{=}0.664$---too conservative for the To
 
 PID achieves $4.7{\times}$ lower degradation ($\delta{=}0.47$ vs.\ $2.19$) in unconditioned steering by self-regulating $\lambda$, at the cost of lower dual success (90\% vs.\ 95\%). The success gap arises because PID's conservative $\lambda$ occasionally under-steers duration (the weaker-responding attribute); higher $m_\text{target}$ or concept-specific setpoints could recover accuracy at the expense of $\delta$. For conditioned steering on 16-beat prefixes, PID excels in the hardest opposing-direction case (H/S$\to$L/L): 100\% success with $2.2{\times}$ less degradation ($\delta{=}1.92$ vs.\ $4.30$).
 
+\subsection{Round-Trip Steering}
+\label{sec:roundtrip}
+
+A unique capability of temporal PID is \emph{reversible steering}: steer away from a conditioned prefix, hold, then steer back toward original characteristics---impossible with static SAS, which applies a fixed $\lambda$ throughout. We evaluate this with a three-phase schedule per sample: Phase~1 (64 tokens, steer away), Phase~2 (64 tokens, hold), Phase~3 (64 tokens, steer back), using 16-beat conditioned prefixes from extreme songs ($n{=}20$ per scenario). Full results are in \cref{app:roundtrip}.
+
+For pitch (low$\to$up$\to$down), the round-trip trajectory follows the expected pattern: Window~1 shifts pitch from 49.7 to 59.5~st, Window~2 peaks at 74.0~st, and Window~3 recovers to 57.2~st---substantially closer to the unsteered baseline (59.6~st) than static one-way steering, which remains stuck at 73.4~st. The recovery error (Window~3 distance from baseline) is $37\%$ lower for PID (10.0 vs.\ 15.7~st), with $62\%$ of samples recovering to within $1\sigma$ of baseline.
+Duration shows similar recovery: for low$\to$up$\to$down, PID reduces Window~3 error by $43\%$ (14.2 vs.\ 24.8~ticks). These results demonstrate that temporal PID enables compositional control trajectories that static methods fundamentally cannot express.
+
 % ═══════════════════════════════════════════════════════════════
 % 5. CONCLUSION
 % ═══════════════════════════════════════════════════════════════
 \section{Conclusion}
 \label{sec:conclusion}
 
-We introduced PID Steering for symbolic music: \emph{Spatial PID} validates control-theoretic steering~\cite{nguyen2026pid} in a shallow architecture, while \emph{Temporal PID} overcomes SAS's Top-K threshold failure via integral error accumulation, enabling smooth sparse steering with 43--62\% less intervention strength and 5\% lower FMD for pitch, while concept-specific gain tuning---motivated by the $8{\times}$ $K_i$ asymmetry between pitch and duration---ensures quality preservation for attributes where the underlying SAS vectors are well-behaved. Gain robustness sweeps confirm stability across $2{\times}$ perturbations, while matched-$\lambda$ analysis (\cref{app:matched_lambda}) identifies trajectory-induced degradation for duration-up as a direction for future work.
+We introduced PID Steering for symbolic music: \emph{Spatial PID} validates control-theoretic steering~\cite{nguyen2026pid} in a shallow architecture, while \emph{Temporal PID} overcomes SAS's Top-K threshold failure via integral error accumulation, enabling smooth sparse steering with 43--62\% less intervention strength and 5\% lower FMD for pitch, while concept-specific gain tuning---motivated by the $8{\times}$ $K_i$ asymmetry between pitch and duration---ensures quality preservation for attributes where the underlying SAS vectors are well-behaved. Round-trip steering (\cref{sec:roundtrip}) demonstrates a unique capability of temporal PID: reversible multi-phase control trajectories that static methods cannot express, with 19--43\% better attribute recovery. Gain robustness sweeps confirm stability across $2{\times}$ perturbations, while matched-$\lambda$ analysis (\cref{app:matched_lambda}) identifies trajectory-induced degradation for duration-up as a direction for future work.
 
 \paragraph{Limitations.}
 % Our evaluation uses a single model (MMT) and dataset (SOD); the $8{\times}$ $K_i$ asymmetry may reflect model-specific priors rather than universal properties. Duration-up degrades scale consistency due to both the SAS vector and PID's dynamic trajectory (\cref{app:matched_lambda}). Sample sizes ($n{=}40$) are modest and perceptual validation is absent. Future work includes adaptive gain scheduling, plausibility-gated methods~\cite{kang2026directer}, and SAE variants like RouteSAE~\cite{shi2025routesae}.
 
-Our evaluation uses a single model (MMT) and dataset (SOD); gain portability across architectures remains untested. We hypothesize that the $8{\times}$ $K_i$ asymmetry primarily reflects MMT's learned priors rather than universal musical properties, though validating this requires cross-architecture studies. Duration-up steering degrades scale consistency; matched-$\lambda$ analysis suggests both the SAS vector and PID's dynamic trajectory contribute (\cref{app:matched_lambda}). The trajectory-induced component arises because within-sequence $\lambda$ variation generates tokens under inconsistent steering magnitudes, disrupting pitch--duration coupling. Piecewise-constant $\lambda$ scheduling---holding $\lambda(t)$ fixed within musical phrases and updating only at phrase boundaries---would decouple the PID adaptation rate from the token-level generation, potentially recovering static SAS's scale consistency while retaining PID's smooth onset; we leave empirical validation to future work. Sample sizes ($n{=}40$) are modest and perceptual validation is absent. Anti-windup clamping ($I_\text{max}$) and $\lambda_\text{max}$ bounds provide practical stability, though formal OOD guarantees are lacking. Future work includes adaptive gain scheduling, integration with plausibility-gated methods~\cite{kang2026directer}, cross-architecture validation, and SAE variants such as RouteSAE~\cite{shi2025routesae} that may reduce Top-K threshold sensitivity.
+Our evaluation uses a single model (MMT) and dataset (SOD); gain portability across architectures remains untested. We hypothesize that the $8{\times}$ $K_i$ asymmetry primarily reflects MMT's learned priors rather than universal musical properties, though validating this requires cross-architecture studies. Duration-up steering degrades scale consistency; matched-$\lambda$ analysis suggests both the SAS vector and PID's dynamic trajectory contribute (\cref{app:matched_lambda}). We tested piecewise-constant $\lambda$ scheduling---holding $\lambda(t)$ fixed for $N \in \{4, 8, 16\}$ steps between PID updates---but this did not improve scale consistency (84--86\% across all intervals vs.\ 92\% for static SAS; \cref{app:piecewise}), indicating that the degradation stems from the adaptive feedback dynamics themselves rather than per-token $\lambda$ jitter. Sample sizes ($n{=}40$) are modest and perceptual validation is absent. Anti-windup clamping ($I_\text{max}$) and $\lambda_\text{max}$ bounds provide practical stability, though formal OOD guarantees are lacking. Future work includes adaptive gain scheduling, integration with plausibility-gated methods~\cite{kang2026directer}, cross-architecture validation, and SAE variants such as RouteSAE~\cite{shi2025routesae} that may reduce Top-K threshold sensitivity.
 
 \section*{Impact Statement}
 This work advances controllable music generation. Activation steering techniques carry dual-use risks in broader settings; in symbolic music, the primary concern is unauthorized style imitation, which we mitigate by releasing only the method, not artist-specific vectors.
@@ -791,9 +799,102 @@ To isolate whether duration-up scale degradation stems from the SAS vector or PI
 
 Static SAS at $\lambda{=}1.0$ maintains 91.3\% scale consistency---substantially higher than PID's 84.7\% at the same average $\lambda$. All static configurations maintain scale $\geq 91\%$. This indicates that PID's dynamic $\lambda(t)$ trajectory---generating tokens at varying steering magnitudes within a single piece---amplifies scale degradation for duration-up beyond what a fixed intervention produces. The within-sequence variation during ramp-up likely creates pitch--duration coupling inconsistencies that a constant $\lambda$ avoids. This is a limitation specific to the temporal PID formulation for this attribute; pitch steering does not exhibit this effect.
 
+\section{Round-Trip Steering Results}
+\label{app:roundtrip}
+
+\cref{tab:roundtrip_pitch,tab:roundtrip_duration} report per-window attribute values for the round-trip experiment (\cref{sec:roundtrip}). Each scenario uses 10 extreme songs $\times$ 2 repetitions ($n{=}20$).
+
+\begin{table}[h]
+  \caption{Round-trip pitch steering: per-window mean pitch (st). Recovery error is $|\text{W3} - \text{baseline W3}|$.}
+  \label{tab:roundtrip_pitch}
+  \begin{center}
+  \begin{small}
+  \begin{tabular}{llccc}
+    \toprule
+    Scenario & Method & W1 & W2 & W3 \\
+    \midrule
+    \multirow{3}{*}{Low$\to$Up$\to$Down}
+    & Baseline & 49.70 & 58.62 & 59.63 \\
+    & Round-trip PID & 59.51 & 73.95 & 57.21 \\
+    & Static one-way & 62.12 & 73.42 & 73.40 \\
+    \midrule
+    & \multicolumn{2}{l}{Recovery error (PID / Static):} & \multicolumn{2}{c}{10.0 / 15.7 st} \\
+    \midrule
+    \multirow{3}{*}{High$\to$Down$\to$Up}
+    & Baseline & 81.41 & 79.25 & 78.42 \\
+    & Round-trip PID & 62.34 & 39.02 & 48.79 \\
+    & Static one-way & 57.04 & 39.15 & 39.69 \\
+    \midrule
+    & \multicolumn{2}{l}{Recovery error (PID / Static):} & \multicolumn{2}{c}{27.1 / 33.4 st} \\
+    \bottomrule
+  \end{tabular}
+  \end{small}
+  \end{center}
+\end{table}
+
+\begin{table}[h]
+  \caption{Round-trip duration steering: per-window mean duration (ticks).}
+  \label{tab:roundtrip_duration}
+  \begin{center}
+  \begin{small}
+  \begin{tabular}{llccc}
+    \toprule
+    Scenario & Method & W1 & W2 & W3 \\
+    \midrule
+    \multirow{3}{*}{Low$\to$Up$\to$Down}
+    & Baseline & 2.31 & 2.41 & 2.44 \\
+    & Round-trip PID & 11.25 & 25.31 & 17.88 \\
+    & Static one-way & 14.38 & 26.45 & 26.07 \\
+    \midrule
+    & \multicolumn{2}{l}{Recovery error (PID / Static):} & \multicolumn{2}{c}{14.2 / 24.8 ticks} \\
+    \midrule
+    \multirow{3}{*}{High$\to$Down$\to$Up}
+    & Baseline & 16.34 & 16.71 & 15.87 \\
+    & Round-trip PID & 11.10 & 3.41 & 13.48 \\
+    & Static one-way & 10.10 & 3.13 & 3.10 \\
+    \midrule
+    & \multicolumn{2}{l}{Recovery error (PID / Static):} & \multicolumn{2}{c}{9.1 / 13.4 ticks} \\
+    \bottomrule
+  \end{tabular}
+  \end{small}
+  \end{center}
+\end{table}
+
+Across all four scenarios, PID reduces Window~3 recovery error by 19--43\% compared to static one-way steering. The high$\to$down$\to$up pitch scenario shows the weakest recovery (40\% within $1\sigma$), likely because the model's distributional priors resist returning to high-register content after sustained low-pitch generation.
+
+\section{Piecewise-Constant $\lambda$ Analysis}
+\label{app:piecewise}
+
+We test whether holding $\lambda(t)$ fixed between PID updates (update intervals of 4, 8, 16 steps) mitigates duration-up scale degradation ($n{=}40$, duration-up steering).
+
+\begin{table}[h]
+  \caption{Piecewise-constant $\lambda$ for duration-up. $\lambda$ std: within-sequence standard deviation.}
+  \label{tab:piecewise}
+  \begin{center}
+  \begin{small}
+  \begin{tabular}{ccccc}
+    \toprule
+    Update interval & Dur.\ (ticks) & Scale (\%) & $\delta$ & $\lambda$ std \\
+    \midrule
+    1 (per-token) & 20.07 & 85.8 & 7.75 & 0.725 \\
+    4 & 19.55 & 85.5 & 8.13 & 0.761 \\
+    8 & 19.06 & 86.0 & 7.87 & 0.781 \\
+    16 & 19.15 & 84.4 & 9.09 & 0.757 \\
+    \midrule
+    Static SAS & 21.17 & 91.9 & 3.17 & 0.000 \\
+    \bottomrule
+  \end{tabular}
+  \end{small}
+  \end{center}
+\end{table}
+
+Scale consistency is invariant to update interval (84--86\% across all PID variants), and within-sequence $\lambda$ standard deviation remains $\approx$0.75 regardless of hold duration. This rules out per-token $\lambda$ jitter as the cause of duration-up degradation: the effect is intrinsic to PID's adaptive feedback dynamics, specifically the integral accumulation trajectory during ramp-up, which creates a distribution of steering magnitudes across the generated sequence that differs qualitatively from static SAS's uniform intervention.
+
 \section{Runtime Overhead}
 \label{app:runtime}
 
-Temporal PID's per-token overhead relative to static SAS consists of three lightweight operations: (1)~computing the error signal $e(t)$ via a mean over $N{=}32$ pre-indexed feature activations (negligible), (2)~the PID control law---three scalar multiply-adds plus two clamping operations (\cref{eq:pid_temporal}), and (3)~updating the integral accumulator $I(t)$. Both static SAS and temporal PID share the dominant cost: SAE encoding ($512 {\to} 4096$), Top-K re-sparsification, and SAE decoding ($4096 {\to} 512$) at the steered layer, plus the reconstruction correction $\Delta$. The PID-specific computation adds $\mathcal{O}(N + 1)$ scalar operations per token atop this shared SAE forward/backward pass, which itself is $\mathcal{O}(d_\text{sparse})$ with $d_\text{sparse}{=}4096$. In practice, the controller overhead is $<\!1\%$ of the per-token generation time, as autoregressive sampling and attention computation dominate. The key cost difference between steered and unsteered generation is the SAE encode/decode pass, which is shared by both static SAS and PID; temporal PID adds negligible marginal cost beyond static SAS.
+Temporal PID's per-token overhead relative to static SAS consists of three lightweight operations: (1)~computing the error signal $e(t)$ via a mean over $N{=}32$ pre-indexed feature activations (negligible), (2)~the PID control law---three scalar multiply-adds plus two clamping operations (\cref{eq:pid_temporal}), and (3)~updating the integral accumulator $I(t)$. Both static SAS and temporal PID share the dominant cost: SAE encoding ($512 {\to} 4096$), Top-K re-sparsification, and SAE decoding ($4096 {\to} 512$) at the steered layer, plus the reconstruction correction $\Delta$.
+
+We benchmark per-token wall-clock time over $n{=}20$ samples (512 max tokens, single A10G GPU). Unsteered baseline generation runs at $9.11 \pm 0.02$~ms/token. Static SAS adds the shared SAE encode/decode pass, increasing cost to $9.50 \pm 0.67$~ms/token ($+4.3\%$). Temporal PID reaches $9.68 \pm 0.60$~ms/token ($+6.3\%$ vs.\ baseline), with the PID controller itself contributing only $+1.9\%$ marginal overhead beyond static SAS. In practice, autoregressive sampling and attention dominate: the PID-specific computation adds $\mathcal{O}(N + 1)$ scalar operations per token atop the $\mathcal{O}(d_\text{sparse})$ SAE pass ($d_\text{sparse}{=}4096$), making temporal adaptive control essentially free relative to static steering.
 
 \end{document}
