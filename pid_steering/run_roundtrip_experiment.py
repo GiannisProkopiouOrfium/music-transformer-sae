@@ -269,7 +269,7 @@ def main():
     parser.add_argument(
         "--phase_tokens",
         type=int,
-        default=64,
+        default=128,
         help="Tokens per phase (steer, hold, return)",
     )
     parser.add_argument(
@@ -373,6 +373,8 @@ def main():
             )
 
             # Build phase schedule
+            # Phase 3 (return) uses no ramp — start at full setpoint immediately
+            # so the PID can spend all tokens actually recovering
             phases = [
                 {
                     "tokens": args.phase_tokens,
@@ -383,7 +385,7 @@ def main():
                 {
                     "tokens": args.phase_tokens,
                     "direction": scenario["back_direction"],
-                    "ramp_steps": args.ramp_steps,
+                    "ramp_steps": 0,  # no ramp for return phase
                 },
             ]
             total_continuation = sum(p["tokens"] for p in phases)
@@ -532,6 +534,21 @@ def main():
             diag_path.parent.mkdir(parents=True, exist_ok=True)
             with open(diag_path, "w") as f:
                 json.dump(diagnostics_list, f, indent=2, default=float)
+
+            # Save per-sample results for ranking
+            per_sample_path = args.output_dir / concept / f"per_sample_{scn_name}.json"
+            per_sample_data = []
+            for rt, bl, st in zip(roundtrip_results, baseline_results, static_results):
+                per_sample_data.append(
+                    {
+                        "sample_id": rt.get("sample_id", ""),
+                        "roundtrip": rt,
+                        "baseline": bl,
+                        "static_oneway": st,
+                    }
+                )
+            with open(per_sample_path, "w") as f:
+                json.dump(per_sample_data, f, indent=2, default=float)
 
         all_results[concept] = concept_results
 

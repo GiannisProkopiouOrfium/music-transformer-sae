@@ -115,6 +115,7 @@ class RoundTripPIDSASHook:
         self._global_step = 0  # total continuation tokens generated
         self._phase_idx = 0  # current phase index
         self._phase_step = 0  # steps within current phase
+        self._hold_lambda = 0.0  # frozen lambda during hold phases
 
         # Diagnostics
         self.lambda_trajectory = []
@@ -151,6 +152,7 @@ class RoundTripPIDSASHook:
         self._global_step = 0
         self._phase_idx = 0
         self._phase_step = 0
+        self._hold_lambda = 0.0
         self.lambda_trajectory = []
         self.error_trajectory = []
         self.feature_activation_trajectory = []
@@ -170,6 +172,10 @@ class RoundTripPIDSASHook:
             return
 
         if self._phase_step >= phase["tokens"]:
+            # Snapshot lambda before transitioning (used if next phase is hold)
+            if self.lambda_trajectory:
+                self._hold_lambda = self.lambda_trajectory[-1]
+
             # Transition to next phase
             self._phase_idx += 1
             self._phase_step = 0
@@ -178,7 +184,7 @@ class RoundTripPIDSASHook:
             if new_phase is not None:
                 old_dir = phase["direction"]
                 new_dir = new_phase["direction"]
-                # Reset PID on direction change
+                # Reset PID on direction change (not on hold)
                 if new_dir != old_dir and new_dir != "hold":
                     self.pid.reset()
                     logger.debug(
@@ -277,12 +283,15 @@ class RoundTripPIDSASHook:
         target_activations = f_a[:, target_indices]
         actual_magnitude = target_activations.mean().item()
 
-        # Compute setpoint
-        desired_magnitude = self._compute_target_envelope()
-        error = desired_magnitude - actual_magnitude
-
-        # PID update
-        lambda_t = self.pid.compute(error)
+        # Hold phase: freeze λ at last value from previous phase
+        if phase["direction"] == "hold":
+            lambda_t = self._hold_lambda
+            error = 0.0  # no PID update during hold
+        else:
+            # Compute setpoint and PID update
+            desired_magnitude = self._compute_target_envelope()
+            error = desired_magnitude - actual_magnitude
+            lambda_t = self.pid.compute(error)
 
         # Record diagnostics
         self.lambda_trajectory.append(lambda_t)
