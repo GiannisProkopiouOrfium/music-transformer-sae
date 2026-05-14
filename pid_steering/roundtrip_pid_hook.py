@@ -62,6 +62,7 @@ class RoundTripPIDSASHook:
         max_I: float = 10.0,
         lambda_max: float = 3.0,
         skip_conditioning: bool = True,
+        hold_decay: float = 0.5,
     ):
         """Initialize the round-trip PID hook.
 
@@ -74,10 +75,13 @@ class RoundTripPIDSASHook:
                 "tokens": int — number of generation steps in this phase
                 "direction": str — "up", "down", or "hold"
                 "ramp_steps": int — cosine ramp duration (0 = instant setpoint)
-            target_magnitude: PID setpoint magnitude.
+                "target_magnitude": float (optional) — override per-phase
+            target_magnitude: PID setpoint magnitude (default for all phases).
             Kp, Ki, Kd, max_I: PID controller gains.
             lambda_max: Output clamp for lambda_t.
             skip_conditioning: Skip the first multi-token forward pass.
+            hold_decay: Final λ fraction at end of hold phase (1.0 = no decay,
+                0.5 = linearly decay to 50% of frozen λ). Reduces drift.
         """
         self.sae_model = sae_model
         self.sas_vector_up = torch.from_numpy(sas_vector_up).float()
@@ -85,6 +89,7 @@ class RoundTripPIDSASHook:
         self.target_feature_indices_up = target_feature_indices_up
         self.target_feature_indices_down = target_feature_indices_down
         self.target_magnitude = target_magnitude
+        self.hold_decay = hold_decay
 
         # PID gains (stored for reset)
         self.Kp = Kp
@@ -218,23 +223,25 @@ class RoundTripPIDSASHook:
         if phase is None:
             return self.target_magnitude
 
+        # Per-phase magnitude override
+        phase_magnitude = phase.get("target_magnitude", self.target_magnitude)
         ramp_steps = phase.get("ramp_steps", 0)
 
         if phase["direction"] == "hold":
             # Flat setpoint at target magnitude
-            return self.target_magnitude
+            return phase_magnitude
 
         if ramp_steps <= 0:
-            return self.target_magnitude
+            return phase_magnitude
 
         t = self._phase_step
         if t >= ramp_steps:
-            return self.target_magnitude
+            return phase_magnitude
 
-        # Cosine ramp: 0 → target_magnitude within this phase
+        # Cosine ramp: 0 → phase_magnitude within this phase
         progress = t / ramp_steps
         scale = 0.5 * (1.0 - math.cos(math.pi * progress))
-        return self.target_magnitude * scale
+        return phase_magnitude * scale
 
     def __call__(self, module, input, output, layer_idx):
         """Forward hook implementing multi-phase PID-controlled SAS."""
@@ -283,9 +290,12 @@ class RoundTripPIDSASHook:
         target_activations = f_a[:, target_indices]
         actual_magnitude = target_activations.mean().item()
 
-        # Hold phase: freeze λ at last value from previous phase
+        # Hold phase: linearly decay λ from frozen value
         if phase["direction"] == "hold":
-            lambda_t = self._hold_lambda
+            hold_tokens = max(1, phase["tokens"] - 1)
+            progress = self._phase_step / hold_tokens
+            decay_factor = 1.0 - progress * (1.0 - self.hold_decay)
+            lambda_t = self._hold_lambda * decay_factor
             error = 0.0  # no PID update during hold
         else:
             # Compute setpoint and PID update

@@ -171,6 +171,7 @@ def generate_roundtrip(
     lambda_max: float,
     device: torch.device,
     total_continuation_override: int = None,
+    hold_decay: float = 0.5,
 ) -> Tuple[np.ndarray, Dict]:
     """Generate a single round-trip conditioned sample.
 
@@ -187,6 +188,7 @@ def generate_roundtrip(
         total_continuation_override: If set, generate this many tokens
             instead of sum(phase tokens). Used for release method where
             phases end early but we want the same total length.
+        hold_decay: Hold phase λ decay factor (1.0=constant, 0.0=full decay).
 
     Returns:
         (full_sequence, diagnostics)
@@ -211,6 +213,7 @@ def generate_roundtrip(
         max_I=max_I,
         lambda_max=lambda_max,
         skip_conditioning=True,
+        hold_decay=hold_decay,
     )
     hook.reset()
 
@@ -280,6 +283,18 @@ def main():
     )
     parser.add_argument(
         "--ramp_steps", type=int, default=64, help="PID ramp steps within steer phases"
+    )
+    parser.add_argument(
+        "--hold_decay",
+        type=float,
+        default=0.5,
+        help="Hold phase λ decay factor (1.0=constant, 0.5=decay to 50%%, 0.0=full decay)",
+    )
+    parser.add_argument(
+        "--phase3_magnitude",
+        type=float,
+        default=None,
+        help="Target magnitude for Phase 3 (back-steer). Default: same as --target_magnitude.",
     )
     parser.add_argument(
         "--Kp", type=float, default=config_pid.TEMPORAL_PID_DEFAULTS["Kp"]
@@ -379,10 +394,11 @@ def main():
             )
 
             # Build phase schedule
-            # Phase 3 (return) uses a shorter ramp (half of Phase 1) to avoid
-            # overshoot while still allowing most of the phase for recovery
+            # Phase 3 (return) uses the same ramp as Phase 1 for gentle entry.
+            # Hold phase uses linear λ decay to reduce drift accumulation.
             p1_tokens, p2_tokens, p3_tokens = args.phase_tokens
-            return_ramp = max(1, args.ramp_steps // 2)
+            return_ramp = args.ramp_steps  # full ramp for gentler Phase 3 entry
+            phase3_mag = args.phase3_magnitude  # None → same as target_magnitude
             phases = [
                 {
                     "tokens": p1_tokens,
@@ -394,6 +410,9 @@ def main():
                     "tokens": p3_tokens,
                     "direction": scenario["back_direction"],
                     "ramp_steps": return_ramp,
+                    **({
+                        "target_magnitude": phase3_mag
+                    } if phase3_mag is not None else {}),
                 },
             ]
             total_continuation = sum(p["tokens"] for p in phases)
@@ -442,6 +461,7 @@ def main():
                         args.max_I,
                         args.lambda_max,
                         device,
+                        hold_decay=args.hold_decay,
                     )
                     rt_full = compute_generation_metrics(seq_rt, encoding)
                     rt_windows = compute_window_metrics(
@@ -549,6 +569,7 @@ def main():
                         args.lambda_max,
                         device,
                         total_continuation_override=total_continuation,
+                        hold_decay=args.hold_decay,
                     )
                     rel_full = compute_generation_metrics(seq_rel, encoding)
                     rel_windows = compute_window_metrics(
