@@ -373,8 +373,9 @@ def main():
             )
 
             # Build phase schedule
-            # Phase 3 (return) uses no ramp — start at full setpoint immediately
-            # so the PID can spend all tokens actually recovering
+            # Phase 3 (return) uses a shorter ramp (half of Phase 1) to avoid
+            # overshoot while still allowing most of the phase for recovery
+            return_ramp = max(1, args.ramp_steps // 2)
             phases = [
                 {
                     "tokens": args.phase_tokens,
@@ -385,7 +386,7 @@ def main():
                 {
                     "tokens": args.phase_tokens,
                     "direction": scenario["back_direction"],
-                    "ramp_steps": 0,  # no ramp for return phase
+                    "ramp_steps": return_ramp,
                 },
             ]
             total_continuation = sum(p["tokens"] for p in phases)
