@@ -410,9 +410,11 @@ def main():
                     "tokens": p3_tokens,
                     "direction": scenario["back_direction"],
                     "ramp_steps": return_ramp,
-                    **({
-                        "target_magnitude": phase3_mag
-                    } if phase3_mag is not None else {}),
+                    **(
+                        {"target_magnitude": phase3_mag}
+                        if phase3_mag is not None
+                        else {}
+                    ),
                 },
             ]
             total_continuation = sum(p["tokens"] for p in phases)
