@@ -170,6 +170,7 @@ def generate_roundtrip(
     max_I: float,
     lambda_max: float,
     device: torch.device,
+    total_continuation_override: int = None,
 ) -> Tuple[np.ndarray, Dict]:
     """Generate a single round-trip conditioned sample.
 
@@ -183,6 +184,9 @@ def generate_roundtrip(
         phases: Phase schedule for the round-trip hook.
         target_magnitude, Kp, Ki, Kd, max_I, lambda_max: PID params.
         device: Torch device.
+        total_continuation_override: If set, generate this many tokens
+            instead of sum(phase tokens). Used for release method where
+            phases end early but we want the same total length.
 
     Returns:
         (full_sequence, diagnostics)
@@ -210,7 +214,7 @@ def generate_roundtrip(
     )
     hook.reset()
 
-    total_continuation = hook.total_tokens
+    total_continuation = total_continuation_override or hook.total_tokens
 
     # Register hook
     if hasattr(model, "decoder"):
@@ -264,13 +268,15 @@ def main():
         "--conditioning_beats", type=int, default=config_pid.CONDITIONING_BEATS
     )
     parser.add_argument("--target_layer", type=int, default=config_pid.SAS_LAYER)
-    parser.add_argument("--target_magnitude", type=float, default=2.0)
-    parser.add_argument("--lambda_max", type=float, default=3.0)
+    parser.add_argument("--target_magnitude", type=float, default=1.0)
+    parser.add_argument("--lambda_max", type=float, default=2.0)
     parser.add_argument(
         "--phase_tokens",
         type=int,
-        default=128,
-        help="Tokens per phase (steer, hold, return)",
+        nargs=3,
+        default=[96, 64, 192],
+        help="Tokens per phase: [steer_away, hold, steer_back]. "
+        "Asymmetric: give recovery more tokens than the initial steer.",
     )
     parser.add_argument(
         "--ramp_steps", type=int, default=64, help="PID ramp steps within steer phases"
@@ -375,16 +381,17 @@ def main():
             # Build phase schedule
             # Phase 3 (return) uses a shorter ramp (half of Phase 1) to avoid
             # overshoot while still allowing most of the phase for recovery
+            p1_tokens, p2_tokens, p3_tokens = args.phase_tokens
             return_ramp = max(1, args.ramp_steps // 2)
             phases = [
                 {
-                    "tokens": args.phase_tokens,
+                    "tokens": p1_tokens,
                     "direction": scenario["away_direction"],
                     "ramp_steps": args.ramp_steps,
                 },
-                {"tokens": args.phase_tokens, "direction": "hold", "ramp_steps": 0},
+                {"tokens": p2_tokens, "direction": "hold", "ramp_steps": 0},
                 {
-                    "tokens": args.phase_tokens,
+                    "tokens": p3_tokens,
                     "direction": scenario["back_direction"],
                     "ramp_steps": return_ramp,
                 },
@@ -395,6 +402,7 @@ def main():
             roundtrip_results = []
             baseline_results = []
             static_results = []
+            release_results = []
             diagnostics_list = []
 
             for song_idx, (filepath, init_val) in enumerate(songs):
@@ -515,6 +523,49 @@ def main():
                         sample_id,
                     )
 
+                    # 4. Release: steer away in Phase 1+2, then stop steering (λ=0)
+                    #    Tests whether the model naturally returns without active back-steer
+                    release_phases = [
+                        {
+                            "tokens": p1_tokens,
+                            "direction": scenario["away_direction"],
+                            "ramp_steps": args.ramp_steps,
+                        },
+                        {"tokens": p2_tokens, "direction": "hold", "ramp_steps": 0},
+                    ]
+                    seq_rel, _ = generate_roundtrip(
+                        model,
+                        encoding,
+                        sae_model,
+                        sas_vector,
+                        args.target_layer,
+                        cond,
+                        release_phases,
+                        args.target_magnitude,
+                        args.Kp,
+                        Ki,
+                        args.Kd,
+                        args.max_I,
+                        args.lambda_max,
+                        device,
+                        total_continuation_override=total_continuation,
+                    )
+                    rel_full = compute_generation_metrics(seq_rel, encoding)
+                    rel_windows = compute_window_metrics(
+                        seq_rel, prefix_len, window_sizes, encoding
+                    )
+                    rel_full["windows"] = rel_windows
+                    rel_full["init_value"] = float(init_val)
+                    rel_full["sample_id"] = sample_id
+                    release_results.append(rel_full)
+
+                    _save_midi(
+                        seq_rel,
+                        encoding,
+                        args.output_dir / concept / scn_name / "release",
+                        sample_id,
+                    )
+
                 if (song_idx + 1) % 5 == 0:
                     logger.info(f"  Processed {song_idx + 1}/{len(songs)} songs")
 
@@ -527,6 +578,7 @@ def main():
                 static_results,
                 diagnostics_list,
                 window_sizes,
+                release_results=release_results,
             )
             concept_results[scn_name] = scn_summary
 
@@ -539,13 +591,16 @@ def main():
             # Save per-sample results for ranking
             per_sample_path = args.output_dir / concept / f"per_sample_{scn_name}.json"
             per_sample_data = []
-            for rt, bl, st in zip(roundtrip_results, baseline_results, static_results):
+            for rt, bl, st, rel in zip(
+                roundtrip_results, baseline_results, static_results, release_results
+            ):
                 per_sample_data.append(
                     {
                         "sample_id": rt.get("sample_id", ""),
                         "roundtrip": rt,
                         "baseline": bl,
                         "static_oneway": st,
+                        "release": rel,
                     }
                 )
             with open(per_sample_path, "w") as f:
@@ -572,17 +627,22 @@ def _analyze_scenario(
     static_results,
     diagnostics_list,
     window_sizes,
+    release_results=None,
 ) -> Dict:
     """Compute per-scenario analysis."""
     target_attr = concept  # "average_pitch" or "average_duration"
     summary = {"n_samples": len(roundtrip_results)}
 
     # Per-window averages
-    for method_name, results in [
+    methods = [
         ("roundtrip", roundtrip_results),
         ("baseline", baseline_results),
         ("static_oneway", static_results),
-    ]:
+    ]
+    if release_results:
+        methods.append(("release", release_results))
+
+    for method_name, results in methods:
         window_avgs = []
         for w_idx in range(len(window_sizes)):
             vals = []
@@ -678,7 +738,7 @@ def _print_summary(all_results):
             print(f"{'':18} {'(steer away)':<14} {'(hold)':<14} {'(steer back)':<14}")
             print("-" * 60)
 
-            for method in ["roundtrip", "baseline", "static_oneway"]:
+            for method in ["roundtrip", "baseline", "static_oneway", "release"]:
                 mdata = data.get(method, {})
                 windows = mdata.get("windows", [])
                 vals = []
