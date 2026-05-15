@@ -95,6 +95,13 @@ def compute_recovery_metrics(samples: List[Dict], concept: str):
 
         recovery_pct = (1.0 - remaining_error / peak_deviation) * 100.0
 
+        # Release recovery (passive decay, no active back-steering)
+        rel_error = float("nan")
+        rel_recovery = float("nan")
+        if not any(math.isnan(v) for v in rel_vals):
+            rel_error = abs(rel_vals[2] - bl_vals[2])
+            rel_recovery = (1.0 - rel_error / peak_deviation) * 100.0
+
         results.append(
             {
                 "sample_id": s.get("sample_id", ""),
@@ -105,6 +112,8 @@ def compute_recovery_metrics(samples: List[Dict], concept: str):
                 "peak_deviation": peak_deviation,
                 "remaining_error": remaining_error,
                 "recovery_pct": recovery_pct,
+                "rel_error": rel_error,
+                "rel_recovery": rel_recovery,
             }
         )
 
@@ -112,15 +121,21 @@ def compute_recovery_metrics(samples: List[Dict], concept: str):
     return results
 
 
-def aggregate_recovery(metrics: List[Dict]) -> float:
+def aggregate_recovery(metrics: List[Dict], key: str = "remaining_error") -> float:
     """Compute aggregate recovery as ratio of means (robust).
 
-    Recovery % = (1 - mean(remaining_error) / mean(peak_deviation)) × 100
+    Recovery % = (1 - mean(error) / mean(peak_deviation)) × 100
     """
     if not metrics:
         return float("nan")
-    mean_peak = np.mean([m["peak_deviation"] for m in metrics])
-    mean_error = np.mean([m["remaining_error"] for m in metrics])
+    errors = [m[key] for m in metrics if not math.isnan(m.get(key, float("nan")))]
+    peaks = [
+        m["peak_deviation"] for m in metrics if not math.isnan(m.get(key, float("nan")))
+    ]
+    if not errors or not peaks:
+        return float("nan")
+    mean_peak = np.mean(peaks)
+    mean_error = np.mean(errors)
     if mean_peak < 0.01:
         return float("nan")
     return (1.0 - mean_error / mean_peak) * 100.0
@@ -241,7 +256,7 @@ def plot_recovery_summary(all_metrics: Dict, output_path: pathlib.Path):
 
     scenarios = []
     means = []
-    stds = []
+    rel_means = []
     colors = []
 
     color_map = {
@@ -253,48 +268,72 @@ def plot_recovery_summary(all_metrics: Dict, output_path: pathlib.Path):
         for scenario, samples in concept_data.items():
             if not samples:
                 continue
-            agg = aggregate_recovery(samples)
+            agg_rt = aggregate_recovery(samples, "remaining_error")
+            agg_rel = aggregate_recovery(samples, "rel_error")
             label = f"{'Pitch' if 'pitch' in concept else 'Duration'}\n{scenario.replace('_', ' ')}"
             scenarios.append(label)
-            means.append(agg)
-            stds.append(0)  # aggregate is a single number, no error bar
+            means.append(agg_rt)
+            rel_means.append(agg_rel)
             colors.append(color_map.get(concept, "gray"))
 
-    fig, ax = plt.subplots(figsize=(8, 4))
+    fig, ax = plt.subplots(figsize=(9, 4.5))
     x = np.arange(len(scenarios))
-    bars = ax.bar(
-        x,
+    bar_width = 0.35
+
+    bars_rt = ax.bar(
+        x - bar_width / 2,
         means,
-        yerr=stds,
-        capsize=5,
+        bar_width,
         color=colors,
-        alpha=0.8,
+        alpha=0.85,
         edgecolor="white",
         linewidth=1.2,
+        label="Round-trip PID",
+    )
+    bars_rel = ax.bar(
+        x + bar_width / 2,
+        rel_means,
+        bar_width,
+        color=[c + "80" for c in colors],  # lighter shade
+        alpha=0.5,
+        edgecolor="white",
+        linewidth=1.2,
+        label="Passive release",
+        hatch="//",
     )
 
     # Value labels on bars
-    for bar, mean in zip(bars, means):
+    for bar, mean in zip(bars_rt, means):
         ax.text(
             bar.get_x() + bar.get_width() / 2,
-            bar.get_height() + 2,
+            max(bar.get_height(), 0) + 2,
             f"{mean:.0f}%",
             ha="center",
             va="bottom",
-            fontsize=11,
+            fontsize=10,
             fontweight="bold",
         )
+    for bar, mean in zip(bars_rel, rel_means):
+        if not math.isnan(mean):
+            ax.text(
+                bar.get_x() + bar.get_width() / 2,
+                max(bar.get_height(), 0) + 2,
+                f"{mean:.0f}%",
+                ha="center",
+                va="bottom",
+                fontsize=10,
+                color="gray",
+            )
 
     ax.set_xticks(x)
     ax.set_xticklabels(scenarios, fontsize=9)
     ax.set_ylabel("Recovery %", fontsize=12)
-    ax.set_title(
-        "Round-Trip Reversibility: How Much Deviation Is Recovered?", fontsize=12
-    )
-    ax.set_ylim(0, 100)
-    ax.axhline(y=100, color="gray", linestyle="--", alpha=0.3, label="Perfect recovery")
-    ax.axhline(y=0, color="gray", linestyle="--", alpha=0.3, label="No recovery")
-    ax.legend(fontsize=9)
+    ax.set_title("Round-Trip Reversibility: PID vs Passive Release", fontsize=12)
+    y_min = min(0, min(means), min(m for m in rel_means if not math.isnan(m))) - 10
+    ax.set_ylim(y_min, 110)
+    ax.axhline(y=100, color="gray", linestyle="--", alpha=0.3)
+    ax.axhline(y=0, color="gray", linestyle="--", alpha=0.3)
+    ax.legend(fontsize=9, loc="upper left")
     ax.grid(axis="y", alpha=0.3)
 
     plt.tight_layout()
@@ -404,13 +443,14 @@ def main():
                 continue
 
             # Print summary — use aggregate (ratio of means)
-            agg = aggregate_recovery(metrics)
+            agg_rt = aggregate_recovery(metrics, "remaining_error")
+            agg_rel = aggregate_recovery(metrics, "rel_error")
             recoveries = [m["recovery_pct"] for m in metrics]
             median_r = np.median(recoveries)
             logger.info(
                 f"{concept} / {scenario}: "
-                f"Aggregate Recovery = {agg:.1f}%  "
-                f"Median per-sample = {median_r:.0f}%  "
+                f"PID Recovery = {agg_rt:.1f}%  Release = {agg_rel:.1f}%  "
+                f"Median = {median_r:.0f}%  "
                 f"(N={len(metrics)}, best: {max(recoveries):.0f}%, worst: {min(recoveries):.0f}%)"
             )
 
@@ -440,7 +480,11 @@ def main():
             recoveries = [m["recovery_pct"] for m in metrics]
             errors = [m["remaining_error"] for m in metrics]
             peaks = [m["peak_deviation"] for m in metrics]
-            agg = aggregate_recovery(metrics)
+            agg_rt = aggregate_recovery(metrics, "remaining_error")
+            agg_rel = aggregate_recovery(metrics, "rel_error")
+            rel_errors = [
+                m["rel_error"] for m in metrics if not math.isnan(m["rel_error"])
+            ]
             print(f"\n{attr} — {scenario}:")
             print(
                 f"  Samples retained:      {len(metrics)} (min peak: {'pitch' in concept and f'{MIN_PEAK_PITCH} st' or f'{MIN_PEAK_DURATION} tk'})"
@@ -449,10 +493,14 @@ def main():
                 f"  Peak deviation (W2):   {np.mean(peaks):.1f} ± {np.std(peaks):.1f}"
             )
             print(
-                f"  Remaining error (W3):  {np.mean(errors):.1f} ± {np.std(errors):.1f}"
+                f"  RT error (W3):         {np.mean(errors):.1f} ± {np.std(errors):.1f}"
             )
+            if rel_errors:
+                print(
+                    f"  Release error (W3):    {np.mean(rel_errors):.1f} ± {np.std(rel_errors):.1f}"
+                )
             print(
-                f"  Aggregate Recovery:    {agg:.1f}%  (= 1 - {np.mean(errors):.1f}/{np.mean(peaks):.1f})"
+                f"  Aggregate Recovery:    PID {agg_rt:.1f}%  |  Release {agg_rel:.1f}%  |  Δ = {agg_rt - agg_rel:+.1f}pp"
             )
             print(f"  Median per-sample:     {np.median(recoveries):.0f}%")
             print(
