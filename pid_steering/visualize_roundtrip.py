@@ -39,14 +39,21 @@ def load_per_sample_data(results_dir: pathlib.Path, concept: str, scenario: str)
         return json.load(f)
 
 
+# Minimum peak deviation to consider a sample meaningfully steered
+MIN_PEAK_PITCH = 3.0       # semitones
+MIN_PEAK_DURATION = 1.5    # ticks
+
+
 def compute_recovery_metrics(samples: List[Dict], concept: str):
     """Compute recovery ratio for each sample.
 
-    Recovery % = (1 - remaining_error / peak_deviation) × 100
-    where:
-      peak_deviation = |W2_RT - W2_BL|
-      remaining_error = |W3_RT - W3_BL|
+    Per-sample:
+      Recovery % = (1 - remaining_error / peak_deviation) × 100
+
+    Aggregate (ratio of means, robust to small denominators):
+      Recovery % = (1 - mean(remaining_error) / mean(peak_deviation)) × 100
     """
+    min_peak = MIN_PEAK_PITCH if "pitch" in concept else MIN_PEAK_DURATION
     results = []
     for s in samples:
         rt = s.get("roundtrip", {})
@@ -82,7 +89,8 @@ def compute_recovery_metrics(samples: List[Dict], concept: str):
         peak_deviation = abs(rt_vals[1] - bl_vals[1])
         remaining_error = abs(rt_vals[2] - bl_vals[2])
 
-        if peak_deviation < 0.01:
+        # Filter out samples where steering had negligible effect
+        if peak_deviation < min_peak:
             continue
 
         recovery_pct = (1.0 - remaining_error / peak_deviation) * 100.0
@@ -102,6 +110,20 @@ def compute_recovery_metrics(samples: List[Dict], concept: str):
 
     results.sort(key=lambda x: x["recovery_pct"], reverse=True)
     return results
+
+
+def aggregate_recovery(metrics: List[Dict]) -> float:
+    """Compute aggregate recovery as ratio of means (robust).
+
+    Recovery % = (1 - mean(remaining_error) / mean(peak_deviation)) × 100
+    """
+    if not metrics:
+        return float("nan")
+    mean_peak = np.mean([m["peak_deviation"] for m in metrics])
+    mean_error = np.mean([m["remaining_error"] for m in metrics])
+    if mean_peak < 0.01:
+        return float("nan")
+    return (1.0 - mean_error / mean_peak) * 100.0
 
 
 def plot_trajectory(
@@ -231,11 +253,11 @@ def plot_recovery_summary(all_metrics: Dict, output_path: pathlib.Path):
         for scenario, samples in concept_data.items():
             if not samples:
                 continue
-            recoveries = [s["recovery_pct"] for s in samples]
+            agg = aggregate_recovery(samples)
             label = f"{'Pitch' if 'pitch' in concept else 'Duration'}\n{scenario.replace('_', ' ')}"
             scenarios.append(label)
-            means.append(np.mean(recoveries))
-            stds.append(np.std(recoveries))
+            means.append(agg)
+            stds.append(0)  # aggregate is a single number, no error bar
             colors.append(color_map.get(concept, "gray"))
 
     fig, ax = plt.subplots(figsize=(8, 4))
@@ -381,12 +403,15 @@ def main():
             if not metrics:
                 continue
 
-            # Print summary
+            # Print summary — use aggregate (ratio of means)
+            agg = aggregate_recovery(metrics)
             recoveries = [m["recovery_pct"] for m in metrics]
+            median_r = np.median(recoveries)
             logger.info(
                 f"{concept} / {scenario}: "
-                f"Recovery = {np.mean(recoveries):.1f}% ± {np.std(recoveries):.1f}% "
-                f"(best: {max(recoveries):.0f}%, worst: {min(recoveries):.0f}%)"
+                f"Aggregate Recovery = {agg:.1f}%  "
+                f"Median per-sample = {median_r:.0f}%  "
+                f"(N={len(metrics)}, best: {max(recoveries):.0f}%, worst: {min(recoveries):.0f}%)"
             )
 
             # Plot top N individual trajectories
@@ -415,7 +440,11 @@ def main():
             recoveries = [m["recovery_pct"] for m in metrics]
             errors = [m["remaining_error"] for m in metrics]
             peaks = [m["peak_deviation"] for m in metrics]
+            agg = aggregate_recovery(metrics)
             print(f"\n{attr} — {scenario}:")
+            print(
+                f"  Samples retained:      {len(metrics)} (min peak: {'pitch' in concept and f'{MIN_PEAK_PITCH} st' or f'{MIN_PEAK_DURATION} tk'})"
+            )
             print(
                 f"  Peak deviation (W2):   {np.mean(peaks):.1f} ± {np.std(peaks):.1f}"
             )
@@ -423,7 +452,10 @@ def main():
                 f"  Remaining error (W3):  {np.mean(errors):.1f} ± {np.std(errors):.1f}"
             )
             print(
-                f"  Recovery:              {np.mean(recoveries):.1f}% ± {np.std(recoveries):.1f}%"
+                f"  Aggregate Recovery:    {agg:.1f}%  (= 1 - {np.mean(errors):.1f}/{np.mean(peaks):.1f})"
+            )
+            print(
+                f"  Median per-sample:     {np.median(recoveries):.0f}%"
             )
             print(
                 f"  Best sample:           {metrics[0]['sample_id']} ({metrics[0]['recovery_pct']:.0f}%)"
