@@ -65,8 +65,16 @@ def compute_recovery_metrics(samples: List[Dict], concept: str):
         # Extract per-window values
         rt_vals = [w.get(concept, float("nan")) for w in rt_w[:3]]
         bl_vals = [w.get(concept, float("nan")) for w in bl_w[:3]]
-        st_vals = [w.get(concept, float("nan")) for w in st_w[:3]] if len(st_w) >= 3 else [float("nan")] * 3
-        rel_vals = [w.get(concept, float("nan")) for w in rel_w[:3]] if len(rel_w) >= 3 else [float("nan")] * 3
+        st_vals = (
+            [w.get(concept, float("nan")) for w in st_w[:3]]
+            if len(st_w) >= 3
+            else [float("nan")] * 3
+        )
+        rel_vals = (
+            [w.get(concept, float("nan")) for w in rel_w[:3]]
+            if len(rel_w) >= 3
+            else [float("nan")] * 3
+        )
 
         if any(math.isnan(v) for v in rt_vals + bl_vals):
             continue
@@ -79,22 +87,26 @@ def compute_recovery_metrics(samples: List[Dict], concept: str):
 
         recovery_pct = (1.0 - remaining_error / peak_deviation) * 100.0
 
-        results.append({
-            "sample_id": s.get("sample_id", ""),
-            "rt_windows": rt_vals,
-            "bl_windows": bl_vals,
-            "st_windows": st_vals,
-            "rel_windows": rel_vals,
-            "peak_deviation": peak_deviation,
-            "remaining_error": remaining_error,
-            "recovery_pct": recovery_pct,
-        })
+        results.append(
+            {
+                "sample_id": s.get("sample_id", ""),
+                "rt_windows": rt_vals,
+                "bl_windows": bl_vals,
+                "st_windows": st_vals,
+                "rel_windows": rel_vals,
+                "peak_deviation": peak_deviation,
+                "remaining_error": remaining_error,
+                "recovery_pct": recovery_pct,
+            }
+        )
 
     results.sort(key=lambda x: x["recovery_pct"], reverse=True)
     return results
 
 
-def plot_trajectory(sample: Dict, concept: str, scenario: str, output_path: pathlib.Path):
+def plot_trajectory(
+    sample: Dict, concept: str, scenario: str, output_path: pathlib.Path
+):
     """Plot a single sample's trajectory: baseline vs roundtrip."""
     try:
         import matplotlib.pyplot as plt
@@ -119,28 +131,64 @@ def plot_trajectory(sample: Dict, concept: str, scenario: str, output_path: path
     ax.axvspan(2.0, 3.05, alpha=0.08, color="green", label="_")
 
     # Plot lines
-    ax.plot(x_centers, bl, "o--", color="#7f7f7f", linewidth=2, markersize=8, label="Baseline (no steering)", zorder=3)
-    ax.plot(x_centers, rt, "o-", color="#1f77b4", linewidth=2.5, markersize=10, label="Round-trip PID", zorder=4)
-    ax.plot(x_centers, st, "o:", color="#d62728", linewidth=1.5, markersize=6, label="Static one-way", zorder=2, alpha=0.7)
+    ax.plot(
+        x_centers,
+        bl,
+        "o--",
+        color="#7f7f7f",
+        linewidth=2,
+        markersize=8,
+        label="Baseline (no steering)",
+        zorder=3,
+    )
+    ax.plot(
+        x_centers,
+        rt,
+        "o-",
+        color="#1f77b4",
+        linewidth=2.5,
+        markersize=10,
+        label="Round-trip PID",
+        zorder=4,
+    )
+    ax.plot(
+        x_centers,
+        st,
+        "o:",
+        color="#d62728",
+        linewidth=1.5,
+        markersize=6,
+        label="Static one-way",
+        zorder=2,
+        alpha=0.7,
+    )
 
     # Highlight Phase 3 gap (remaining error)
     ax.annotate(
         "",
-        xy=(2.55, bl[2]), xytext=(2.55, rt[2]),
+        xy=(2.55, bl[2]),
+        xytext=(2.55, rt[2]),
         arrowprops=dict(arrowstyle="<->", color="#1f77b4", lw=1.5),
     )
     ax.text(
-        2.65, (bl[2] + rt[2]) / 2,
+        2.65,
+        (bl[2] + rt[2]) / 2,
         f"Error: {sample['remaining_error']:.1f}",
-        fontsize=9, color="#1f77b4", va="center",
+        fontsize=9,
+        color="#1f77b4",
+        va="center",
     )
 
     # Recovery annotation
     ax.text(
-        0.98, 0.02,
+        0.98,
+        0.02,
         f"Recovery: {sample['recovery_pct']:.0f}%",
-        transform=ax.transAxes, fontsize=12, fontweight="bold",
-        ha="right", va="bottom",
+        transform=ax.transAxes,
+        fontsize=12,
+        fontweight="bold",
+        ha="right",
+        va="bottom",
         bbox=dict(boxstyle="round,pad=0.3", facecolor="#1f77b4", alpha=0.15),
     )
 
@@ -150,7 +198,9 @@ def plot_trajectory(sample: Dict, concept: str, scenario: str, output_path: path
     ax.set_xticklabels(phase_labels, fontsize=10)
     ax.set_xlim(-0.1, 3.1)
     ax.legend(loc="upper left" if "low" in scenario else "lower left", fontsize=9)
-    ax.set_title(f"{scenario.replace('_', ' ').title()} — {sample['sample_id']}", fontsize=11)
+    ax.set_title(
+        f"{scenario.replace('_', ' ').title()} — {sample['sample_id']}", fontsize=11
+    )
     ax.grid(axis="y", alpha=0.3)
 
     plt.tight_layout()
@@ -190,19 +240,35 @@ def plot_recovery_summary(all_metrics: Dict, output_path: pathlib.Path):
 
     fig, ax = plt.subplots(figsize=(8, 4))
     x = np.arange(len(scenarios))
-    bars = ax.bar(x, means, yerr=stds, capsize=5, color=colors, alpha=0.8, edgecolor="white", linewidth=1.2)
+    bars = ax.bar(
+        x,
+        means,
+        yerr=stds,
+        capsize=5,
+        color=colors,
+        alpha=0.8,
+        edgecolor="white",
+        linewidth=1.2,
+    )
 
     # Value labels on bars
     for bar, mean in zip(bars, means):
         ax.text(
-            bar.get_x() + bar.get_width() / 2, bar.get_height() + 2,
-            f"{mean:.0f}%", ha="center", va="bottom", fontsize=11, fontweight="bold",
+            bar.get_x() + bar.get_width() / 2,
+            bar.get_height() + 2,
+            f"{mean:.0f}%",
+            ha="center",
+            va="bottom",
+            fontsize=11,
+            fontweight="bold",
         )
 
     ax.set_xticks(x)
     ax.set_xticklabels(scenarios, fontsize=9)
     ax.set_ylabel("Recovery %", fontsize=12)
-    ax.set_title("Round-Trip Reversibility: How Much Deviation Is Recovered?", fontsize=12)
+    ax.set_title(
+        "Round-Trip Reversibility: How Much Deviation Is Recovered?", fontsize=12
+    )
     ax.set_ylim(0, 100)
     ax.axhline(y=100, color="gray", linestyle="--", alpha=0.3, label="Perfect recovery")
     ax.axhline(y=0, color="gray", linestyle="--", alpha=0.3, label="No recovery")
@@ -271,22 +337,31 @@ def trim_phase3_audio(wavs_dir: pathlib.Path, output_dir: pathlib.Path):
 def main():
     parser = argparse.ArgumentParser(description="Visualize round-trip reversibility")
     parser.add_argument(
-        "--results_dir", type=pathlib.Path,
+        "--results_dir",
+        type=pathlib.Path,
         default=pathlib.Path("exp/sod/pid_steering/experiments/roundtrip_v7"),
     )
     parser.add_argument(
-        "--wavs_dir", type=pathlib.Path,
+        "--wavs_dir",
+        type=pathlib.Path,
         default=pathlib.Path("roundtrip_wavs"),
     )
     parser.add_argument(
-        "--output_dir", type=pathlib.Path,
+        "--output_dir",
+        type=pathlib.Path,
         default=pathlib.Path("paper/figures/roundtrip"),
     )
-    parser.add_argument("--top_n", type=int, default=3, help="Plot top N samples per scenario")
-    parser.add_argument("--trim_phase3", action="store_true", help="Also trim WAVs to Phase 3")
+    parser.add_argument(
+        "--top_n", type=int, default=3, help="Plot top N samples per scenario"
+    )
+    parser.add_argument(
+        "--trim_phase3", action="store_true", help="Also trim WAVs to Phase 3"
+    )
     args = parser.parse_args()
 
-    logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s")
+    logging.basicConfig(
+        level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s"
+    )
 
     concepts = ["average_pitch", "average_duration"]
     scenarios = ["low_up_then_down", "high_down_then_up"]
@@ -315,8 +390,13 @@ def main():
             )
 
             # Plot top N individual trajectories
-            for i, sample in enumerate(metrics[:args.top_n]):
-                plot_path = args.output_dir / concept / scenario / f"trajectory_{i+1}_{sample['sample_id']}.png"
+            for i, sample in enumerate(metrics[: args.top_n]):
+                plot_path = (
+                    args.output_dir
+                    / concept
+                    / scenario
+                    / f"trajectory_{i+1}_{sample['sample_id']}.png"
+                )
                 plot_trajectory(sample, concept, scenario, plot_path)
 
     # Summary recovery bar chart
@@ -336,10 +416,18 @@ def main():
             errors = [m["remaining_error"] for m in metrics]
             peaks = [m["peak_deviation"] for m in metrics]
             print(f"\n{attr} — {scenario}:")
-            print(f"  Peak deviation (W2):   {np.mean(peaks):.1f} ± {np.std(peaks):.1f}")
-            print(f"  Remaining error (W3):  {np.mean(errors):.1f} ± {np.std(errors):.1f}")
-            print(f"  Recovery:              {np.mean(recoveries):.1f}% ± {np.std(recoveries):.1f}%")
-            print(f"  Best sample:           {metrics[0]['sample_id']} ({metrics[0]['recovery_pct']:.0f}%)")
+            print(
+                f"  Peak deviation (W2):   {np.mean(peaks):.1f} ± {np.std(peaks):.1f}"
+            )
+            print(
+                f"  Remaining error (W3):  {np.mean(errors):.1f} ± {np.std(errors):.1f}"
+            )
+            print(
+                f"  Recovery:              {np.mean(recoveries):.1f}% ± {np.std(recoveries):.1f}%"
+            )
+            print(
+                f"  Best sample:           {metrics[0]['sample_id']} ({metrics[0]['recovery_pct']:.0f}%)"
+            )
 
     # Trim Phase 3 audio for A/B comparison
     if args.trim_phase3 and args.wavs_dir.exists():
