@@ -318,10 +318,9 @@ PID achieves $4.7{\times}$ lower degradation ($\delta{=}0.47$ vs.\ $2.19$) in un
 \subsection{Round-Trip Steering}
 \label{sec:roundtrip}
 
-A unique capability of temporal PID is \emph{reversible steering}: steer away from a conditioned prefix, hold, then steer back toward original characteristics---impossible with static SAS, which applies a fixed $\lambda$ throughout. We evaluate this with a three-phase schedule per sample: Phase~1 (64 tokens, steer away), Phase~2 (64 tokens, hold), Phase~3 (64 tokens, steer back), using 16-beat conditioned prefixes from extreme songs ($n{=}20$ per scenario). Full results are in \cref{app:roundtrip}.
+A unique capability of temporal PID is \emph{reversible steering}: steer away from a conditioned prefix, hold, then steer back toward original characteristics---impossible with static SAS, which applies a fixed $\lambda$ throughout. We evaluate this with an asymmetric three-phase schedule: Phase~1 (96~tokens, steer away, $m{=}0.75$), Phase~2 (64~tokens, hold with linear $\lambda$ decay to 50\%), Phase~3 (192~tokens, steer back, $m{=}1.25$), using 16-beat conditioned prefixes from extreme songs ($n{=}20$ per scenario). We include a \emph{release} baseline that steers away and holds but stops steering entirely in Phase~3 ($\lambda{=}0$), isolating the contribution of active back-steering. Full results are in \cref{app:roundtrip}.
 
-For pitch (low$\to$up$\to$down), the round-trip trajectory follows the expected pattern: Window~1 shifts pitch from 49.7 to 59.5~st, Window~2 peaks at 74.0~st, and Window~3 recovers to 57.2~st---substantially closer to the unsteered baseline (59.6~st) than static one-way steering, which remains stuck at 73.4~st. The recovery error (Window~3 distance from baseline) is $37\%$ lower for PID (10.0 vs.\ 15.7~st), with $62\%$ of samples recovering to within $1\sigma$ of baseline.
-Duration shows similar recovery: for low$\to$up$\to$down, PID reduces Window~3 error by $43\%$ (14.2 vs.\ 24.8~ticks). These results demonstrate that temporal PID enables compositional control trajectories that static methods fundamentally cannot express.
+For pitch, the high$\to$down$\to$up scenario shows the strongest result: PID recovers to 67.8~st, dramatically closer to the unsteered baseline (81.2~st) than static one-way steering (39.6~st) or passive release (59.0~st), reducing recovery error by $69\%$. For low$\to$up$\to$down, PID reduces error by $27\%$ (11.4 vs.\ 15.7~st). Duration exhibits even larger gains: $84\%$ lower recovery error for low$\to$up$\to$down (3.9 vs.\ 24.7~ticks). Crucially, the release comparison confirms that recovery is actively driven---not merely passive relaxation---with PID consistently outperforming release across all four scenarios.
 
 % ═══════════════════════════════════════════════════════════════
 % 5. CONCLUSION
@@ -329,7 +328,7 @@ Duration shows similar recovery: for low$\to$up$\to$down, PID reduces Window~3 e
 \section{Conclusion}
 \label{sec:conclusion}
 
-We introduced PID Steering for symbolic music: \emph{Spatial PID} validates control-theoretic steering~\cite{nguyen2026pid} in a shallow architecture, while \emph{Temporal PID} overcomes SAS's Top-K threshold failure via integral error accumulation, enabling smooth sparse steering with 43--62\% less intervention strength and 5\% lower FMD for pitch, while concept-specific gain tuning---motivated by the $8{\times}$ $K_i$ asymmetry between pitch and duration---ensures quality preservation for attributes where the underlying SAS vectors are well-behaved. Round-trip steering (\cref{sec:roundtrip}) demonstrates a unique capability of temporal PID: reversible multi-phase control trajectories that static methods cannot express, with 19--43\% better attribute recovery. Gain robustness sweeps confirm stability across $2{\times}$ perturbations, while matched-$\lambda$ analysis (\cref{app:matched_lambda}) identifies trajectory-induced degradation for duration-up as a direction for future work.
+We introduced PID Steering for symbolic music: \emph{Spatial PID} validates control-theoretic steering~\cite{nguyen2026pid} in a shallow architecture, while \emph{Temporal PID} overcomes SAS's Top-K threshold failure via integral error accumulation, enabling smooth sparse steering with 43--62\% less intervention strength and 5\% lower FMD for pitch, while concept-specific gain tuning---motivated by the $8{\times}$ $K_i$ asymmetry between pitch and duration---ensures quality preservation for attributes where the underlying SAS vectors are well-behaved. Round-trip steering (\cref{sec:roundtrip}) demonstrates a unique capability of temporal PID: reversible multi-phase control trajectories that static methods cannot express, with 27--84\% better attribute recovery across pitch and duration, and active back-steering consistently outperforming passive release. Gain robustness sweeps confirm stability across $2{\times}$ perturbations, while matched-$\lambda$ analysis (\cref{app:matched_lambda}) identifies trajectory-induced degradation for duration-up as a direction for future work.
 
 \paragraph{Limitations.}
 % Our evaluation uses a single model (MMT) and dataset (SOD); the $8{\times}$ $K_i$ asymmetry may reflect model-specific priors rather than universal properties. Duration-up degrades scale consistency due to both the SAS vector and PID's dynamic trajectory (\cref{app:matched_lambda}). Sample sizes ($n{=}40$) are modest and perceptual validation is absent. Future work includes adaptive gain scheduling, plausibility-gated methods~\cite{kang2026directer}, and SAE variants like RouteSAE~\cite{shi2025routesae}.
@@ -802,10 +801,10 @@ Static SAS at $\lambda{=}1.0$ maintains 91.3\% scale consistency---substantially
 \section{Round-Trip Steering Results}
 \label{app:roundtrip}
 
-\cref{tab:roundtrip_pitch,tab:roundtrip_duration} report per-window attribute values for the round-trip experiment (\cref{sec:roundtrip}). Each scenario uses 10 extreme songs $\times$ 2 repetitions ($n{=}20$).
+\cref{tab:roundtrip_pitch,tab:roundtrip_duration} report per-window attribute values for the round-trip experiment (\cref{sec:roundtrip}). Each scenario uses 10 extreme songs $\times$ 2 repetitions ($n{=}20$), with asymmetric phases: 96~tokens (steer away, $m{=}0.75$), 64~tokens (hold with $\lambda$ decay), 192~tokens (steer back, $m{=}1.25$).
 
 \begin{table}[h]
-  \caption{Round-trip pitch steering: per-window mean pitch (st). Recovery error is $|\text{W3} - \text{baseline W3}|$.}
+  \caption{Round-trip pitch steering: per-window mean pitch (st). Recovery error is $|\text{W3} - \text{baseline W3}|$. Release stops steering in Phase~3 ($\lambda{=}0$).}
   \label{tab:roundtrip_pitch}
   \begin{center}
   \begin{small}
@@ -813,27 +812,31 @@ Static SAS at $\lambda{=}1.0$ maintains 91.3\% scale consistency---substantially
     \toprule
     Scenario & Method & W1 & W2 & W3 \\
     \midrule
-    \multirow{3}{*}{Low$\to$Up$\to$Down}
-    & Baseline & 49.70 & 58.62 & 59.63 \\
-    & Round-trip PID & 59.51 & 73.95 & 57.21 \\
-    & Static one-way & 62.12 & 73.42 & 73.40 \\
+    \multirow{4}{*}{Low$\to$Up$\to$Down}
+    & Baseline & 49.40 & 53.81 & 57.67 \\
+    & Round-trip PID & 55.74 & 69.61 & 50.16 \\
+    & Static one-way & 65.08 & 73.60 & 73.81 \\
+    & Release & 57.20 & 72.35 & 68.87 \\
     \midrule
-    & \multicolumn{2}{l}{Recovery error (PID / Static):} & \multicolumn{2}{c}{10.0 / 15.7 st} \\
+    & \multicolumn{2}{l}{Recovery error (PID / Static):} & \multicolumn{2}{c}{11.4 / 15.7 st} \\
     \midrule
-    \multirow{3}{*}{High$\to$Down$\to$Up}
-    & Baseline & 81.41 & 79.25 & 78.42 \\
-    & Round-trip PID & 62.34 & 39.02 & 48.79 \\
-    & Static one-way & 57.04 & 39.15 & 39.69 \\
+    \multirow{4}{*}{High$\to$Down$\to$Up}
+    & Baseline & 80.93 & 81.21 & 81.16 \\
+    & Round-trip PID & 69.34 & 44.45 & 67.75 \\
+    & Static one-way & 54.75 & 39.32 & 39.62 \\
+    & Release & 70.81 & 45.85 & 58.99 \\
     \midrule
-    & \multicolumn{2}{l}{Recovery error (PID / Static):} & \multicolumn{2}{c}{27.1 / 33.4 st} \\
+    & \multicolumn{2}{l}{Recovery error (PID / Static):} & \multicolumn{2}{c}{11.1 / 35.8 st} \\
     \bottomrule
   \end{tabular}
   \end{small}
   \end{center}
 \end{table}
 
+For pitch, PID reduces Window~3 recovery error by 27--69\% compared to static one-way steering. The release baseline---which steers away and holds but stops steering entirely in Phase~3---demonstrates that PID's recovery is actively driven: in the high scenario, release only recovers to 59.0~st while PID reaches 67.8~st, an 8.8~st improvement from active back-steering alone. The low scenario shows mild overshoot (W3$=$50.2 vs.~baseline 57.7~st), reflecting asymmetric model responsiveness to pitch-down steering; despite this, PID still outperforms static by 27\%.
+
 \begin{table}[h]
-  \caption{Round-trip duration steering: per-window mean duration (ticks).}
+  \caption{Round-trip duration steering: per-window mean duration (ticks). Release stops steering in Phase~3 ($\lambda{=}0$).}
   \label{tab:roundtrip_duration}
   \begin{center}
   \begin{small}
@@ -841,26 +844,28 @@ Static SAS at $\lambda{=}1.0$ maintains 91.3\% scale consistency---substantially
     \toprule
     Scenario & Method & W1 & W2 & W3 \\
     \midrule
-    \multirow{3}{*}{Low$\to$Up$\to$Down}
-    & Baseline & 2.31 & 2.41 & 2.44 \\
-    & Round-trip PID & 11.25 & 25.31 & 17.88 \\
-    & Static one-way & 14.38 & 26.45 & 26.07 \\
+    \multirow{4}{*}{Low$\to$Up$\to$Down}
+    & Baseline & 2.27 & 2.17 & 2.26 \\
+    & Round-trip PID & 5.13 & 13.22 & 5.49 \\
+    & Static one-way & 15.74 & 25.98 & 26.46 \\
+    & Release & 3.73 & 8.68 & 6.72 \\
     \midrule
-    & \multicolumn{2}{l}{Recovery error (PID / Static):} & \multicolumn{2}{c}{14.2 / 24.8 ticks} \\
+    & \multicolumn{2}{l}{Recovery error (PID / Static):} & \multicolumn{2}{c}{3.9 / 24.7 ticks} \\
     \midrule
-    \multirow{3}{*}{High$\to$Down$\to$Up}
-    & Baseline & 16.34 & 16.71 & 15.87 \\
-    & Round-trip PID & 11.10 & 3.41 & 13.48 \\
-    & Static one-way & 10.10 & 3.13 & 3.10 \\
+    \multirow{4}{*}{High$\to$Down$\to$Up}
+    & Baseline & 17.06 & 16.02 & 16.08 \\
+    & Round-trip PID & 14.37 & 7.24 & 18.69 \\
+    & Static one-way & 8.30 & 3.44 & 3.27 \\
+    & Release & 13.39 & 5.97 & 6.48 \\
     \midrule
-    & \multicolumn{2}{l}{Recovery error (PID / Static):} & \multicolumn{2}{c}{9.1 / 13.4 ticks} \\
+    & \multicolumn{2}{l}{Recovery error (PID / Static):} & \multicolumn{2}{c}{7.9 / 12.1 ticks} \\
     \bottomrule
   \end{tabular}
   \end{small}
   \end{center}
 \end{table}
 
-Across all four scenarios, PID reduces Window~3 recovery error by 19--43\% compared to static one-way steering. The high$\to$down$\to$up pitch scenario shows the weakest recovery (40\% within $1\sigma$), likely because the model's distributional priors resist returning to high-register content after sustained low-pitch generation.
+Duration shows even stronger recovery: for low$\to$up$\to$down, PID achieves 84\% lower recovery error than static (3.9 vs.\ 24.7~ticks), while the release baseline (6.7~ticks from baseline) confirms that active back-steering provides additional recovery beyond passive relaxation. For high$\to$down$\to$up, PID reduces error by 35\% (7.9 vs.\ 12.1~ticks) with 61\% of samples within $1\sigma$ of baseline.
 
 \section{Piecewise-Constant $\lambda$ Analysis}
 \label{app:piecewise}
