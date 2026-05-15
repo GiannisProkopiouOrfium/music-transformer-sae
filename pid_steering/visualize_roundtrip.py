@@ -40,8 +40,8 @@ def load_per_sample_data(results_dir: pathlib.Path, concept: str, scenario: str)
 
 
 # Minimum peak deviation to consider a sample meaningfully steered
-MIN_PEAK_PITCH = 3.0       # semitones
-MIN_PEAK_DURATION = 1.5    # ticks
+MIN_PEAK_PITCH = 3.0  # semitones
+MIN_PEAK_DURATION = 1.5  # ticks
 
 
 def compute_recovery_metrics(samples: List[Dict], concept: str):
@@ -454,9 +454,7 @@ def main():
             print(
                 f"  Aggregate Recovery:    {agg:.1f}%  (= 1 - {np.mean(errors):.1f}/{np.mean(peaks):.1f})"
             )
-            print(
-                f"  Median per-sample:     {np.median(recoveries):.0f}%"
-            )
+            print(f"  Median per-sample:     {np.median(recoveries):.0f}%")
             print(
                 f"  Best sample:           {metrics[0]['sample_id']} ({metrics[0]['recovery_pct']:.0f}%)"
             )
