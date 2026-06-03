@@ -131,16 +131,24 @@
 \end{frame}
 
 % ─────────────────────────────────────────────────────────────
-\begin{frame}{Evaluation: Recovery Error}
+\begin{frame}{Evaluation: Recovery Metric}
 
-\textbf{Metric:} $\text{Recovery Error} = |\text{W3}_\text{method} - \text{W3}_\text{baseline}|$
+\textbf{Per-sample recovery:}
+\begin{equation*}
+    \text{Recovery}_i = 1 - \frac{|\text{W3}_{\text{RT},i} - \text{W3}_{\text{BL},i}|}{|\text{W2}_{\text{RT},i} - \text{W2}_{\text{BL},i}|}
+\end{equation*}
+
+\textbf{Aggregate recovery} (ratio of means, robust to outliers):
+\begin{equation*}
+    \text{Recovery}_\text{agg} = 1 - \frac{\overline{|\text{W3}_{\text{RT}} - \text{W3}_{\text{BL}}|}}{\overline{|\text{W2}_{\text{RT}} - \text{W2}_{\text{BL}}|}}
+\end{equation*}
 
 \vspace{0.5em}
 
 \begin{itemize}
-    \item Measure the target attribute (pitch or duration) in Window 3 only
-    \item Compare to what the unsteered baseline produces in the same window
-    \item \textbf{Lower = better recovery}
+    \item W2 deviation = how far we steered (peak). W3 error = how much remains after recovery.
+    \item 100\% = perfect recovery. 0\% = no recovery at all.
+    \item Samples with negligible peak deviation filtered ($<$3 st, $<$1.5 tk)
 \end{itemize}
 
 \vspace{1em}
@@ -175,10 +183,10 @@
 \end{small}
 
 \vspace{0.5em}
-Recovery error:\\[3pt]
-\color{pidblue}PID: 11.4 st \color{black}from baseline\\[2pt]
-\color{black}Peak deviation: 15.8 st\\[2pt]
-\textbf{Recovery: 52\%}
+Per-sample aggregate:\\[3pt]
+\color{pidblue}PID Recovery: \textbf{46\%}\color{black}\\[2pt]
+\color{releasegreen}Release Recovery: 36\%\color{black}\\[2pt]
+PID advantage: \textbf{+10 pp}
 \end{column}
 
 \begin{column}{0.48\textwidth}
@@ -198,16 +206,16 @@ Recovery error:\\[3pt]
 \end{small}
 
 \vspace{0.5em}
-Recovery error:\\[3pt]
-\color{pidblue}PID: 13.4 st \color{black}from baseline\\[2pt]
-\color{black}Peak deviation: 36.8 st\\[2pt]
-\textbf{Recovery: 64\%}
+Per-sample aggregate:\\[3pt]
+\color{pidblue}PID Recovery: \textbf{66\%}\color{black}\\[2pt]
+\color{releasegreen}Release Recovery: 40\%\color{black}\\[2pt]
+PID advantage: \textbf{+26 pp}
 \end{column}
 \end{columns}
 
 \vspace{1em}
 \begin{center}
-Release only reaches 59.0 st $\Rightarrow$ PID actively recovers \textbf{8.8 st} more than passive release
+PID \textbf{always} outperforms passive release --- active back-steering recovers 10--26 pp more
 \end{center}
 
 \end{frame}
@@ -233,10 +241,10 @@ Release only reaches 59.0 st $\Rightarrow$ PID actively recovers \textbf{8.8 st}
 \end{small}
 
 \vspace{0.5em}
-Recovery error:\\[3pt]
-\color{pidblue}PID: 3.2 tk \color{black}from baseline\\[2pt]
-\color{black}Peak deviation: 11.1 tk\\[2pt]
-\textbf{Recovery: 71\%}
+Per-sample aggregate:\\[3pt]
+\color{pidblue}PID Recovery: \textbf{74\%}\color{black}\\[2pt]
+\color{releasegreen}Release Recovery: 62\%\color{black}\\[2pt]
+PID advantage: \textbf{+11 pp}
 \end{column}
 
 \begin{column}{0.48\textwidth}
@@ -256,17 +264,17 @@ Recovery error:\\[3pt]
 \end{small}
 
 \vspace{0.5em}
-Recovery error:\\[3pt]
-\color{pidblue}PID: 2.6 tk \color{black}from baseline\\[2pt]
-\color{black}Peak deviation: 8.8 tk\\[2pt]
-\textbf{Recovery: 70\%}
+Per-sample aggregate:\\[3pt]
+\color{pidblue}PID Recovery: \textbf{15\%}\color{black}\\[2pt]
+\color{releasegreen}Release Recovery: 7\%\color{black}\\[2pt]
+PID advantage: \textbf{+8 pp} (2$\times$ better)
 \end{column}
 \end{columns}
 
 \vspace{1em}
 \begin{center}
-Duration: PID recovers to \textbf{5.5 ticks} vs baseline 2.3 --- nearly back to original.\\
-Release only reaches 6.7 ticks $\Rightarrow$ active back-steering provides additional recovery.
+Duration low: strongest scenario (74\% recovery). Duration high: weakest due to low peak deviation\\
+(model resists downward changes), but PID still recovers \textbf{2$\times$ more} than passive release.
 \end{center}
 
 \end{frame}
@@ -275,17 +283,17 @@ Release only reaches 6.7 ticks $\Rightarrow$ active back-steering provides addit
 \begin{frame}{Reversibility: How Much Deviation Is Recovered?}
 
 \begin{center}
-\begin{tabular}{llcccc}
+\begin{tabular}{llccccc}
     \toprule
-    \textbf{Concept} & \textbf{Scenario} & \textbf{Peak Dev.} & \textbf{W3 Error} & \textbf{Recovery} & \textbf{vs Release} \\
+    \textbf{Concept} & \textbf{Scenario} & \textbf{Peak Dev.} & \textbf{W3 Error} & \textbf{PID} & \textbf{Release} & \textbf{$\Delta$} \\
     \midrule
-    \multirow{2}{*}{Pitch} & Low$\to$Up$\to$Down & 15.8 st & 7.5 st & \textbf{52\%} & PID closer \\
-    & High$\to$Down$\to$Up & 36.8 st & 13.4 st & \textbf{64\%} & +8.8 st \\
+    \multirow{2}{*}{Pitch} & Low$\to$Up$\to$Down & 20.0 st & 10.8 st & \textbf{46\%} & 36\% & +10 pp \\
+    & High$\to$Down$\to$Up & 34.7 st & 11.9 st & \textbf{66\%} & 40\% & +26 pp \\
     \midrule
-    \multirow{2}{*}{Duration} & Low$\to$Up$\to$Down & 11.1 tk & 3.2 tk & \textbf{71\%} & PID closer \\
-    & High$\to$Down$\to$Up & 8.8 tk & 2.6 tk & \textbf{70\%} & +12.2 tk \\
+    \multirow{2}{*}{Duration} & Low$\to$Up$\to$Down & 15.4 tk & 4.1 tk & \textbf{74\%} & 62\% & +11 pp \\
+    & High$\to$Down$\to$Up & 9.3 tk & 7.9 tk & \textbf{15\%} & 7\% & +8 pp \\
     \midrule
-    \multicolumn{4}{l}{\textbf{Average recovery across all scenarios}} & \textbf{64\%} & \\
+    \multicolumn{4}{l}{\textbf{Average across all scenarios}} & \textbf{50\%} & 36\% & +14 pp \\
     \bottomrule
 \end{tabular}
 \end{center}
@@ -294,10 +302,10 @@ Release only reaches 6.7 ticks $\Rightarrow$ active back-steering provides addit
 
 \textbf{Key takeaways:}
 \begin{enumerate}
-    \item PID recovers \textbf{52--71\%} of induced deviation across all scenarios
-    \item Recovery is \textbf{actively driven} --- PID consistently outperforms passive release
-    \item Duration shows strongest recovery (70--71\%), pitch 52--64\%
-    \item Average $\lambda \approx 0.8$ --- achieved with \textbf{modest intervention strength}
+    \item PID recovers \textbf{15--74\%} of induced deviation (average 50\%)
+    \item Recovery is \textbf{actively driven} --- PID outperforms release by 8--26 pp in every scenario
+    \item Three scenarios show strong recovery (46--74\%); duration-high is weakest (low peak $\Rightarrow$ low signal)
+    \item PID advantage is \textbf{largest where steering is strongest} (pitch high: +26 pp)
 \end{enumerate}
 
 \end{frame}
@@ -309,8 +317,8 @@ Release only reaches 6.7 ticks $\Rightarrow$ active back-steering provides addit
 \begin{column}{0.5\textwidth}
 \textbf{About PID steering:}
 \begin{itemize}
-    \item The intervention is \textbf{partially reversible} (52--71\% recovery)
-    \item Recovery is \textbf{active}, not passive --- the PID controller is doing real work in Phase 3
+    \item The intervention is \textbf{partially reversible} (46--74\% recovery for 3/4 scenarios)
+    \item Recovery is \textbf{active}, not passive --- PID outperforms release by 8--26 pp
     \item The autoregressive model's trajectory can be \textbf{bent and released} without permanent damage
 \end{itemize}
 \end{column}
@@ -320,11 +328,11 @@ Release only reaches 6.7 ticks $\Rightarrow$ active back-steering provides addit
 \begin{itemize}
     \item Autoregressive momentum --- tokens generated during Phase 1+2 become part of the context
     \item The model has ``memory'' of the steered content
-    \item Perfect reversibility would require erasing those tokens from context
+    \item Asymmetric difficulty: recovering from \emph{weak} steering (duration-high) gives less signal to guide recovery
 \end{itemize}
 
 \vspace{0.5em}
-\textbf{But 52--71\% recovery from a single PID pass is strong evidence of controllable, reversible steering.}
+\textbf{46--74\% recovery from a single PID pass, always beating passive release, is strong evidence of controllable, reversible steering.}
 \end{column}
 \end{columns}
 
