@@ -1,0 +1,14 @@
+# Site settings
+title: "Closing the Loop: PID Feedback Control for Interpretable Activation Steering in Symbolic Music Generation"
+description: "PID Feedback Control for Interpretable Activation Steering — Audio Examples & Code"
+baseurl: "/music-transformer-sae-pid"
+url: "https://giannisprokopiouorfium.github.io"
+
+# Theme
+theme: jekyll-theme-cayman
+
+# Exclude from processing
+exclude:
+  - README.md
+  - Gemfile
+  - Gemfile.lock
