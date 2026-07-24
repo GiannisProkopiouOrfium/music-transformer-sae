@@ -168,3 +168,7 @@ interpretation/analysis_results/detailed_interpretations.json
 interpretation/openai_results/interpretation_summary.json
 *.mp3
 previous_paper/*
+journal/*.pdf
+journal/*.tex
+journal/*.bib
+journal/*.txt
