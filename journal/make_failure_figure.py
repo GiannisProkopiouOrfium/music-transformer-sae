@@ -36,14 +36,41 @@ except ImportError:
 RESOLUTION = 12  # MMT ticks per beat
 BAR_BEATS = 4
 
+_ENCODING = None
+
+
+def _mmt_encoding():
+    """Load the MMT representation encoding once (for decoding .npy outputs)."""
+    global _ENCODING
+    if _ENCODING is not None:
+        return _ENCODING
+    root = pathlib.Path(__file__).resolve().parent.parent
+    for p in (root, root / "mmt"):
+        sys.path.insert(0, str(p))
+    import representation  # noqa: E402  (repo module)
+    for enc in (root / "mmt" / "encoding.json",
+                root / "data" / "sod" / "processed" / "notes" / "encoding.json"):
+        if enc.exists():
+            _ENCODING = (representation, representation.load_encoding(enc))
+            return _ENCODING
+    raise SystemExit("could not locate encoding.json to decode .npy files")
+
 
 def load_notes(path: pathlib.Path):
+    path = pathlib.Path(path)
+    if path.suffix == ".npy":
+        representation, encoding = _mmt_encoding()
+        seq = np.load(path)
+        music = representation.decode(seq, encoding)  # muspy Music at res 12
+        notes = [n for tr in music.tracks for n in tr.notes]
+        if not notes:
+            raise ValueError(f"No notes decoded from {path}")
+        return [(n.time, n.duration, n.pitch) for n in notes]
     music = muspy.read_midi(str(path))
     notes = [n for track in music.tracks for n in track.notes]
     if not notes:
         raise ValueError(f"No notes in {path}")
-    # normalize to MMT tick resolution
-    scale = RESOLUTION / music.resolution
+    scale = RESOLUTION / music.resolution  # normalize to MMT tick resolution
     return [(n.time * scale, n.duration * scale, n.pitch) for n in notes]
 
 
@@ -117,10 +144,17 @@ def _get(r, keys):
     return None
 
 
-def _to_midi(path_str):
-    """Resolve a record's stored path to an existing MIDI file."""
+def _to_gen(path_str):
+    """Resolve a record's stored path to an existing generation file.
+
+    Prefers a rendered .mid, but falls back to the raw .npy (which load_notes
+    can decode), so no manual decoding step is required.
+    """
+    if not path_str:
+        return None
     p = pathlib.Path(str(path_str))
-    for cand in (p, p.with_suffix(".mid"), p.with_suffix(".midi")):
+    for cand in (p.with_suffix(".mid"), p.with_suffix(".midi"), p,
+                 p.with_suffix(".npy")):
         if cand.exists():
             return cand
     return None
@@ -158,12 +192,14 @@ def auto_pick(results_path, scenario, strategy=None):
         raise SystemExit(f"need both a failure and a success in scenario "
                          f"'{scenario}' ({len(fails)} fail / {len(oks)} ok found); "
                          f"success field candidates checked: {_SUCCESS_KEYS}")
-    fail_mid = next((m for r in fails if (m := _to_midi(_get(r, _PATH_KEYS)))), None)
-    ok_mid = next((m for r in oks if (m := _to_midi(_get(r, _PATH_KEYS)))), None)
-    if not fail_mid or not ok_mid:
-        raise SystemExit("found records but could not resolve MIDI files; decode "
-                         "the .npy outputs to .mid first (see convert_npy_to_audio.py).")
-    return fail_mid, ok_mid
+    fail_gen = next((m for r in fails if (m := _to_gen(_get(r, _PATH_KEYS)))), None)
+    ok_gen = next((m for r in oks if (m := _to_gen(_get(r, _PATH_KEYS)))), None)
+    if not fail_gen or not ok_gen:
+        sample = _get(fails[0], _PATH_KEYS) if fails else "?"
+        raise SystemExit("found records but no generation file exists on disk; "
+                         f"example stored path was '{sample}'. Check that the run "
+                         "outputs (.npy or .mid) are present at those paths.")
+    return fail_gen, ok_gen
 
 
 def main():
