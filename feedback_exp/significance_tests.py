@@ -61,7 +61,39 @@ try:
 except ImportError:  # pragma: no cover
     sps = None
 
-RECORD_CONTAINER_KEYS = ("results", "samples", "all_results", "records", "per_sample")
+RECORD_CONTAINER_KEYS = ("results", "samples", "all_results", "records",
+                         "per_sample", "per_sample_metrics")
+
+# SOD ground-truth statistics for the derived degradation metric.
+H0, S0, G0 = 2.974, 92.26, 93.05
+
+# Aliases so "delta" / "total_degradation" resolve to the same derived metric,
+# and scale/groove/entropy resolve regardless of the evaluator's field name.
+_METRIC_ALIASES = {
+    "scale": "scale_consistency",
+    "groove": "groove_consistency",
+    "entropy": "pitch_class_entropy",
+    "pitch": "average_pitch",
+    "duration": "average_duration",
+}
+
+
+def _derived_delta(r: dict):
+    """Compute delta = |H-H0| + max(0,S0-S) + max(0,G0-G) from a record.
+
+    Handles scale/groove given either on a 0-100 or 0-1 scale.
+    """
+    try:
+        H = float(r["pitch_class_entropy"])
+        S = float(r["scale_consistency"])
+        G = float(r["groove_consistency"])
+    except (KeyError, TypeError, ValueError):
+        return None
+    if S <= 1.0:  # stored as fraction
+        S *= 100.0
+    if G <= 1.0:
+        G *= 100.0
+    return abs(H - H0) + max(0.0, S0 - S) + max(0.0, G0 - G)
 
 
 # ── Record loading ───────────────────────────────────────────────────────────
@@ -91,11 +123,24 @@ def load_records(path: pathlib.Path) -> List[dict]:
                 records = data[key]
                 break
         if records is None:
-            # dict of lists of dicts (e.g. {"pid": [...], "static": [...]})
+            # dict keyed by method/group, each value either a list of dicts
+            # (e.g. {"pid": [...], "static": [...]}) or a dict wrapping a
+            # per-sample list (e.g. temporal PID files:
+            #   {"temporal_pid": {"per_sample_metrics": [...]}, "static_sas": {...}})
             records = []
             for group, val in data.items():
+                sub = None
                 if isinstance(val, list) and val and isinstance(val[0], dict):
-                    for r in val:
+                    sub = val
+                elif isinstance(val, dict):
+                    for key in RECORD_CONTAINER_KEYS:
+                        if isinstance(val.get(key), list):
+                            sub = val[key]
+                            break
+                if sub:
+                    for r in sub:
+                        if not isinstance(r, dict):
+                            continue
                         r = dict(r)
                         r.setdefault("group", group)
                         records.append(r)
@@ -127,9 +172,14 @@ def apply_filters(records: List[dict], filters: List[str]) -> List[dict]:
 
 
 def extract_metric(records: List[dict], metric: str) -> np.ndarray:
+    derived = metric in ("delta", "total_degradation")
+    key = _METRIC_ALIASES.get(metric, metric)
     vals = []
     for r in records:
-        v = r.get(metric)
+        if derived and key not in r:
+            v = _derived_delta(r)  # compute from H/S/G when not precomputed
+        else:
+            v = r.get(key)
         if v is None:
             continue
         try:
@@ -343,6 +393,21 @@ def self_test() -> int:
              "filters_b": ["mode=beatwise"],
              "metric": "quality.scale_consistency"},
         ]
+        # Temporal-PID file schema: {method: {per_sample_metrics: [...]}} with
+        # H/S/G fields and a *derived* delta (no precomputed total_degradation).
+        def hsg(scale_mean, n):
+            return {"per_sample_metrics": [
+                {"n_notes": 200, "average_pitch": 60 + rng.normal(0, 2),
+                 "average_duration": 19.0,
+                 "pitch_class_entropy": 3.0 + rng.normal(0, 0.1),
+                 "scale_consistency": scale_mean + rng.normal(0, 2),
+                 "groove_consistency": 98 + rng.normal(0, 0.5)}
+                for _ in range(n)]}
+        f3 = pathlib.Path(td) / "temporal_comparison.json"
+        f3.write_text(json.dumps(
+            {"temporal_pid": hsg(84.7, 40), "static_sas": hsg(92.0, 40),
+             "baseline": hsg(94.0, 40)}))
+
         results = [run_comparison_spec(s) for s in specs]
         holm_correction(results)
         print(report(results, latex=True))
@@ -352,6 +417,16 @@ def self_test() -> int:
         assert results[1]["p_holm"] > 0.05, "expected null to be ns"
         assert results[0]["n_a"] == results[0]["n_b"] == 40
         assert not math.isnan(results[2]["p"]), "nested metric extraction failed"
+
+        # nested per_sample_metrics + derived delta (the temporal-PID schema)
+        pid = run_comparison_spec(
+            {"name": "PID vs static (derived delta)", "file_a": str(f3),
+             "filters_a": ["group=temporal_pid"], "file_b": str(f3),
+             "filters_b": ["group=static_sas"], "metric": "delta"})
+        print("\n" + report([pid], latex=False))
+        assert pid["n_a"] == pid["n_b"] == 40, "nested schema not parsed"
+        assert not math.isnan(pid["p"]), "derived delta not computed"
+        assert pid["mean_a"] > pid["mean_b"], "derived delta direction wrong"
     print("\nself-test OK")
     return 0
 
