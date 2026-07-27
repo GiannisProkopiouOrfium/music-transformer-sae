@@ -171,15 +171,29 @@ def apply_filters(records: List[dict], filters: List[str]) -> List[dict]:
     return records
 
 
-def extract_metric(records: List[dict], metric: str) -> np.ndarray:
-    derived = metric in ("delta", "total_degradation")
+# Flattened keys that may hold a precomputed degradation value.
+_DEG_KEYS = ("total_degradation", "degradation", "degradation.total_degradation",
+             "degradation.total_degradation.mean", "total_degradation.mean")
+
+
+def _extract_value(r: dict, metric: str):
+    """Resolve one metric from a (flattened) record, robust to schema variants."""
+    if metric in ("delta", "total_degradation"):
+        for k in _DEG_KEYS:
+            if k in r and r[k] is not None:
+                try:
+                    return float(r[k])
+                except (TypeError, ValueError):
+                    pass
+        return _derived_delta(r)  # compute from H/S/G when not precomputed
     key = _METRIC_ALIASES.get(metric, metric)
+    return r.get(key)
+
+
+def extract_metric(records: List[dict], metric: str) -> np.ndarray:
     vals = []
     for r in records:
-        if derived and key not in r:
-            v = _derived_delta(r)  # compute from H/S/G when not precomputed
-        else:
-            v = r.get(key)
+        v = _extract_value(r, metric)
         if v is None:
             continue
         try:
@@ -189,6 +203,25 @@ def extract_metric(records: List[dict], metric: str) -> np.ndarray:
         if not math.isnan(v):
             vals.append(v)
     return np.asarray(vals, dtype=float)
+
+
+def filter_diagnostics(all_records: List[dict], filtered: List[dict],
+                       filters: List[str], label: str) -> None:
+    """On a zero-match, print available keys and the distinct values of each
+    filter key, so the user can correct the filter without guessing."""
+    if filtered or not filters:
+        return
+    keys = sorted({k for r in all_records for k in r})
+    print(f"  [!] filter {filters} matched 0 of {len(all_records)} records "
+          f"in group '{label}'.", file=sys.stderr)
+    print(f"      available keys: {', '.join(keys[:40])}", file=sys.stderr)
+    for expr in filters:
+        k = expr.partition("=")[0]
+        vals = sorted({str(r[k]) for r in all_records if k in r})
+        if vals:
+            print(f"      values for '{k}': {', '.join(vals[:30])}", file=sys.stderr)
+        else:
+            print(f"      key '{k}' not present in any record", file=sys.stderr)
 
 
 # ── Statistics ───────────────────────────────────────────────────────────────
@@ -338,10 +371,12 @@ def report(results: List[dict], latex: bool) -> str:
 
 
 def run_comparison_spec(spec: dict) -> dict:
-    recs_a = apply_filters(load_records(pathlib.Path(spec["file_a"])),
-                           spec.get("filters_a", []))
-    recs_b = apply_filters(load_records(pathlib.Path(spec["file_b"])),
-                           spec.get("filters_b", []))
+    all_a = load_records(pathlib.Path(spec["file_a"]))
+    all_b = load_records(pathlib.Path(spec["file_b"]))
+    recs_a = apply_filters(all_a, spec.get("filters_a", []))
+    recs_b = apply_filters(all_b, spec.get("filters_b", []))
+    filter_diagnostics(all_a, recs_a, spec.get("filters_a", []), "A")
+    filter_diagnostics(all_b, recs_b, spec.get("filters_b", []), "B")
     a = extract_metric(recs_a, spec["metric"])
     b = extract_metric(recs_b, spec["metric"])
     out = compare_groups(a, b)
@@ -423,6 +458,7 @@ def self_test() -> int:
             {"name": "PID vs static (derived delta)", "file_a": str(f3),
              "filters_a": ["group=temporal_pid"], "file_b": str(f3),
              "filters_b": ["group=static_sas"], "metric": "delta"})
+        holm_correction([pid])
         print("\n" + report([pid], latex=False))
         assert pid["n_a"] == pid["n_b"] == 40, "nested schema not parsed"
         assert not math.isnan(pid["p"]), "derived delta not computed"

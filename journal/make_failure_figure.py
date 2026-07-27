@@ -80,10 +80,106 @@ def draw_roll(ax, notes, prefix_ticks, title):
     ax.tick_params(labelsize=7)
 
 
+import json
+
+# Record field fallbacks (schemas differ between the dense and sparse runs).
+_SUCCESS_KEYS = ("success", "both_success", "overall_success", "dual_success",
+                 "both", "is_success")
+_PATH_KEYS = ("mid_path", "midi_path", "filepath", "npy_path", "path", "file")
+_SCENARIO_KEYS = ("scenario", "scenario_name", "category", "direction")
+
+
+def _records(data):
+    if isinstance(data, list):
+        return data
+    for k in ("results", "samples", "all_results", "records"):
+        v = data.get(k) if isinstance(data, dict) else None
+        if isinstance(v, list):
+            return v
+        if isinstance(v, dict):  # results keyed by scenario -> flatten
+            out = []
+            for scen, lst in v.items():
+                if isinstance(lst, list):
+                    for r in lst:
+                        r = dict(r)
+                        r.setdefault("scenario", scen)
+                        out.append(r)
+            if out:
+                return out
+    raise SystemExit(f"could not find a record list; top-level keys: "
+                     f"{list(data) if isinstance(data, dict) else type(data)}")
+
+
+def _get(r, keys):
+    for k in keys:
+        if k in r and r[k] is not None:
+            return r[k]
+    return None
+
+
+def _to_midi(path_str):
+    """Resolve a record's stored path to an existing MIDI file."""
+    p = pathlib.Path(str(path_str))
+    for cand in (p, p.with_suffix(".mid"), p.with_suffix(".midi")):
+        if cand.exists():
+            return cand
+    return None
+
+
+def _is_success(r):
+    v = _get(r, _SUCCESS_KEYS)
+    if isinstance(v, bool):
+        return v
+    if isinstance(v, (int, float)):
+        return v >= 0.5
+    if isinstance(v, str):
+        return v.lower() in ("true", "success", "yes", "1")
+    return None
+
+
+def auto_pick(results_path, scenario, strategy=None):
+    """Pick (failure_midi, success_midi) from a conditioned results JSON."""
+    data = json.load(open(results_path))
+    recs = _records(data)
+    def keep(r):
+        s = str(_get(r, _SCENARIO_KEYS) or "")
+        if scenario and scenario not in s:
+            return False
+        if strategy and str(r.get("strategy", "")) != strategy:
+            return False
+        return True
+    recs = [r for r in recs if keep(r)]
+    if not recs:
+        raise SystemExit(f"no records for scenario='{scenario}' strategy='{strategy}' "
+                         f"in {results_path}")
+    fails = [r for r in recs if _is_success(r) is False]
+    oks = [r for r in recs if _is_success(r) is True]
+    if not fails or not oks:
+        raise SystemExit(f"need both a failure and a success in scenario "
+                         f"'{scenario}' ({len(fails)} fail / {len(oks)} ok found); "
+                         f"success field candidates checked: {_SUCCESS_KEYS}")
+    fail_mid = next((m for r in fails if (m := _to_midi(_get(r, _PATH_KEYS)))), None)
+    ok_mid = next((m for r in oks if (m := _to_midi(_get(r, _PATH_KEYS)))), None)
+    if not fail_mid or not ok_mid:
+        raise SystemExit("found records but could not resolve MIDI files; decode "
+                         "the .npy outputs to .mid first (see convert_npy_to_audio.py).")
+    return fail_mid, ok_mid
+
+
 def main():
     ap = argparse.ArgumentParser(description=__doc__)
-    ap.add_argument("--pairs", action="append", required=True,
-                    help="fail=<midi>,ok=<midi> (repeatable)")
+    ap.add_argument("--pairs", action="append", default=[],
+                    help="manual mode: fail=<midi>,ok=<midi> (repeatable)")
+    ap.add_argument("--auto", action="store_true",
+                    help="auto-select fail/ok MIDIs from conditioned results JSONs")
+    ap.add_argument("--sparse-results", type=pathlib.Path,
+                    help="[auto] sparse conditioned_results.json")
+    ap.add_argument("--dense-results", type=pathlib.Path,
+                    help="[auto] dense conditioned_results.json")
+    ap.add_argument("--sparse-scenario", default="high_pitch_long_duration_to_low_short")
+    ap.add_argument("--dense-scenario", default="high_pitch_short_duration_to_low_long")
+    ap.add_argument("--sparse-strategy", default="gram_schmidt_ek2")
+    ap.add_argument("--dense-strategy", default="gram_schmidt_pitch")
     ap.add_argument("--labels", nargs="*", default=None,
                     help="one scenario label per pair")
     ap.add_argument("--prefix-beats", type=int, default=16)
@@ -91,11 +187,24 @@ def main():
                     default=pathlib.Path("journal/figs/failure_cases.png"))
     args = ap.parse_args()
 
-    pairs = []
-    for spec in args.pairs:
-        d = dict(part.split("=", 1) for part in spec.split(","))
-        pairs.append((pathlib.Path(d["fail"]), pathlib.Path(d["ok"])))
-    labels = args.labels or [f"Scenario {i+1}" for i in range(len(pairs))]
+    pairs, labels = [], args.labels
+    if args.auto:
+        if not args.sparse_results or not args.dense_results:
+            ap.error("--auto requires --sparse-results and --dense-results")
+        pairs.append(auto_pick(args.sparse_results, args.sparse_scenario,
+                               args.sparse_strategy))
+        pairs.append(auto_pick(args.dense_results, args.dense_scenario,
+                               args.dense_strategy))
+        labels = labels or ["Sparse H/L->L/S", "Dense H/S->L/L"]
+        for (f, o), lab in zip(pairs, labels):
+            print(f"[{lab}] fail={f}  ok={o}")
+    else:
+        if not args.pairs:
+            ap.error("provide --pairs (manual) or --auto with results files")
+        for spec in args.pairs:
+            d = dict(part.split("=", 1) for part in spec.split(","))
+            pairs.append((pathlib.Path(d["fail"]), pathlib.Path(d["ok"])))
+    labels = labels or [f"Scenario {i+1}" for i in range(len(pairs))]
     prefix_ticks = args.prefix_beats * RESOLUTION
 
     fig, axes = plt.subplots(len(pairs), 2,
