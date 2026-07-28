@@ -171,7 +171,7 @@ def _is_success(r):
     return None
 
 
-def auto_pick(results_path, scenario, strategy=None):
+def auto_pick(results_path, scenario, strategy=None, gen_dir=None):
     """Pick (failure_midi, success_midi) from a conditioned results JSON."""
     data = json.load(open(results_path))
     recs = _records(data)
@@ -194,12 +194,48 @@ def auto_pick(results_path, scenario, strategy=None):
                          f"success field candidates checked: {_SUCCESS_KEYS}")
     fail_gen = next((m for r in fails if (m := _to_gen(_get(r, _PATH_KEYS)))), None)
     ok_gen = next((m for r in oks if (m := _to_gen(_get(r, _PATH_KEYS)))), None)
-    if not fail_gen or not ok_gen:
-        sample = _get(fails[0], _PATH_KEYS) if fails else "?"
-        raise SystemExit("found records but no generation file exists on disk; "
-                         f"example stored path was '{sample}'. Check that the run "
-                         "outputs (.npy or .mid) are present at those paths.")
-    return fail_gen, ok_gen
+    if fail_gen and ok_gen:
+        return fail_gen, ok_gen
+
+    # Fallback: records store no resolvable path. Glob a --gen-dir for the song.
+    if gen_dir:
+        gd = pathlib.Path(gen_dir)
+        fail_gen = fail_gen or _glob_gen(gd, fails)
+        ok_gen = ok_gen or _glob_gen(gd, oks)
+        if fail_gen and ok_gen:
+            return fail_gen, ok_gen
+
+    # Diagnostic: show what keys ARE present so the caller can point us right.
+    keys = sorted({k for k in fails[0]}) if fails else []
+    sample_path = _get(fails[0], _PATH_KEYS) if fails else "?"
+    raise SystemExit(
+        "could not resolve generation files for this scenario.\n"
+        f"  record keys present: {', '.join(keys)}\n"
+        f"  path-like value found: {sample_path}\n"
+        "  Fix options: (a) pass --gen-dir <output dir with the .npy/.mid files> so "
+        "the song can be globbed; (b) if a path field exists under a different name, "
+        "tell us and we'll add it to _PATH_KEYS; or (c) skip auto and pass explicit "
+        "--pairs fail=<mid>,ok=<mid> (e.g. from exp/sod/pid_steering/experiments/"
+        "demo_audio/... which contains rendered .mid files). The failure figure is "
+        "optional; Sect. 9's text analysis stands without it.")
+
+
+def _glob_gen(gen_dir, records):
+    """Best-effort: find a .mid/.npy whose name contains the record's song id."""
+    for r in records:
+        song = None
+        for k in ("song_name", "song", "name", "id", "filename", "stem"):
+            if k in r and r[k]:
+                song = str(r[k])
+                break
+        if not song:
+            continue
+        stem = pathlib.Path(song).stem
+        for ext in (".mid", ".midi", ".npy"):
+            hits = list(gen_dir.rglob(f"*{stem}*{ext}"))
+            if hits:
+                return hits[0]
+    return None
 
 
 def main():
@@ -216,6 +252,10 @@ def main():
     ap.add_argument("--dense-scenario", default="high_pitch_short_duration_to_low_long")
     ap.add_argument("--sparse-strategy", default="gram_schmidt_ek2")
     ap.add_argument("--dense-strategy", default="gram_schmidt_pitch")
+    ap.add_argument("--sparse-gen-dir", default=None,
+                    help="[auto] dir to glob for sparse .npy/.mid if records lack paths")
+    ap.add_argument("--dense-gen-dir", default=None,
+                    help="[auto] dir to glob for dense .npy/.mid if records lack paths")
     ap.add_argument("--labels", nargs="*", default=None,
                     help="one scenario label per pair")
     ap.add_argument("--prefix-beats", type=int, default=16)
@@ -228,9 +268,9 @@ def main():
         if not args.sparse_results or not args.dense_results:
             ap.error("--auto requires --sparse-results and --dense-results")
         pairs.append(auto_pick(args.sparse_results, args.sparse_scenario,
-                               args.sparse_strategy))
+                               args.sparse_strategy, args.sparse_gen_dir))
         pairs.append(auto_pick(args.dense_results, args.dense_scenario,
-                               args.dense_strategy))
+                               args.dense_strategy, args.dense_gen_dir))
         labels = labels or ["Sparse H/L->L/S", "Dense H/S->L/L"]
         for (f, o), lab in zip(pairs, labels):
             print(f"[{lab}] fail={f}  ok={o}")
