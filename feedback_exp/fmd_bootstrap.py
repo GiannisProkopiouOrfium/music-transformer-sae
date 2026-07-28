@@ -12,23 +12,31 @@ by resampling the candidate generation sets and recomputing FMD each time,
 reporting a 95% percentile CI. If Delta_FMD's CI excludes 0, SAS is closer to
 the reference with bootstrap support.
 
-Inputs are CLaMP 2 embedding matrices saved as .npy (shape [n_generations, d]),
-which the existing FMD pipeline already produces as an intermediate
-(metrics_evaluation/evaluate_fmd.py). Provide the reference-corpus embeddings and
-the two candidate sets.
+Two input modes:
 
-Usage (EC2, after extracting/saving CLaMP2 embeddings):
-    python feedback_exp/fmd_bootstrap.py \
-        --ref  path/to/ref_embeddings.npy \
-        --a    path/to/diffmean_embeddings.npy \
-        --b    path/to/sas_embeddings.npy \
-        --estimator ledoit_wolf --n_boot 1000
+(A) MIDI directories (recommended; no manual embedding export). Point at the FMD
+    workspace subfolders that the pipeline already built
+    (metrics_evaluation/prepare_fmd_midis.py, default
+    exp/sod/sparse_steering/fmd_workspace/): the reference-corpus dir and the two
+    strategy dirs. Embeddings are extracted with the same CLaMP 2 extractor the
+    FMD metric uses (frechet_music_distance.models.CLaMP2Extractor):
+        python feedback_exp/fmd_bootstrap.py \
+            --midi-ref exp/sod/sparse_steering/fmd_workspace/reference_sod \
+            --midi-a   exp/sod/sparse_steering/fmd_workspace/<diffmean_strategy_dir> \
+            --midi-b   exp/sod/sparse_steering/fmd_workspace/<sas_strategy_dir> \
+            --estimator ledoit_wolf --n_boot 1000
+    (list the workspace subfolders via its manifest.json to pick the exact
+    DiffMean and SAS strategy directories.)
+
+(B) Pre-saved CLaMP 2 embedding matrices as .npy (shape [n_generations, d]):
+        python feedback_exp/fmd_bootstrap.py --ref ref.npy --a dm.npy --b sas.npy
 
 Self-test on synthetic Gaussians (no data needed):
     python feedback_exp/fmd_bootstrap.py --self-test
 """
 
 import argparse
+import pathlib
 import sys
 
 import numpy as np
@@ -113,12 +121,27 @@ def self_test():
     return 0
 
 
+def extract_midi_embeddings(midi_dir, model="clamp2"):
+    """Per-file CLaMP 2 embeddings for a MIDI directory (matches the FMD metric)."""
+    if model == "clamp2":
+        from frechet_music_distance.models import CLaMP2Extractor as Extractor
+    else:
+        from frechet_music_distance.models import CLaMPExtractor as Extractor
+    feats = Extractor(verbose=True).extract_features(dataset_path=str(midi_dir))
+    return np.asarray(feats, dtype=float)
+
+
 def main():
     ap = argparse.ArgumentParser(description=__doc__,
                                  formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--ref", help="reference-corpus embeddings .npy")
     ap.add_argument("--a", help="method A (DiffMean) embeddings .npy")
     ap.add_argument("--b", help="method B (SAS) embeddings .npy")
+    ap.add_argument("--midi-ref", help="reference-corpus MIDI directory")
+    ap.add_argument("--midi-a", help="method A (DiffMean) MIDI directory")
+    ap.add_argument("--midi-b", help="method B (SAS) MIDI directory")
+    ap.add_argument("--model", default="clamp2", choices=["clamp2", "clamp"])
+    ap.add_argument("--save-embeddings", help="optional dir to cache extracted .npy")
     ap.add_argument("--estimator", default="ledoit_wolf",
                     choices=["mle", "ledoit_wolf", "oas"])
     ap.add_argument("--n_boot", type=int, default=1000)
@@ -126,10 +149,24 @@ def main():
     args = ap.parse_args()
     if args.self_test:
         return self_test()
-    if not (args.ref and args.a and args.b):
-        ap.error("provide --ref, --a, --b (or --self-test)")
-    r = bootstrap_delta(np.load(args.ref), np.load(args.a), np.load(args.b),
-                        estimator=args.estimator, n_boot=args.n_boot)
+
+    if args.midi_ref and args.midi_a and args.midi_b:
+        ref = extract_midi_embeddings(args.midi_ref, args.model)
+        a = extract_midi_embeddings(args.midi_a, args.model)
+        b = extract_midi_embeddings(args.midi_b, args.model)
+        if args.save_embeddings:
+            d = pathlib.Path(args.save_embeddings)
+            d.mkdir(parents=True, exist_ok=True)
+            np.save(d / "ref.npy", ref)
+            np.save(d / "a.npy", a)
+            np.save(d / "b.npy", b)
+            print(f"cached embeddings to {d}")
+    elif args.ref and args.a and args.b:
+        ref, a, b = np.load(args.ref), np.load(args.a), np.load(args.b)
+    else:
+        ap.error("provide --midi-ref/--midi-a/--midi-b, or --ref/--a/--b, or --self-test")
+
+    r = bootstrap_delta(ref, a, b, estimator=args.estimator, n_boot=args.n_boot)
     _report(r)
     return 0
 

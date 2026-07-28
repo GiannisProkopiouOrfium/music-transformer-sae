@@ -47,11 +47,19 @@ from significance_tests import load_records, apply_filters  # noqa: E402
 H0, S0, G0 = 2.974, 92.26, 93.05
 
 
+def _find(r, name):
+    """Resolve a metric that may be top-level or nested (flattened as quality.*)."""
+    for k in (name, f"quality.{name}", f"metrics.{name}", f"quality_metrics.{name}"):
+        if k in r and r[k] is not None:
+            return r[k]
+    return None
+
+
 def _hsg(r):
     try:
-        H = float(r["pitch_class_entropy"])
-        S = float(r["scale_consistency"])
-        G = float(r["groove_consistency"])
+        H = float(_find(r, "pitch_class_entropy"))
+        S = float(_find(r, "scale_consistency"))
+        G = float(_find(r, "groove_consistency"))
     except (KeyError, TypeError, ValueError):
         return None
     if S <= 1.0:
